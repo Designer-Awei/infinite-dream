@@ -189,7 +189,7 @@ export const app = {
 };
 window.__app = app;
 import { flowField, flowDir } from "./map.js";
-window.__dbg = { input, flowField, flowDir, UI };
+window.__dbg = { input, flowField, flowDir, UI, get renderer() { return renderer; } };
 
 let fadeEl = null;
 function fade() {

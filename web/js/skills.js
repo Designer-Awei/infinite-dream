@@ -292,7 +292,7 @@ export function castUlt(g, p, a, target) {
     case "grok": {
       p.buff.ultOn = 6;
       g.vfx("lightning/thunderclap", p.x, p.y, { palette: pal });
-      g.vfx("status/haste", p.x, p.y, { palette: ["#140e02", "#6e4e0a", "#e8c02a", "#ffe066", "#fff6b8", "#ffffff", "#ffffff"], follow: p, life: 6 });
+      
       for (const e of g.enemiesNear(p.x, p.y, 80)) g.hit(e, 8, { p, elem: "thunder" });
       break;
     }
@@ -347,7 +347,7 @@ export function castUlt(g, p, a, target) {
         },
       });
       g.vfx("water/bubbles", st.x, st.y + 4, { palette: ELEM.bubble.ramp, life: 7 });
-      g.vfx("scifi/warp-in", st.x, st.y, { palette: ELEM.bubble.ramp, speed2: 2 });
+      g.vfx("arcane/magic-circle-cast", st.x, st.y + 4, { palette: ELEM.bubble.ramp, speed2: 2 });
       break;
     }
     case "glm": {

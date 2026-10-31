@@ -137,7 +137,7 @@ export class Renderer {
     g.translate(-cx, -cy);
     this.drawLines(g, game);
     // overlays
-    for (const e of game.enemies) this.drawEnemyBar(g, e);
+    for (const e of game.enemies) this.drawEmbers(g, e), this.drawEnemyBar(g, e);
     for (const p of game.players) this.drawHeroBar(g, p, me, game);
     this.drawAim(g, me);
     for (const f of game.floaters) {
@@ -432,10 +432,24 @@ export class Renderer {
     if (e.flash > 0) (ov = s.white), (oa = 0.85);
     else if (e.freezeT > 0) (ov = s.blue), (oa = 0.6);
     else if (e.st === "boom") (ov = s.red), (oa = 0.5 + 0.5 * Math.sin(this.t * 40));
+    else if (e.burnT > 0) (ov = s.red), (oa = 0.3 + 0.25 * Math.sin(this.t * 14));
+    else if (e.slowT > 0 || e.vulnT > 0) (ov = s.blue), (oa = 0.35);
     else if (e.elite) (ov = s.red), (oa = 0.12 + 0.08 * Math.sin(this.t * 4));
     if (ov) {
       g.globalAlpha = oa * fade;
       g.drawImage(ov, fr * s.w, 0, s.w, s.h, dx, dy, s.w * sc, s.h * sc);
+    }
+    g.restore();
+  }
+  drawEmbers(g, e) {
+    if (!(e.burnT > 0)) return;
+    g.save();
+    g.globalCompositeOperation = "lighter";
+    for (let i = 0; i < 4; i++) {
+      const ph = (this.t * 1.6 + i * 0.25 + (e.id % 5) * 0.11) % 1;
+      g.globalAlpha = 1 - ph;
+      g.fillStyle = i % 2 ? "#ffb040" : "#ff6020";
+      g.fillRect(Math.round(e.x + Math.sin(i * 2.1 + this.t * 3) * e.r * 0.7), Math.round(e.y - e.r - ph * 22), 2, 2);
     }
     g.restore();
   }

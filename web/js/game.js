@@ -104,7 +104,7 @@ export class Game {
       if (p.hp <= 0) p.hp = 1;
       p.dashT = 0;
       p.invuln = 1;
-      this.fx.spawn("scifi/warp-in", p.x, p.y, { palette: ELEM[CHARS[p.cid].elem].ramp, layer: "front" });
+      this.fx.spawn("arcane/magic-circle-cast", p.x, p.y + 4, { palette: ELEM[CHARS[p.cid].elem].ramp, speed2: 1.8 });
     });
     // map items
     if (this.host) {
@@ -357,7 +357,7 @@ export class Game {
       case "dot":
         e.burnT = 3;
         e.burnDps = dmg;
-        this.vfx("status/burning", e.x, e.y, { palette: ELEM.ink.ramp, follow: e, life: 3 });
+        
         {
           const o = this.nearestEnemy(e.x, e.y, 70, new Set([e.id]));
           if (o) (o.burnT = 3), (o.burnDps = dmg * 0.6);
@@ -379,13 +379,13 @@ export class Game {
         break;
       case "rainbow":
         this.hit(e, dmg, src);
-        for (const q of this.alivePlayers()) if (dist(q.x, q.y, e.x, e.y) < 160) (q.shield = Math.min(q.maxShield, q.shield + 1)), this.vfx("holy/heal", q.x, q.y, { palette: ["#0a1420", "#1a3a5a", "#2a7aaa", "#5ac0e0", "#a0f0ff", "#ffe0a0", "#fff6e0", "#ffffff"], follow: q });
+        for (const q of this.alivePlayers()) if (dist(q.x, q.y, e.x, e.y) < 160) (q.shield = Math.min(q.maxShield, q.shield + 1)), this.vfx("holy/heal-aoe", q.x, q.y, {palette: ["#0a1420", "#1a3a5a", "#2a7aaa", "#5ac0e0", "#a0f0ff", "#ffe0a0", "#fff6e0", "#ffffff"], opts: { reach: 34 }, speed2: 1.6 });
         break;
       case "soak":
         e.slowT = 2.5;
         e.slowK = 0.6;
         e.vulnT = 3;
-        this.vfx("status/slowed", e.x, e.y, { palette: ELEM.ink.ramp, follow: e, life: 2.5 });
+        
         this.hit(e, dmg, src);
         break;
       case "multi":
@@ -571,7 +571,7 @@ export class Game {
       p.hp = p.maxHp;
       p.shield = p.maxShield;
       p.invuln = 2;
-      this.vfx("spawn/respawn-beam", p.x, p.y, { palette: ELEM[CHARS[p.cid].elem].ramp });
+      this.vfx("arcane/magic-circle-cast", p.x, p.y + 4, { palette: ELEM[CHARS[p.cid].elem].ramp, speed2: 1.8 });
       this.text(p.x, p.y - 70, "断点续训！", "#ffe14a", 1.4);
       this.sound("heal");
       return;
@@ -589,7 +589,7 @@ export class Game {
     p.downed = false;
     p.hp = Math.max(1, Math.ceil(p.maxHp * frac));
     p.invuln = 1.5;
-    this.vfx("spawn/respawn-beam", p.x, p.y, { palette: ELEM[CHARS[p.cid].elem].ramp });
+    this.vfx("arcane/magic-circle-cast", p.x, p.y + 4, { palette: ELEM[CHARS[p.cid].elem].ramp, speed2: 1.8 });
     this.sound("heal");
   }
   gameOver() {
@@ -916,7 +916,7 @@ export class Game {
       this.offerCards(p, 1, Math.random() < 0.35 ? "SR" : null);
     } else if (item.id === "heal") {
       p.hp = Math.min(p.maxHp, p.hp + 3);
-      this.vfx("holy/heal", p.x, p.y, { follow: p });
+      this.vfx("holy/heal-aoe", p.x, p.y, { opts: { reach: 34 }, speed2: 1.6 });
       this.sound("heal");
     } else if (item.id === "maxshield") {
       p.maxShield++;
@@ -960,6 +960,7 @@ export class Game {
     const ml = Math.hypot(mx, my);
     if (ml > 1) (mx /= ml), (my /= ml);
     p.moving = ml > 0.1;
+    if ((p.buff.speed > 0 || (p.buff.ultOn > 0 && p.cid === "grok")) && p.moving && Math.random() < 0.35) p.trail = (p.trail || []).concat([{ x: p.x, y: p.y, t: 0.22 }]).slice(-5);
     if (p.dashT > 0) {
       p.dashT -= dt;
       moveCircle(this.map, p, p.dashDx * BAL.dashSpeed * dt, p.dashDy * BAL.dashSpeed * dt);
@@ -1145,7 +1146,7 @@ export class Game {
           if (q.kind === "orb") {
             if (best.hp < best.maxHp) (best.hp = Math.min(best.maxHp, best.hp + 2)), this.text(best.x, best.y - 62, "+2", "#ff7aa0");
             else (best.shield = Math.min(best.maxShield + 2, best.shield + 2)), this.text(best.x, best.y - 62, "护盾+2", "#a8c8ff");
-            this.vfx("holy/heal", best.x, best.y, { palette: ELEM.bubble.ramp, follow: best });
+            this.vfx("holy/heal-aoe", best.x, best.y, {palette: ELEM.bubble.ramp, opts: { reach: 34 }, speed2: 1.6 });
             this.sound("heal");
             const owner = this.player(q.owner);
             if (owner) owner.orbs--;
@@ -1170,7 +1171,7 @@ export class Game {
         break;
       case "speed":
         p.buff.speed = 6;
-        this.vfx("status/haste", p.x, p.y, { follow: p, life: 6 });
+        
         break;
       case "rage":
         p.buff.rage = 6;
@@ -1181,14 +1182,14 @@ export class Game {
         break;
       case "heal":
         p.hp = Math.min(p.maxHp, p.hp + 2);
-        this.vfx("holy/heal", p.x, p.y, { follow: p });
+        this.vfx("holy/heal-aoe", p.x, p.y, { opts: { reach: 34 }, speed2: 1.6 });
         break;
       case "star":
         p.buff.star = 5;
         break;
       case "freeze":
         this.vfx("ice/frost-nova", p.x, p.y, { speed2: 1.6 });
-        for (const e of this.enemiesNear(p.x, p.y, 170)) (e.freezeT = e.boss ? 0.8 : 2.5), this.fx.spawn("status/frozen", e.x, e.y, { follow: e, life: e.freezeT });
+        for (const e of this.enemiesNear(p.x, p.y, 170)) (e.freezeT = e.boss ? 0.8 : 2.5);
         break;
       case "infuse": {
         const own = CHARS[p.cid].elem;

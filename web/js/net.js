@@ -375,7 +375,7 @@ function snapshot(g) {
     for (const k in p.buff) if (p.buff[k] > 0) bf[k] = Math.round(p.buff[k] * 10) / 10;
     return [p.id, r1(p.x), r1(p.y), round2(p.face), p.hp, p.maxHp, p.shield, p.maxShield, fl, Math.round(p.ult * 100), p.coins, p.cubes, Math.round(p.recoil), Math.round((Math.max(0, p.skillCd) / (CHARS[p.cid].skill.cd * p.st.cd)) * 100), Math.round((Math.max(0, p.dashCd) / 1.6) * 100), bf, p.target ? p.target.id : 0, p.cards, p.infuseElem || null, round2(p.reviveT), round2(p.respawnT || 0), p.barrier > 0 ? 1 : 0];
   });
-  const E = g.enemies.map((e) => [e.id, e.type, r1(e.x), r1(e.y), Math.ceil(e.hp), Math.ceil(e.maxHp), (e.elite ? 1 : 0) | (e.flash > 0 ? 4 : 0) | (e.freezeT > 0 ? 8 : 0) | (e.slowT > 0 ? 16 : 0), e.st, r1(e.z || 0), e.face, Object.keys(e.marks).filter((k) => e.marks[k] > g.time).join(","), e.lx != null ? r1(e.lx) : null, e.ly != null ? r1(e.ly) : null, round2(Math.max(0, e.spawnT)), round2(e.cd), e.bubble > g.time ? 1 : 0]);
+  const E = g.enemies.map((e) => [e.id, e.type, r1(e.x), r1(e.y), Math.ceil(e.hp), Math.ceil(e.maxHp), (e.elite ? 1 : 0) | (e.flash > 0 ? 4 : 0) | (e.freezeT > 0 ? 8 : 0) | (e.slowT > 0 ? 16 : 0) | (e.burnT > 0 ? 32 : 0), e.st, r1(e.z || 0), e.face, Object.keys(e.marks).filter((k) => e.marks[k] > g.time).join(","), e.lx != null ? r1(e.lx) : null, e.ly != null ? r1(e.ly) : null, round2(Math.max(0, e.spawnT)), round2(e.cd), e.bubble > g.time ? 1 : 0]);
   const B = g.bullets.map((b) => [b.id, b.side === "e" ? 1 : 0, b.kind, r1(b.x), r1(b.y), r1(b.vx), r1(b.vy), b.r, b.elem || 0, b.big ? 1 : 0, b.wave ? 1 : 0, b.arcTo ? [r1(b.arcTo.x0), r1(b.arcTo.y0), r1(b.arcTo.x), r1(b.arcTo.y), b.arcTo.dur, round2(b.t)] : 0, r1(b.h || 0)]);
   const Z = g.zones.map((z) => [z.id, z.kind, r1(z.x), r1(z.y), z.r, round2(z.life), round2(z.t)]);
   const Q = g.pickups.map((q) => [q.id, q.kind, q.item || 0, r1(q.x), r1(q.y), r1(q.z || 0), round2(q.t), round2(q.life)]);
@@ -431,7 +431,7 @@ function applySnapshot(app, s) {
     const def = ENEMIES[a[1]];
     if (!e) e = { id: a[0], kind: "enemy", type: a[1], def, x: a[2], y: a[3], anim: Math.random() * 3, marks: {}, r: def.r * (a[6] & 1 ? 1.2 : 1) * (def.scale || 1), boss: !!def.boss, z: 0, flash: 0 };
     e.tx = a[2]; e.ty = a[3]; e.hp = a[4]; e.maxHp = a[5]; e.elite = !!(a[6] & 1); e.flash = a[6] & 4 ? 0.1 : e.flash;
-    e.freezeT = a[6] & 8 ? 1 : 0; e.slowT = a[6] & 16 ? 1 : 0; e.st = a[7]; e.z = a[8]; e.face = a[9];
+    e.freezeT = a[6] & 8 ? 1 : 0; e.slowT = a[6] & 16 ? 1 : 0; e.burnT = a[6] & 32 ? 1 : 0; e.st = a[7]; e.z = a[8]; e.face = a[9];
     e.marks = {};
     if (a[10]) for (const k of a[10].split(",")) e.marks[k] = g.time + 1;
     e.lx = a[11]; e.ly = a[12]; e.spawnT = a[13]; e.cd = a[14]; e.bubble = a[15] ? g.time + 1 : 0;
