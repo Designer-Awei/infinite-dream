@@ -292,6 +292,7 @@ export class Game {
     }
     const col = crit ? "#ffe14a" : src.elem ? ELEM[src.elem].glow : "#ffffff";
     this.text(e.x + (Math.random() - 0.5) * 10, e.y - e.r * 2 - 8, Math.round(dmg), col, crit ? 1.35 : 1, 0.6);
+    if (!e.boss && src.x != null) this.knock(e, src.x, src.y, crit ? 70 : 35);
     if (crit) this.vfx("impacts/hit-spark", e.x, e.y - e.r, { palette: ["#1a1000", "#5a3a00", "#a87000", "#f0b000", "#ffe14a", "#fff6b0", "#ffffff"] });
     this.sound(crit ? "crit" : "hit", 0.04);
     // elements & reactions
@@ -421,6 +422,7 @@ export class Game {
     const col = { slime: ["#061412", "#12594a", "#47c752", "#a6f06a", "#f0ffd2"], slime_purple: ["#140a1e", "#4d1f6e", "#b05be0", "#e0a6ff", "#fff0ff"] }[e.type];
     this.vfx("spawn/poof", e.x, e.y + 2, col ? { palette: col } : {});
     this.sound("kill", 0.05);
+    this.shake = Math.max(this.shake, e.elite ? 6 : 2);
     // drops
     const [c0, c1] = e.def.coin;
     const n = c0 + Math.floor(Math.random() * (c1 - c0 + 1)) + (e.elite ? 4 : 0);
@@ -560,7 +562,7 @@ export class Game {
     const base = tgt ? angTo(p.x, p.y, tgt.x, tgt.y) : p.face;
     for (let i = 0; i < 5; i++) {
       const a = base + (i - 2) * 0.18;
-      this.bullets.push(this.mkBullet(p, { x: p.x, y: p.y - 18, a, spd: 300, dmg: 5, elem: "sun", kind: "sunbolt", r: 4, life: 1, pierce: 0 }));
+      this.bullets.push(this.mkBullet(p, { x: p.x, y: p.y - 18, h: 18, a, spd: 300, dmg: 5, elem: "sun", kind: "sunbolt", r: 4, life: 1, pierce: 0 }));
     }
   }
   down(p) {
@@ -616,7 +618,7 @@ export class Game {
       id: nid(), side: o.side || "p", owner: p ? p.id : null, x: o.x, y: o.y, vx: Math.cos(o.a) * o.spd, vy: Math.sin(o.a) * o.spd,
       r: o.r || 4, dmg: o.dmg, elem: o.elem, kind: o.kind, life: o.life ?? 1.2, pierce: o.pierce || 0, bounce: o.bounce || 0, hits: new Set(),
       splash: o.splash || 0, splashDmg: o.splashDmg || 0, slow: o.slow, burn: o.burn, knock: o.knock || 0, fusion: o.fusion, from: o.from, t: 0,
-      wave: o.wave, shieldGive: o.shieldGive, noReact: o.noReact, big: o.big, arcTo: o.arcTo, onLand: o.onLand,
+      h: o.h || 0, wave: o.wave, shieldGive: o.shieldGive, noReact: o.noReact, big: o.big, arcTo: o.arcTo, onLand: o.onLand,
     };
   }
   updateBullets(dt) {
@@ -640,11 +642,12 @@ export class Game {
       b.x += b.vx * dt;
       b.y += b.vy * dt;
       let gone = b.life <= 0;
-      const t = tileAt(m, b.x, b.y);
+      const gy = b.y + (b.h || 0); // collide with walls at ground level (bullets fly at chest height)
+      const t = tileAt(m, b.x, gy);
       if (!gone && BLOCKS_SHOT(t) && !b.wave) {
         gone = true;
         if (this.host && b.side === "p") {
-          const ti = Math.floor(b.y / T) * m.W + Math.floor(b.x / T);
+          const ti = Math.floor(gy / T) * m.W + Math.floor(b.x / T);
           if (m.crates[ti]) this.damageTile(ti, b.dmg, this.player(b.owner));
         }
         if (b.side === "p" && b.kind !== "fire") this.fx.spawn("impacts/hit-spark", b.x - b.vx * 0.012, b.y - b.vy * 0.012, { angle: Math.atan2(b.vy, b.vx) + Math.PI, palette: ELEM[b.elem]?.ramp?.slice(1, 8), light: 0.6, opts: { height: 0 } });
@@ -806,6 +809,10 @@ export class Game {
         this.spawnItem(R.chance(0.5) ? "cube" : R.weighted(Object.keys(ITEM_WEIGHTS), (k) => ITEM_WEIGHTS[k]), s.x, s.y, true);
       }
     }
+    if (this.phase === "cards") {
+      this.cardsT = (this.cardsT || 0) + dt;
+      if (this.cardsT > 30) for (const pid of Object.keys(this.cardOffers)) this.pickCard(+pid, this.cardOffers[pid][0]);
+    } else this.cardsT = 0;
     if (this.portal && this.phase !== "cards") {
       this.portal.t += dt;
       const ps = this.alivePlayers();
@@ -878,6 +885,7 @@ export class Game {
     const p = this.player(pid);
     if (!p || !this.cardOffers[pid] || !this.cardOffers[pid].includes(cardId)) return;
     delete this.cardOffers[pid];
+    if (p.local) this.onUi("cardsClosed");
     applyCard(this, p, cardId);
     this.sound("card");
     this.vfx("pickups/collect-burst", p.x, p.y - 10, { palette: ELEM[CHARS[p.cid].elem].ramp });

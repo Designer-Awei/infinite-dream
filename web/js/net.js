@@ -376,7 +376,7 @@ function snapshot(g) {
     return [p.id, r1(p.x), r1(p.y), round2(p.face), p.hp, p.maxHp, p.shield, p.maxShield, fl, Math.round(p.ult * 100), p.coins, p.cubes, Math.round(p.recoil), Math.round((Math.max(0, p.skillCd) / (CHARS[p.cid].skill.cd * p.st.cd)) * 100), Math.round((Math.max(0, p.dashCd) / 1.6) * 100), bf, p.target ? p.target.id : 0, p.cards, p.infuseElem || null, round2(p.reviveT), round2(p.respawnT || 0), p.barrier > 0 ? 1 : 0];
   });
   const E = g.enemies.map((e) => [e.id, e.type, r1(e.x), r1(e.y), Math.ceil(e.hp), Math.ceil(e.maxHp), (e.elite ? 1 : 0) | (e.flash > 0 ? 4 : 0) | (e.freezeT > 0 ? 8 : 0) | (e.slowT > 0 ? 16 : 0), e.st, r1(e.z || 0), e.face, Object.keys(e.marks).filter((k) => e.marks[k] > g.time).join(","), e.lx != null ? r1(e.lx) : null, e.ly != null ? r1(e.ly) : null, round2(Math.max(0, e.spawnT)), round2(e.cd), e.bubble > g.time ? 1 : 0]);
-  const B = g.bullets.map((b) => [b.id, b.side === "e" ? 1 : 0, b.kind, r1(b.x), r1(b.y), r1(b.vx), r1(b.vy), b.r, b.elem || 0, b.big ? 1 : 0, b.wave ? 1 : 0, b.arcTo ? [r1(b.arcTo.x0), r1(b.arcTo.y0), r1(b.arcTo.x), r1(b.arcTo.y), b.arcTo.dur, round2(b.t)] : 0]);
+  const B = g.bullets.map((b) => [b.id, b.side === "e" ? 1 : 0, b.kind, r1(b.x), r1(b.y), r1(b.vx), r1(b.vy), b.r, b.elem || 0, b.big ? 1 : 0, b.wave ? 1 : 0, b.arcTo ? [r1(b.arcTo.x0), r1(b.arcTo.y0), r1(b.arcTo.x), r1(b.arcTo.y), b.arcTo.dur, round2(b.t)] : 0, r1(b.h || 0)]);
   const Z = g.zones.map((z) => [z.id, z.kind, r1(z.x), r1(z.y), z.r, round2(z.life), round2(z.t)]);
   const Q = g.pickups.map((q) => [q.id, q.kind, q.item || 0, r1(q.x), r1(q.y), r1(q.z || 0), round2(q.t), round2(q.life)]);
   return {
@@ -440,7 +440,7 @@ function applySnapshot(app, s) {
   for (const p of g.players) p.target = p.targetId ? g.enemies.find((e) => e.id === p.targetId) || g.players.find((q) => q.id === p.targetId) || null : null;
   // bullets
   g.bullets = s.B.map((a) => {
-    const b = { id: a[0], side: a[1] ? "e" : "p", kind: a[2], x: a[3], y: a[4], vx: a[5], vy: a[6], r: a[7], elem: a[8] || null, big: !!a[9], wave: !!a[10], t: 0.05, life: 2, hits: new Set() };
+    const b = { id: a[0], side: a[1] ? "e" : "p", kind: a[2], x: a[3], y: a[4], vx: a[5], vy: a[6], r: a[7], elem: a[8] || null, big: !!a[9], wave: !!a[10], h: a[12] || 0, t: 0.05, life: 2, hits: new Set() };
     if (a[11]) (b.arcTo = { x0: a[11][0], y0: a[11][1], x: a[11][2], y: a[11][3], dur: a[11][4] }), (b.t = a[11][5]);
     return b;
   });

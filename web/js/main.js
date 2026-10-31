@@ -48,6 +48,11 @@ export const app = {
   startSolo() {
     const m = load();
     this.net = null;
+    if (!m.tutorialSeen) {
+      m.tutorialSeen = true;
+      save();
+      return UI.showTutorial(() => this.startSolo());
+    }
     this.begin({ mode: "solo", pvp: false, seed: (Math.random() * 1e9) | 0, players: [{ id: 1, cid: m.sel, name: m.name }], myId: 1 });
   },
   /** start a run (solo, host or client). cfg: {mode, pvp, seed, players:[{id,cid,name}], myId} */
@@ -91,6 +96,10 @@ export const app = {
     else if (kind === "win") this.endRun(true);
     else if (kind === "pvpwin") this.endPvp();
     else if (kind === "transition") fade();
+    else if (kind === "cardsClosed") {
+      UI.closeCards();
+      this.cardOpen = false;
+    }
     else if (kind === "room") {
       renderer.follow(g, this.me, 0, true);
       if (g.room && g.room.kind === "boss") playMusic("boss");
@@ -214,7 +223,8 @@ function frame(now) {
     const inp = me.input;
     inp.mx = input.mx;
     inp.my = input.my;
-    inp.atk = input.atk && !app.cardOpen;
+    const auto = load().autoFire ?? input.touch;
+    inp.atk = (input.atk || (auto && !!me.target && !me.downed)) && !app.cardOpen;
     inp.aim = input.aim;
     if (consume("skill")) (inp.skill = true), (inp.castAim = { ...inp.castAim, skill: input.castAim.skill });
     if (consume("ult")) (inp.ult = true), (inp.castAim = { ...inp.castAim, ult: input.castAim.ult });

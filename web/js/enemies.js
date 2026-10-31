@@ -1,5 +1,6 @@
 // Enemy behaviours and the boss.
 import { dist, angTo, TAU, R } from "./util.js";
+const CHARS_SPEED = 110;
 import { moveCircle, flowDir, los, tileAt, BUSH } from "./map.js";
 
 function nearestPlayer(g, e) {
@@ -13,7 +14,8 @@ function nearestPlayer(g, e) {
   return [best, bd];
 }
 function shoot(g, e, a, o = {}) {
-  const b = g.mkBullet(null, { side: "e", x: e.x, y: e.y - (o.h ?? e.r + 6), a, spd: o.spd || 120, dmg: o.dmg || 1, kind: o.kind || "orb", r: o.r || 5, life: o.life || 3.5, elem: null });
+  const hh = o.h ?? e.r + 6;
+  const b = g.mkBullet(null, { side: "e", x: e.x, y: e.y - hh, h: hh, a, spd: o.spd || 120, dmg: o.dmg || 1, kind: o.kind || "orb", r: o.r || 5, life: o.life || 3.5, elem: null });
   b.slow = o.slow;
   b.burn = o.burn;
   b.big = o.big;
@@ -94,7 +96,8 @@ export function updateEnemy(g, e, dt) {
         e.cd = e.def.shot.cd * (0.85 + Math.random() * 0.3);
         if (los(g.map, e.x, e.y - 10, p.x, p.y - 16)) {
           const n = e.elite ? 3 : 1;
-          for (let i = 0; i < n; i++) shoot(g, e, angTo(e.x, e.y - 16, p.x, p.y - 16) + (i - (n - 1) / 2) * 0.22, { spd: e.def.shot.spd });
+          const lead = 0.5 * (d / e.def.shot.spd), lx = p.x + (p.input.mx || 0) * CHARS_SPEED * lead, ly = p.y + (p.input.my || 0) * CHARS_SPEED * lead;
+          for (let i = 0; i < n; i++) shoot(g, e, angTo(e.x, e.y - 16, lx, ly - 16) + (i - (n - 1) / 2) * 0.22, { spd: e.def.shot.spd });
           g.sound("shoot_ink", 0.1);
         }
       }
@@ -249,7 +252,7 @@ function bossEye(g, e, p, d, dt) {
         g.after(w * 0.35, () => {
           if (e.dead) return;
           const off = w * 0.2 + Math.random();
-          for (let i = 0; i < n; i++) shoot(g, e, off + (i / n) * TAU, { spd: 115 * speedK, h: H, r: 6, big: true });
+          for (let i = 0; i < n; i++) shoot(g, e, off + (i / n) * TAU, { spd: 130 * speedK, h: H, r: 6, big: true });
         });
       e.cd = 2 / speedK;
       break;
@@ -260,7 +263,7 @@ function bossEye(g, e, p, d, dt) {
           if (e.dead) return;
           const q = g.alivePlayers()[0] || p;
           const a = angTo(e.x, e.y - H, q.x, q.y - 16);
-          for (let i = -2; i <= 2; i++) shoot(g, e, a + i * 0.16, { spd: 170 * speedK, h: H, r: 5 });
+          for (let i = -2; i <= 2; i++) shoot(g, e, a + i * 0.16, { spd: 200 * speedK, h: H, r: 5 });
         });
       e.cd = 1.6 / speedK;
       break;

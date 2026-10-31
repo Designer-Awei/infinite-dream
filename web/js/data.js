@@ -16,7 +16,7 @@ export const BAL = {
   critMul: 1.8,
   markTime: 4, // element mark duration on enemies
   coop: { hp: 0.6, count: 0.35 }, // enemy HP / count multipliers per extra player
-  roomHp: 0.13, // enemy hp growth per room index
+  roomHp: 0.18, // enemy hp growth per room index
 };
 
 // ---------------------------------------------------------------- elements & reactions
@@ -125,24 +125,24 @@ export const UNLOCKS = {
 export const ENEMIES = {
   slime: { name: "缓存史莱姆", hp: 20, spd: 46, r: 12, ai: "hop", sprite: "slime", coin: [1, 2], touch: 1 },
   slime_purple: { name: "毒性史莱姆", hp: 26, spd: 42, r: 12, ai: "hop", sprite: "slime_purple", coin: [1, 2], touch: 1, puddle: true },
-  bat: { name: "爬虫蝙蝠", hp: 11, spd: 92, r: 9, ai: "flit", sprite: "bat", coin: [0, 1], touch: 1, fly: true },
-  eyeball: { name: "幻觉眼球", hp: 24, spd: 44, r: 11, ai: "shooter", sprite: "eyeball", coin: [1, 2], fly: true, shot: { cd: 2.2, spd: 125, n: 1 } },
+  bat: { name: "爬虫蝙蝠", hp: 12, spd: 104, r: 9, ai: "flit", sprite: "bat", coin: [0, 1], touch: 1, fly: true },
+  eyeball: { name: "幻觉眼球", hp: 24, spd: 44, r: 11, ai: "shooter", sprite: "eyeball", coin: [1, 2], fly: true, shot: { cd: 1.8, spd: 165, n: 1 } },
   frog: { name: "跳转青蛙", hp: 26, spd: 40, r: 12, ai: "leap", sprite: "frog", coin: [1, 2], touch: 1 },
-  ghost: { name: "过期缓存", hp: 30, spd: 38, r: 11, ai: "ghost", sprite: "ghost", coin: [1, 3], fly: true, phase: true, shot: { cd: 3, spd: 105, n: 3, spread: 0.36, slow: true } },
-  skull: { name: "过热骷髅", hp: 40, spd: 34, r: 12, ai: "caster", sprite: "skull", coin: [2, 3], fly: true, shot: { cd: 3.4, spd: 110, n: 8, ring: true, burn: true } },
+  ghost: { name: "过期缓存", hp: 30, spd: 38, r: 11, ai: "ghost", sprite: "ghost", coin: [1, 3], fly: true, phase: true, shot: { cd: 2.6, spd: 135, n: 3, spread: 0.32, slow: true } },
+  skull: { name: "过热骷髅", hp: 40, spd: 34, r: 12, ai: "caster", sprite: "skull", coin: [2, 3], fly: true, shot: { cd: 3, spd: 135, n: 10, ring: true, burn: true } },
   jelly: { name: "漏电水母", hp: 34, spd: 36, r: 12, ai: "pulse", sprite: "jelly", coin: [1, 3], fly: true },
   wisp: { name: "游离进程", hp: 10, spd: 70, r: 8, ai: "kamikaze", sprite: "wisp", coin: [0, 1], fly: true },
   snake: { name: "死循环蛇", hp: 22, spd: 72, r: 10, ai: "snake", sprite: "snake", coin: [1, 2], touch: 1 },
-  boss_eye: { name: "幻觉之眼", hp: 1300, spd: 40, r: 16, ai: "boss_eye", sprite: "eyeball", coin: [30, 30], fly: true, boss: true, scale: 2 },
+  boss_eye: { name: "幻觉之眼", hp: 2100, spd: 40, r: 16, ai: "boss_eye", sprite: "eyeball", coin: [30, 30], fly: true, boss: true, scale: 2 },
 };
 
 // rooms of one run: the core loop
 export const RUN = [
-  { kind: "combat", waves: [["slime", "slime", "slime", "bat", "bat"], ["slime", "bat", "bat", "slime", "eyeball"]], items: 2 },
-  { kind: "combat", waves: [["frog", "eyeball", "slime", "slime"], ["slime_purple", "frog", "eyeball", "bat", "bat"]], items: 3 },
+  { kind: "combat", waves: [["slime", "slime", "slime", "bat", "bat", "slime"], ["slime", "bat", "bat", "slime", "eyeball", "eyeball"]], items: 2 },
+  { kind: "combat", waves: [["frog", "eyeball", "slime", "slime", "bat", "bat"], ["slime_purple", "frog", "eyeball", "bat", "bat", "eyeball"], ["frog", "frog", "slime_purple", "eyeball*"]], items: 3 },
   { kind: "shop" },
-  { kind: "combat", waves: [["ghost", "jelly", "slime", "bat", "bat"], ["skull*", "frog", "eyeball", "slime_purple"], ["wisp", "wisp", "wisp", "jelly", "ghost"]], items: 3 },
-  { kind: "combat", waves: [["snake", "snake", "eyeball", "eyeball", "slime_purple"], ["skull", "jelly*", "wisp", "wisp", "frog"], ["ghost*", "snake", "bat", "bat", "bat", "eyeball"]], items: 3 },
+  { kind: "combat", waves: [["ghost", "jelly", "slime", "bat", "bat", "eyeball"], ["skull*", "frog", "eyeball", "slime_purple", "bat", "bat"], ["wisp", "wisp", "wisp", "jelly", "ghost", "eyeball", "frog"]], items: 3 },
+  { kind: "combat", waves: [["snake", "snake", "eyeball", "eyeball", "slime_purple", "wisp", "wisp"], ["skull", "jelly*", "wisp", "wisp", "frog", "eyeball"], ["ghost*", "snake", "bat", "bat", "bat", "eyeball", "skull"], ["frog*", "eyeball*", "wisp", "wisp", "wisp", "jelly"]], items: 4 },
   { kind: "shop" },
   { kind: "boss", boss: "boss_eye" },
 ];

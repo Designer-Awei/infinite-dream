@@ -73,7 +73,7 @@ export class Renderer {
     for (const z of game.zones) this.drawZone(g, z, game);
     // ground marks: own ring, lock-on reticle, telegraphs
     for (const p of game.players) if (!p.dead) this.drawRing(g, p, me);
-    if (me && me.target && !me.target.dead && me.target.kind !== "player") this.drawReticle(g, me.target);
+    if (me && me.target && !me.target.dead && !me.target.downed) this.drawReticle(g, me.target);
     for (const e of game.enemies) this.drawTelegraph(g, e);
 
     // pixelfx: back layer
@@ -146,6 +146,7 @@ export class Renderer {
       this.text(g, f.s, f.x, f.y, f.color, Math.round(12 * f.size * pop), a);
     }
     g.setTransform(1, 0, 0, 1, 0, 0);
+    this.drawEdgeArrows(g, game, me, cx, cy);
     // vignette
     if (!this.vig) {
       const v = document.createElement("canvas");
@@ -170,6 +171,38 @@ export class Renderer {
     }
   }
 
+  /** arrows at the screen edge for off-screen goals: portal, chest, last enemies, teammates */
+  drawEdgeArrows(g, game, me, cx, cy) {
+    if (!me) return;
+    const goals = [];
+    if (game.portal && game.phase !== "fight" && !game.pvp) goals.push({ x: game.portal.x, y: game.portal.y, c: "#b48cff", s: "门" });
+    if (game.chest && !game.chest.opened) goals.push({ x: game.chest.x, y: game.chest.y, c: "#ffd84a", s: "箱" });
+    const live = game.enemies.filter((e) => e.spawnT <= 0);
+    if (live.length && live.length <= 3) for (const e of live) goals.push({ x: e.x, y: e.y - 10, c: e.boss ? "#ff3a6a" : "#ff6a5a", s: e.boss ? "王" : "" });
+    for (const p of game.players) if (p !== me && !p.dead && !p.pvpEnemy) goals.push({ x: p.x, y: p.y - 20, c: p.downed ? "#ff4a5a" : "#4ab8ff", s: p.downed ? "救" : "友" });
+    const W = VIEW_W, Hh = VIEW_H, m = 18;
+    for (const q of goals) {
+      const sx = q.x - cx, sy = q.y - cy;
+      if (sx > 0 && sx < W && sy > 0 && sy < Hh) continue;
+      const ox = W / 2, oy = Hh / 2, dx = sx - ox, dy = sy - oy;
+      const k = Math.min((W / 2 - m) / Math.abs(dx || 1e-6), (Hh / 2 - m) / Math.abs(dy || 1e-6));
+      const ex = ox + dx * k, ey = oy + dy * k, a = Math.atan2(dy, dx);
+      const bob = Math.sin(this.t * 6) * 2;
+      g.save();
+      g.translate(ex - Math.cos(a) * bob, ey - Math.sin(a) * bob);
+      g.rotate(a);
+      g.fillStyle = "#1a1020";
+      g.beginPath();
+      g.moveTo(12, 0); g.lineTo(-6, -9); g.lineTo(-6, 9); g.closePath();
+      g.fill();
+      g.fillStyle = q.c;
+      g.beginPath();
+      g.moveTo(9, 0); g.lineTo(-4, -6); g.lineTo(-4, 6); g.closePath();
+      g.fill();
+      g.restore();
+      if (q.s) this.text(g, q.s, ex - Math.cos(a) * 16, ey - Math.sin(a) * 16, q.c, 11);
+    }
+  }
   text(g, s, x, y, color = "#fff", size = 12, alpha = 1, align = "center") {
     g.globalAlpha = alpha;
     g.font = `${size}px ${FONT}`;
@@ -422,6 +455,7 @@ export class Renderer {
       g.fillRect(px + i * 6 + 1, top - 8, 3, 3);
       i++;
     }
+    if (e.elite) this.text(g, "精英", e.x, top - 16, "#ffd84a", 10);
     if (e.hp >= e.maxHp && !e.elite) return;
     const w = e.elite ? 30 : 22, x = e.x - w / 2;
     g.fillStyle = e.elite ? "#ffcf4a" : "#14101c";

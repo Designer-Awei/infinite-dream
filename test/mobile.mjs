@@ -8,6 +8,9 @@ await page.goto("http://localhost:8765/index.html");
 await page.waitForTimeout(2500);
 await page.screenshot({ path: out + "/lobby.png" });
 await page.tap("text=开始冒险");
+await page.waitForTimeout(600);
+await page.screenshot({ path: out + "/tutorial.png" });
+if (await page.locator("button:has-text('出发！')").count()) await page.tap("button:has-text('出发！')");
 await page.waitForTimeout(2500);
 // press attack via touch events on the attack button
 const cdp = await ctx.newCDPSession(page);

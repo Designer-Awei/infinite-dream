@@ -19,6 +19,8 @@ if (cidArg) {
   await page.reload(); await page.waitForTimeout(2200);
 }
 await page.click("text=开始冒险");
+await page.waitForTimeout(500);
+if (await page.locator("button:has-text('出发！')").count()) { await page.screenshot({ path: out + "/tutorial.png" }); await page.click("button:has-text('出发！')"); }
 await page.waitForTimeout(800);
 await page.evaluate((god) => {
   const app = window.__app, D = window.__dbg, inp = D.input;
@@ -62,12 +64,13 @@ await page.evaluate((god) => {
   }, 50);
 }, god);
 let shots = 0, lastRoom = -2;
-for (let i = 0; i < 600; i++) {
+const MAXI = +(process.argv.find(a => a.startsWith("--secs=")) || "--secs=600").slice(7);
+for (let i = 0; i < MAXI; i++) {
   await page.waitForTimeout(1000);
   const st = await page.evaluate(() => { const g = __app.game; if (!g) return { over: true, html: document.querySelector(".result h2")?.textContent }; return { room: g.roomIdx, phase: g.phase, en: g.enemies.length, hp: __app.me.hp, coins: __app.me.coins, t: g.time.toFixed(0), cards: Object.keys(__app.me.cards).length, fx: g.fx.list.length, res: document.querySelector(".result h2")?.textContent }; });
   if (i % 5 === 0) console.log(JSON.stringify(st));
   if (st.room !== lastRoom && st.room != null) { lastRoom = st.room; await page.waitForTimeout(1500); await page.screenshot({ path: `${out}/room${st.room}.png` }); }
-  if (i % 20 === 10) await page.screenshot({ path: `${out}/t${i}.png` });
+  if (i % 8 === 6) await page.screenshot({ path: `${out}/t${i}.png` });
   if (st.res || st.over) { console.log("RESULT", st.res); await page.screenshot({ path: `${out}/result.png` }); break; }
 }
 console.log((await page.evaluate(() => window.__bot.log)).join("\n"));

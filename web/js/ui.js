@@ -190,13 +190,22 @@ export function showGacha() {
     const unl = checkUnlocks();
     $(".machine", s).classList.add("shake");
     sfx("gacha");
+    const order = ["N", "R", "SR", "SSR"];
+    const best = res.reduce((b, r) => (order.indexOf(r.r) > order.indexOf(b) ? r.r : b), "N");
     setTimeout(() => {
       $(".machine", s).classList.remove("shake");
-      revealPulls(res, () => {
-        showGacha();
-        if (unl.length) showUnlock(unl[0]);
-      });
-    }, 800);
+      const cap = el("div", "dropcap " + best);
+      cap.style.setProperty("--c", RARITY[best].color);
+      $(".machine", s).appendChild(cap);
+      setTimeout(() => sfx(best === "SSR" ? "ssr" : "coin"), 520);
+      setTimeout(() => {
+        cap.classList.add("open");
+        setTimeout(() => revealPulls(res, () => {
+          showGacha();
+          if (unl.length) showUnlock(unl[0]);
+        }), 350);
+      }, 1050);
+    }, 700);
   }
 }
 function renderOwned(s) {
@@ -443,6 +452,11 @@ export function showPause(game, opts) {
   $(".r2", md).append(
     btn(`音效：${m.sound ? "开" : "关"}`, "gray small", (e) => ((m.sound = !m.sound), setSound(m.sound), save(), (e.target.closest("button").innerHTML = `音效：${m.sound ? "开" : "关"}`))),
     btn(`音乐：${m.music ? "开" : "关"}`, "gray small", (e) => ((m.music = !m.music), setMusic(m.music), save(), (e.target.closest("button").innerHTML = `音乐：${m.music ? "开" : "关"}`))),
+    btn(`自动攻击：${(m.autoFire ?? document.body.classList.contains("touchmode")) ? "开" : "关"}`, "gray small", (e) => {
+      m.autoFire = !(m.autoFire ?? document.body.classList.contains("touchmode"));
+      save();
+      e.target.closest("button").innerHTML = `自动攻击：${m.autoFire ? "开" : "关"}`;
+    }),
     btn("放弃本局", "red small", () => (md.remove(), opts.quit())),
   );
   const me = opts.me;
@@ -452,6 +466,22 @@ export function showPause(game, opts) {
   }
   root.appendChild(md);
   return md;
+}
+export function showTutorial(go) {
+  const md = el("div", "modal");
+  const touch = document.body.classList.contains("touchmode");
+  md.innerHTML = `<div class="panel" style="max-width:640px;text-align:center"><h2 class="outline">操作说明</h2>
+   <div class="row" style="gap:18px;align-items:stretch">
+    <div class="kit o1" style="text-align:left;flex:1;max-height:none">
+     <div style="color:#ffe36a">${touch ? "📱 手机" : "⌨ 电脑"}</div>
+     ${touch ? "左侧任意位置拖动 = 移动<br>右下红键 = 攻击（默认自动锁敌开火，拖动可手动瞄准）<br>蓝键 = 技能 · 黄键 = 大招（轻点自动瞄准，拖动瞄准松手释放）<br>绿键 = 闪避（短暂无敌）" : "<span class='key'>W</span><span class='key'>A</span><span class='key'>S</span><span class='key'>D</span> 移动<br><span class='key'>J</span> 按住攻击：自动吸附锁定范围内最近的敌人<br><span class='key'>K</span> 小技能 · <span class='key'>L</span> 大招（打出伤害充能）<br><span class='key'>空格</span> 闪避（短暂无敌）· <span class='key'>Esc</span> 暂停"}
+    </div>
+    <div class="kit o1" style="text-align:left;flex:1;max-height:none">
+     <div style="color:#ffe36a">生存要点</div>
+     🛡 护盾受击后几秒自动回满，❤ 生命不会<br>🌿 躲进草丛可以隐身<br>✦ 不同元素先后命中同一敌人 = 元素反应<br>📦 清场后开箱选卡，构筑你的混搭流派
+    </div></div><div class="row" style="margin-top:12px"></div></div>`;
+  $(".row:last-child", md).appendChild(btn("出发！", "big", () => (md.remove(), go())));
+  root.appendChild(md);
 }
 export function showResult(r, onAgain, onLobby) {
   const md = el("div", "modal result");

@@ -8,7 +8,7 @@ const MUZZLE = 20; // bullets leave from chest height
 function baseBullet(g, p, cid, a, o = {}) {
   const c = CHARS[cid], at = c.atk, s = p.st;
   return g.mkBullet(p, {
-    x: p.x + Math.cos(a) * 10, y: p.y - MUZZLE + Math.sin(a) * 6, a,
+    x: p.x + Math.cos(a) * 10, y: p.y - MUZZLE + Math.sin(a) * 6, h: MUZZLE - Math.sin(a) * 6, a,
     spd: at.spd * s.bspd, dmg: at.dmg * (o.dmgK || 1), elem: o.elem || c.elem, kind: cid, r: at.size * s.size,
     life: ((at.range * s.range) / (at.spd * s.bspd)) * 1.25, pierce: (at.pierce || 0) + s.pierce + (o.pierce || 0), bounce: s.bounce,
     splash: at.splash || 0, splashDmg: at.splashDmg || 0, fusion: o.fusion, from: cid,
@@ -70,7 +70,7 @@ function segDist(px, py, x0, y0, x1, y1) {
 
 /** a player bullet touched an enemy */
 export function onBulletHit(g, b, e, p) {
-  const kind = b.kind, src = { p, elem: b.elem, noReact: b.noReact };
+  const kind = b.kind, src = { p, elem: b.elem, noReact: b.noReact, x: b.x - b.vx * 0.05, y: b.y - b.vy * 0.05 };
   let dmg = b.dmg;
   if (b.wave) {
     // DeepSeek wave
@@ -136,7 +136,7 @@ export function castSkill(g, p, cid, a, target, pw = 1) {
   const pal = ELEM[CHARS[cid].elem].ramp;
   switch (cid) {
     case "deepseek": {
-      const b = g.mkBullet(p, { x: p.x, y: p.y - 14, a, spd: 270, dmg: 10 * pw, elem: "water", kind: "wave", r: 24, life: 0.75, pierce: 99 });
+      const b = g.mkBullet(p, { x: p.x, y: p.y - 14, h: 14, a, spd: 270, dmg: 10 * pw, elem: "water", kind: "wave", r: 24, life: 0.75, pierce: 99 });
       b.wave = true;
       g.bullets.push(b);
       g.vfx("water/splash", p.x + Math.cos(a) * 18, p.y + Math.sin(a) * 10, { palette: pal, opts: { stone: false }, speed2: 1.8 });
@@ -192,7 +192,7 @@ export function castSkill(g, p, cid, a, target, pw = 1) {
         const tg = p.target;
         const aa = tg ? angTo(p.x, p.y - 18, tg.x, tg.y - 10) : a;
         for (let i = 0; i < 5; i++) {
-          const b = g.mkBullet(p, { x: p.x, y: p.y - 18, a: aa + (i - 2) * 0.2, spd: 330, dmg: 5 * pw, elem: "thunder", kind: "grokb", r: 4, life: 0.9, bounce: 3 });
+          const b = g.mkBullet(p, { x: p.x, y: p.y - 18, h: 18, a: aa + (i - 2) * 0.2, spd: 330, dmg: 5 * pw, elem: "thunder", kind: "grokb", r: 4, life: 0.9, bounce: 3 });
           g.bullets.push(b);
         }
         g.sound("shoot_thunder");
@@ -335,7 +335,7 @@ export function castUlt(g, p, a, target) {
             z.shot = 0;
             const tg = p.target && dist(p.target.x, p.target.y, z.x, z.y) < 220 ? p.target : g.nearestEnemy(z.x, z.y, 220);
             if (tg) {
-              const b = g.mkBullet(p, { x: z.x, y: z.y - 26, a: angTo(z.x, z.y - 26, tg.x, tg.y - tg.r), spd: 260, dmg: 3.6, elem: "bubble", kind: "doubao", r: 5, life: 1.2 });
+              const b = g.mkBullet(p, { x: z.x, y: z.y - 26, h: 26, a: angTo(z.x, z.y - 26, tg.x, tg.y - tg.r), spd: 260, dmg: 3.6, elem: "bubble", kind: "doubao", r: 5, life: 1.2 });
               g.bullets.push(b);
             }
           }
