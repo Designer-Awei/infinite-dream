@@ -1,0 +1,16 @@
+import { createRequire } from "module"; const require = createRequire(import.meta.url); const { chromium } = require("playwright");
+const out = "/home/claude/game/tmp/gacha"; require("fs").mkdirSync(out, { recursive: true });
+const browser = await chromium.launch();
+const p = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+p.on("pageerror", (e) => console.log("PAGEERROR " + e.message));
+await p.goto("http://localhost:8765/index.html");
+await p.waitForTimeout(2200);
+await p.evaluate(() => { const s = JSON.parse(localStorage.getItem("ai-girls-dungeon-v1")); s.tokens = 2000; localStorage.setItem("ai-girls-dungeon-v1", JSON.stringify(s)); });
+await p.reload(); await p.waitForTimeout(2200);
+await p.click("button:has-text('扭蛋机')"); await p.waitForTimeout(600);
+await p.screenshot({ path: out + "/g0.png" });
+await p.click("button:has-text('十连')"); await p.waitForTimeout(2200);
+await p.screenshot({ path: out + "/g1.png" });
+await p.click("button:has-text('收下')"); await p.waitForTimeout(800);
+await p.screenshot({ path: out + "/g2.png" });
+await browser.close();
