@@ -440,6 +440,7 @@ export function showCards(game, me, ids, onPick) {
     onPick(id);
   }
   function key(e) {
+    if (e.repeat) return;
     const k = { Digit1: 0, Digit2: 1, Digit3: 2, KeyJ: 0, KeyK: 1, KeyL: 2 }[e.code];
     if (k != null && ids[k]) pick(ids[k]);
   }

@@ -230,6 +230,14 @@ function frame(now) {
     if (consume("ult")) (inp.ult = true), (inp.castAim = { ...inp.castAim, ult: input.castAim.ult });
     if (consume("dash")) inp.dash = true;
   }
+  if (g.hitStop > 0) {
+    g.hitStop -= dt;
+    dt = 0.0001;
+  }
+  if (g.slowmo > 0) {
+    g.slowmo -= dt;
+    dt *= 0.3;
+  }
   if (!frozen) {
     if (g.mode === "client") app.net && app.net.clientTick(dt);
     else g.update(dt);
@@ -251,6 +259,9 @@ async function boot() {
   resize();
   renderer = new Renderer(canvas, fx);
   addEventListener("resize", resize);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && app.game && !app.net && !app.ended && !app.cardOpen) app.pause();
+  });
   const m = load();
   setSound(m.sound);
   setMusic(m.music);

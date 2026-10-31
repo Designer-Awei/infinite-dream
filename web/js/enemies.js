@@ -4,14 +4,16 @@ const CHARS_SPEED = 110;
 import { moveCircle, flowDir, los, tileAt, BUSH } from "./map.js";
 
 function nearestPlayer(g, e) {
-  let best = null, bd = 1e9;
+  let best = null, bd = 1e9, hidden = true;
   for (const p of g.players) {
     if (p.dead || p.downed) continue;
     let d = dist(e.x, e.y, p.x, p.y);
-    if (tileAt(g.map, p.x, p.y) === BUSH && d > 90 && e.lastBy !== p.id) d += 400; // hidden in a bush
-    if (d < bd) (bd = d), (best = p);
+    // hidden in a bush unless close, or it just shot this enemy
+    const h = !e.boss && tileAt(g.map, p.x, p.y) === BUSH && d > 90 && !(e.lastBy === p.id && e.flash > -1.5);
+    if (h) d += 400;
+    if (d < bd) (bd = d), (best = p), (hidden = h);
   }
-  return [best, bd];
+  return [best, bd, hidden];
 }
 function shoot(g, e, a, o = {}) {
   const hh = o.h ?? e.r + 6;
@@ -48,8 +50,16 @@ export function updateEnemy(g, e, dt) {
   }
   if (e.freezeT > 0) return void (e.freezeT -= dt);
   if (e.stunT > 0) return void (e.stunT -= dt);
-  const [p, d] = nearestPlayer(g, e);
+  const [p, d, hidden] = nearestPlayer(g, e);
   if (!p) return;
+  if (hidden) {
+    // lost sight: wander around slowly
+    e.wanderT = (e.wanderT || 0) - dt;
+    if (e.wanderT <= 0) (e.wanderT = 1 + Math.random()), (e.wanderA = Math.random() * TAU);
+    moveCircle(g.map, e, Math.cos(e.wanderA) * e.def.spd * 0.35 * dt, Math.sin(e.wanderA) * e.def.spd * 0.35 * dt, e.def.fly, e.def.phase);
+    e.st = e.st === "jump" ? e.st : "idle";
+    if (e.st !== "jump") return;
+  }
   const sp = e.def.spd * (e.slowT > 0 ? 1 - e.slowK : 1) * (e.elite ? 1.1 : 1);
   e.t += dt;
   e.cd -= dt;

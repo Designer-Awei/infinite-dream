@@ -293,6 +293,7 @@ export class Game {
     const col = crit ? "#ffe14a" : src.elem ? ELEM[src.elem].glow : "#ffffff";
     this.text(e.x + (Math.random() - 0.5) * 10, e.y - e.r * 2 - 8, Math.round(dmg), col, crit ? 1.35 : 1, 0.6);
     if (!e.boss && src.x != null) this.knock(e, src.x, src.y, crit ? 70 : 35);
+    if (crit && this.mode === "solo") this.hitStop = Math.max(this.hitStop || 0, 0.03);
     if (crit) this.vfx("impacts/hit-spark", e.x, e.y - e.r, { palette: ["#1a1000", "#5a3a00", "#a87000", "#f0b000", "#ffe14a", "#fff6b0", "#ffffff"] });
     this.sound(crit ? "crit" : "hit", 0.04);
     // elements & reactions
@@ -423,6 +424,9 @@ export class Game {
     this.vfx("spawn/poof", e.x, e.y + 2, col ? { palette: col } : {});
     this.sound("kill", 0.05);
     this.shake = Math.max(this.shake, e.elite ? 6 : 2);
+    if (this.mode === "solo") this.hitStop = Math.max(this.hitStop || 0, e.elite || e.boss ? 0.09 : 0.025);
+    // last enemy of the last wave: a beat of slow motion
+    if (this.mode === "solo" && this.phase === "fight" && this.enemies.every((o) => o.dead) && this.wave >= (this.room.boss ? 0 : (this.room.waves || []).length - 1)) this.slowmo = 0.7;
     // drops
     const [c0, c1] = e.def.coin;
     const n = c0 + Math.floor(Math.random() * (c1 - c0 + 1)) + (e.elite ? 4 : 0);
