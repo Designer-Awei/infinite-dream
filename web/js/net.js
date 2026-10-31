@@ -38,23 +38,38 @@ class LocalT {
   }
 }
 let peerLib = null;
+const PEER_CDNS = [
+  "https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js",
+  "https://fastly.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js",
+  "https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js",
+];
 function loadPeer() {
   if (window.Peer) return Promise.resolve();
   if (peerLib) return peerLib;
   peerLib = new Promise((res, rej) => {
-    const s = document.createElement("script");
-    s.src = "https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js";
-    s.onload = res;
-    s.onerror = () => {
-      const s2 = document.createElement("script");
-      s2.src = "https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js";
-      s2.onload = res;
-      s2.onerror = () => rej(new Error("无法加载联机组件"));
-      document.head.appendChild(s2);
+    let i = 0;
+    const next = () => {
+      if (i >= PEER_CDNS.length) {
+        peerLib = null;
+        return rej(new Error("无法加载联机组件"));
+      }
+      const s = document.createElement("script");
+      s.src = PEER_CDNS[i++];
+      s.onload = res;
+      s.onerror = next;
+      document.head.appendChild(s);
     };
-    document.head.appendChild(s);
+    next();
   });
   return peerLib;
+}
+// optional self-hosted PeerServer: ?peer=host[:port][/path]
+function peerServerOpts() {
+  const q = new URLSearchParams(location.search).get("peer");
+  if (!q) return {};
+  const m = q.match(/^([^:/]+)(?::(\d+))?(\/.*)?$/);
+  if (!m) return {};
+  return { host: m[1], port: m[2] ? +m[2] : 443, path: m[3] || "/", secure: true };
 }
 class PeerT {
   constructor(code, isHost) {
@@ -65,7 +80,7 @@ class PeerT {
   async open() {
     await loadPeer();
     return new Promise((res, rej) => {
-      const opts = { config: { iceServers: ICE }, debug: 0 };
+      const opts = { config: { iceServers: ICE }, debug: 0, ...peerServerOpts() };
       this.peer = this.isHost ? new window.Peer(PREFIX + this.code, opts) : new window.Peer(opts);
       const to = setTimeout(() => rej(new Error("连接信令服务器超时")), 12000);
       this.peer.on("error", (e) => {

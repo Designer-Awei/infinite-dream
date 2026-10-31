@@ -12,3 +12,5 @@ cp "$ROOT/web/pixelfx/LICENSE" "$ROOT/dist/assets/PIXELFX-LICENSE.txt"
 cp "$ROOT/web/pixelfx/NOTICE.md" "$ROOT/dist/assets/PIXELFX-NOTICE.md"
 touch "$ROOT/dist/.nojekyll"
 echo "built: $(du -sh "$ROOT/dist" | cut -f1), $(find "$ROOT/dist" -type f | wc -l) files"
+# GitHub Pages serves /docs from the main branch
+rm -rf "$ROOT/docs" && cp -r "$ROOT/dist" "$ROOT/docs"

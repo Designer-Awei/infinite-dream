@@ -1,0 +1,11 @@
+import { createRequire } from "module"; const require = createRequire(import.meta.url); const { chromium } = require("playwright");
+const browser = await chromium.launch();
+const A = await browser.newPage({ viewport: { width: 1100, height: 620 } });
+A.on("pageerror", (e) => console.log("PAGEERROR " + e.message));
+A.on("console", (m) => console.log("console", m.type(), m.text().slice(0, 200)));
+await A.goto("http://localhost:8766/index.html"); await A.waitForTimeout(2500);
+await A.click("text=联机 / 对战"); await A.waitForTimeout(300);
+await A.click("button:has-text('合作闯关')"); await A.waitForTimeout(14000);
+console.log(await A.locator(".muted").first().textContent());
+await A.screenshot({ path: "/home/claude/game/tmp/peer.png" });
+await browser.close();

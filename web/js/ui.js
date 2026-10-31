@@ -290,6 +290,15 @@ export function showRoom(info) {
   const acts = $(".acts", s);
   if (info.isHost) acts.appendChild(btn(info.pvp ? "开战！" : "出发！", "big", () => app.startNet()));
   else acts.appendChild(el("div", "muted", "等待房主开始…"));
+  acts.appendChild(btn("复制邀请链接", "blue small", async () => {
+    const url = location.origin + location.pathname + location.search + "#join-" + info.code;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast("已复制：发给朋友打开即可加入");
+    } catch {
+      toast("房间码：" + info.code);
+    }
+  }));
   acts.appendChild(btn("离开", "gray small", () => app.leaveNet()));
 }
 function escapeHtml(s) {
