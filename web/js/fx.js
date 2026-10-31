@@ -98,7 +98,11 @@ export class FxLayer {
     clearFrame(this.front);
     this.back.ox = this.front.ox = Math.round(camX);
     this.back.oy = this.front.oy = Math.round(camY);
-    for (const f of this.list) f.draw(f.layer === "back" ? this.back : this.front);
+    this.backUsed = false;
+    for (const f of this.list) {
+      if (f.layer === "back") this.backUsed = true;
+      f.draw(f.layer === "back" ? this.back : this.front);
+    }
   }
   painter(layer = "front") {
     const p = painterFor(layer === "back" ? this.back : this.front);
@@ -120,6 +124,7 @@ export class FxLayer {
     return any;
   }
   drawBack(g) {
+    if (!this.backUsed) return;
     const any = this._comp(this.back, this.cBack, this.cLightB);
     g.drawImage(this.cBack, 0, 0);
     if (any) {
