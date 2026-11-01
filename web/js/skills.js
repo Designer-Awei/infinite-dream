@@ -54,6 +54,9 @@ export function fireAttack(g, p, a, target) {
   }
   // Grok ult side shots
   if (p.cid === "grok" && p.buff.ultOn > 0) for (const d of [-0.5, 0.5]) g.bullets.push(atkBullet(g, p, "grok", a + d, { dmgK: 0.5 }));
+  // SSR 模型集成: every 4th attack adds a 3-bullet spread
+  if (p.kit && p.kit.eq && p.kit.eq.t_ensemble && p.atkCount % 4 === 0)
+    for (const d of [-0.32, 0, 0.32]) g.bullets.push(atkBullet(g, p, p.cid, a + d, { dmgK: 0.4, elem }));
   // fusion: every 3rd attack fires the other girls' bullets
   if (p.fusions.length && p.atkCount % 3 === 0)
     for (const fid of p.fusions) {

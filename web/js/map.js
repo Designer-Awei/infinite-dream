@@ -22,6 +22,20 @@ export const THEMES = [
     bush: "#c85aa8", bushHi: "#f08ad0", bushLo: "#9a3a84", water: "#40d0e0", waterHi: "#a0f4ff", waterLo: "#2a98b8",
     mud: "#5a4a7a", mudHi: "#7a6aa0",
   },
+  { // 显存冰原: snow field; the patches are slippery ice
+    name: "显存冰原",
+    g1: "#dbe8f4", g2: "#d2e1ef", gHi: "#f4faff", gLo: "#b4c8de", dirt: "#a8bcd4", dirtLo: "#8aa0bc",
+    top: "#e6eef8", topHi: "#ffffff", front: "#8aa4c4", frontLo: "#6a84a8", ink: "#1a2238",
+    bush: "#5a8ab0", bushHi: "#8ab8dc", bushLo: "#3a648a", water: "#2a6ab8", waterHi: "#7ab8f0", waterLo: "#1a4a8a",
+    mud: "#9ad8f4", mudHi: "#e4f8ff", mudDot: "#6ab4e0", flowers: ["#ffffff", "#bfe8ff", "#d8c8ff"],
+  },
+  { // 算力熔炉: scorched factory floor; the glowing cracks are lava
+    name: "算力熔炉",
+    g1: "#5a4a48", g2: "#544442", gHi: "#76625c", gLo: "#3e302e", dirt: "#7a5a4a", dirtLo: "#5a3e32",
+    top: "#8a7a74", topHi: "#b0a098", front: "#4a3a3a", frontLo: "#32262a", ink: "#140c0c",
+    bush: "#7a4a3a", bushHi: "#a86a4a", bushLo: "#4e2e24", water: "#1e6a72", waterHi: "#5ac0c8", waterLo: "#124a52",
+    mud: "#d8481c", mudHi: "#ffc23a", mudDot: "#8a1e0a", flowers: ["#ffb04a", "#ff6a2a", "#ffe08a"],
+  },
 ];
 
 function cv(w, h) {
@@ -32,11 +46,11 @@ function cv(w, h) {
 }
 
 // --------------------------------------------------------------- generation
-export function generateRoom(kind, seed, themeIdx = 0) {
+export function generateRoom(kind, seed, themeIdx = 0, gopt = {}) {
   const W = kind === "boss" ? 28 : kind === "shop" ? 22 : 30, H = kind === "boss" ? 18 : kind === "shop" ? 14 : 19;
   for (let attempt = 0; attempt < 30; attempt++) {
     const r = rng(seed + attempt * 7919);
-    const m = { W, H, kind, seed, theme: themeIdx, t: new Uint8Array(W * H), mud: new Uint8Array(W * H), spikes: [], crates: {}, poison: [], decals: [] };
+    const m = { W, H, kind, seed, theme: themeIdx, hazard: gopt.hazard || "mud", t: new Uint8Array(W * H), mud: new Uint8Array(W * H), spikes: [], crates: {}, poison: [], decals: [] };
     const set = (x, y, v) => {
       if (x > 0 && y > 0 && x < W - 1 && y < H - 1) m.t[y * W + x] = v;
     };
@@ -54,7 +68,8 @@ export function generateRoom(kind, seed, themeIdx = 0) {
       const n = r.int(5, 8);
       for (let i = 0; i < n; i++) {
         const x = r.int(2, Math.floor(W / 2) - 1), y = r.int(2, Math.floor(H / 2) - 1);
-        const k = r.pick(["hwall", "vwall", "L", "block", "bush", "bush", "water", "crates", "mud"]);
+        // ice / lava maps scatter more of their hazard patches
+        const k = r.pick(["hwall", "vwall", "L", "block", "bush", "bush", "water", "crates", "mud", ...(gopt.hazard === "ice" || gopt.hazard === "lava" ? ["mud", "mud"] : [])]);
         if (k === "hwall") for (let j = 0; j < r.int(2, 5); j++) mirror(x + j, y, WALL);
         else if (k === "vwall") for (let j = 0; j < r.int(2, 4); j++) mirror(x, y + j, WALL);
         else if (k === "L") {
@@ -101,7 +116,7 @@ export function generateRoom(kind, seed, themeIdx = 0) {
     };
     clear(spawn.x, spawn.y, 2);
     clear(W - 1 - spawn.x, spawn.y, 1);
-    clear(center.x, center.y, kind === "boss" ? 3 : 2);
+    clear(center.x, center.y, kind === "boss" || gopt.koth ? 3 : 2);
     m.spikes = m.spikes.filter((s) => m.t[s.y * W + s.x] === F);
     // connectivity
     const seen = flood(m, spawn.x, spawn.y);
@@ -290,7 +305,7 @@ export function renderGround(m) {
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (m.mud[y * W + x]) {
     const X = x * T, Y = y * T;
     for (let k = 0; k < 5; k++) px(g, X + r.int(3, 26), Y + r.int(3, 27), r.int(2, 5), 2, th.mudHi);
-    px(g, X + r.int(6, 20), Y + r.int(6, 20), 3, 3, "#5a3e26");
+    px(g, X + r.int(6, 20), Y + r.int(6, 20), 3, 3, th.mudDot || "#5a3e26");
   }
   // shadows cast by blocks onto the floor (to the bottom-right)
   g.fillStyle = "rgba(20,40,10,0.28)";
@@ -312,7 +327,7 @@ export function renderGround(m) {
   // decals
   for (const d of m.decals) {
     if (d.k === 0) { // flower
-      const col = r.pick(["#ffffff", "#ffe066", "#ff8ac0"]);
+      const col = r.pick(th.flowers || ["#ffffff", "#ffe066", "#ff8ac0"]);
       px(g, d.x - 1, d.y, 3, 1, col); px(g, d.x, d.y - 1, 1, 3, col); px(g, d.x, d.y, 1, 1, "#ffb030");
     } else if (d.k === 1) { // pebble
       px(g, d.x, d.y, 4, 3, "#c8c0b0"); px(g, d.x, d.y, 3, 1, "#f0ece0"); px(g, d.x + 1, d.y + 3, 3, 1, th.gLo);

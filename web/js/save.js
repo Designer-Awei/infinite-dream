@@ -1,5 +1,5 @@
 // Meta progression kept in the player's own browser (no account needed).
-import { START_CHARS, START_TOKENS, UNLOCKS, GACHA, CHAR_ORDER } from "./data.js";
+import { START_CHARS, START_TOKENS, UNLOCKS, GACHA, CHAR_ORDER, LOADOUT_SLOTS } from "./data.js";
 
 const KEY = "ai-girls-dungeon-v1";
 const fresh = () => ({
@@ -15,6 +15,8 @@ const fresh = () => ({
   sound: true,
   music: true,
   seenUnlock: [],
+  loadout: null, // cid -> [ssr talent id | null] (one page per character)
+  maps: {}, // map id -> clears
 });
 
 let mem = null;
@@ -26,6 +28,15 @@ export function load() {
     mem.stats = Object.assign(fresh().stats, (s && s.stats) || {});
   } catch {
     mem = fresh();
+  }
+  // first time with loadouts: put the SSR talents the player already owns on every page (they used to be always on)
+  if (!mem.loadout) {
+    const own = GACHA.pool.filter((it) => it.eq && mem.talents[it.id]).map((it) => it.id).slice(0, LOADOUT_SLOTS);
+    mem.loadout = {};
+    for (const id of CHAR_ORDER) mem.loadout[id] = [...own, null, null].slice(0, LOADOUT_SLOTS);
+    mem.maps = mem.maps || {};
+    if (mem.stats.bossKills) mem.maps.grass = mem.maps.grass || mem.stats.bossKills;
+    save();
   }
   if (!mem.name) {
     mem.name = "玩家" + Math.floor(1000 + Math.random() * 9000);
@@ -39,6 +50,35 @@ export function save() {
   } catch {}
 }
 export const talent = (id) => load().talents[id] || 0;
+
+/** the loadout page of one character (always LOADOUT_SLOTS long; unowned entries are dropped) */
+export function loadoutOf(cid) {
+  const m = load();
+  const page = ((m.loadout && m.loadout[cid]) || []).map((id) => (id && m.talents[id] ? id : null));
+  while (page.length < LOADOUT_SLOTS) page.push(null);
+  return page.slice(0, LOADOUT_SLOTS);
+}
+export function setLoadout(cid, page) {
+  const m = load();
+  m.loadout = m.loadout || {};
+  m.loadout[cid] = page.slice(0, LOADOUT_SLOTS);
+  save();
+}
+/**
+ * Everything the simulation needs to know about one player's meta progression, so the host can build
+ * every player from their own save: passive talents (N/R/SR, always on), the equipped SSR page, unlocked cards.
+ */
+export function makeKit(cid) {
+  const m = load(), tal = {}, eq = {};
+  for (const it of GACHA.pool) {
+    const lv = m.talents[it.id] || 0;
+    if (!lv) continue;
+    if (it.eq) continue;
+    tal[it.id] = lv;
+  }
+  for (const id of loadoutOf(cid)) if (id) eq[id] = m.talents[id] || 1;
+  return { tal, eq, cards: [...m.cards] };
+}
 
 /** Check unlock conditions; returns newly unlocked char ids. */
 export function checkUnlocks() {

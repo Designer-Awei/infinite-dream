@@ -1,14 +1,14 @@
 // Lobby (Brawl Stars-style home: hero on a stage in the middle, info on the left, play button bottom-right)
 // and the capsule gacha with a staged pull sequence (crank → capsule → open → card flips → summary).
-import { CHARS, CHAR_ORDER, ELEM, UNLOCKS, GACHA, RARITY, REACTIONS } from "./data.js";
-import { load, save, unlockProgress, pull, checkUnlocks } from "./save.js";
+import { CHARS, CHAR_ORDER, ELEM, UNLOCKS, GACHA, RARITY, REACTIONS, MAPS, MAP_ORDER, LOADOUT_SLOTS } from "./data.js";
+import { load, save, unlockProgress, pull, checkUnlocks, loadoutOf, setLoadout } from "./save.js";
 import { sfx, setSound, setMusic, playMusic } from "./audio.js";
 import { el } from "./util.js";
 import { iconURL, skillIcon } from "./icons.js";
 import { localVersion } from "./updater.js";
 import { bushSprite, crateSprite } from "./map.js";
 import { btn, toast, clear, showNet, showHelp, showUnlock, uiRoot } from "./ui.js";
-import { app } from "./main.js";
+import { app, playMode, mapUnlocked, endlessUnlocked } from "./main.js";
 
 const q = (s, r) => r.querySelector(s);
 let entered = false; // full entrance animation only the first time per session
@@ -132,7 +132,12 @@ export function showLobby() {
   tile("👥", "联机对战", "t-net", () => showNet());
   tile("📖", "玩法说明", "t-help", () => showHelp());
   const play = q(".lb-play", s);
-  play.innerHTML = `<div class="mode o1"><span class="chip">单人闯关</span> 数据草原 · 7 个房间 · 首领【幻觉之眼】</div>`;
+  const pm = playMode(), md = MAPS[pm.map];
+  const modeBtn = el("button", "mode mode-sel o1", pm.endless
+    ? `<span class="chip">无尽</span><span class="mt">最佳 ${m.stats.endlessBest || 0} 层</span><b>切换 ▾</b>`
+    : `<span class="chip">主线</span><span class="mt">${md.name}${md.reward > 1 ? ` ×${md.reward}` : ""}</span><b>切换 ▾</b>`);
+  modeBtn.onclick = () => (sfx("click"), showModes());
+  play.appendChild(modeBtn);
   const pb = btn(`<span class="pt">开始冒险</span>`, "big play-btn", () => {
     // launch: the hero leaps off the island, white wipe, then the run starts
     s.classList.add("launch");
@@ -170,7 +175,8 @@ function renderRoster(s) {
     const d = el("div", "rcard" + (m.sel === id ? " sel" : "") + (open ? "" : " locked"));
     d.style.background = `linear-gradient(180deg, ${c.color}, #2a2470)`;
     d.style.animationDelay = 0.55 + i * 0.06 + "s";
-    d.innerHTML = `<img src="assets/portrait_${id}.png" alt=""><img class="el-ico" src="${iconURL("elem_" + c.elem, 2)}" alt="${ELEM[c.elem].name}"><div class="nm o1">${c.short}</div>`;
+    d.innerHTML = `<img src="assets/portrait_${id}.png" alt=""><img class="el-ico" src="${iconURL("elem_" + c.elem, 2)}" alt="${ELEM[c.elem].name}">`;
+    d.title = c.short; // the name is shown big in the middle of the lobby
     if (!open) {
       const u = UNLOCKS[id], pr = unlockProgress(id);
       d.insertAdjacentHTML("beforeend", `<div class="lock o1"><div class="ic">🔒</div><div class="bar"><i style="width:${Math.round(pr * 100)}%"></i></div></div>`);
@@ -225,7 +231,7 @@ function renderHero(s, id, swap) {
   void info.offsetWidth;
   info.classList.add("refresh");
   info.innerHTML = `
-    <div class="li-head"><div class="li-name outline">${c.name}</div><div class="li-title o1">「${c.title}」</div>
+    <div class="li-head"><div class="li-name outline">${c.name}</div><div class="li-title o1"><span>「${c.title}」</span><button class="li-kit" title="天赋装配">${loadoutOf(id).map((t) => `<i class="ks${t ? " on" : ""}">${t ? `<img src="${iconURL(t, 1)}" alt="">` : "+"}</i>`).join("")}<span class="o1">天赋</span></button></div>
       <div class="li-chips o1"><span class="chip el-chip" style="background:${e.color}"><img src="${iconURL("elem_" + c.elem, 1)}" alt="">${e.name}元素</span><span class="chip">${c.role}</span></div></div>
     <div class="li-bars o1">
       ${bar("生命", c.hp, 7, "linear-gradient(90deg,#ff8a9a,#ff3a5a)")}
@@ -243,11 +249,107 @@ function renderHero(s, id, swap) {
       .map(([k, r]) => `<span class="chip" title="${r.desc}">${k === "bubble" ? (c.elem === "bubble" ? "泡+任意" : "泡+" + e.name) : k.split("+").map((x) => ELEM[x].name).join("+")} ${r.name}</span>`)
       .join("")}</div>
     <div class="li-lore o1">${open ? c.lore : "🔒 解锁条件：" + UNLOCKS[id].text + `（${Math.round(unlockProgress(id) * 100)}%）`}</div>`;
+  q(".li-kit", info).onclick = () => (sfx("click"), showLoadout(id, () => renderHero(s, id, false)));
   const pb = q(".play-btn", s);
   if (pb) {
     pb.disabled = !open;
     q(".pt", pb).textContent = open ? "开始冒险" : "未解锁";
   }
+}
+
+// ------------------------------------------------------------------ talent loadout (one page per character)
+export function showLoadout(cid, onClose) {
+  const c = CHARS[cid];
+  const md = el("div", "modal kit-modal");
+  let page = loadoutOf(cid), sel = page.indexOf(null) >= 0 ? page.indexOf(null) : 0;
+  const draw = () => {
+    const m = load();
+    const ssr = GACHA.pool.filter((it) => it.eq);
+    const passive = GACHA.pool.filter((it) => !it.eq && !it.card && m.talents[it.id]);
+    md.innerHTML = `<div class="panel kit-panel">
+      <div class="kit-head"><img class="kit-face" src="assets/portrait_${cid}.png" alt=""><div><h2 class="outline">天赋装配 · ${c.short}</h2><div class="kit-sub o1">每个角色一页 · ${LOADOUT_SLOTS} 个 SSR 槽位 · PVE 与 PVP 都生效</div></div><button class="btn gray small x-btn">完成</button></div>
+      <div class="kit-body">
+        <div class="kit-l">
+          <div class="kit-slots">${page.map((t, i) => {
+            const it = t && GACHA.pool.find((p) => p.id === t);
+            return `<button class="kslot${i === sel ? " sel" : ""}${it ? " full" : ""}" data-i="${i}"><span class="kn o1">槽位 ${i + 1}</span>${it ? `<img src="${iconURL(it.id, 3)}" alt=""><b class="outline">${it.name}</b>${it.max > 1 ? `<small>Lv${m.talents[it.id]}</small>` : ""}<em class="kx">卸下</em>` : `<span class="kplus">+</span><small>点右侧天赋装上</small>`}</button>`;
+          }).join("")}</div>
+          <div class="kit-pass o1"><div class="kp-h">通用天赋（N/R/SR · 自动生效）</div>${passive.length ? passive.map((it) => `<span class="chip"><img src="${iconURL(it.id, 1)}" alt="">${it.name} Lv${m.talents[it.id]}</span>`).join("") : `<span class="muted">还没有——去扭蛋机抽吧</span>`}</div>
+        </div>
+        <div class="kit-list">${ssr.map((it) => {
+          const lv = m.talents[it.id] || 0, at = page.indexOf(it.id);
+          return `<button class="kcard${lv ? "" : " no"}${at >= 0 ? " eq" : ""}" data-id="${it.id}"><img src="${iconURL(it.id, 2)}" alt=""><span class="kt"><b>${it.name}${it.max > 1 && lv ? ` Lv${lv}` : ""}</b><small>${it.desc}</small></span><i class="ktag o1">${at >= 0 ? "槽位" + (at + 1) : lv ? "装配" : "未拥有"}</i></button>`;
+        }).join("")}</div>
+      </div></div>`;
+    q(".x-btn", md).onclick = close;
+    md.querySelectorAll(".kslot").forEach((b) => (b.onclick = (ev) => {
+      const i = +b.dataset.i;
+      if (ev.target.closest(".kx")) {
+        page[i] = null;
+        sel = i;
+        commit();
+        sfx("click");
+      } else {
+        sel = i;
+        sfx("click");
+      }
+      draw();
+    }));
+    md.querySelectorAll(".kcard").forEach((b) => (b.onclick = () => {
+      const id = b.dataset.id, it = GACHA.pool.find((p) => p.id === id);
+      if (!load().talents[id]) return toast(`${it.name}：还没有获得，去扭蛋机抽取（SSR）`);
+      const at = page.indexOf(id);
+      if (at >= 0) {
+        page[at] = null; // tap again to take it off
+        sel = at;
+      } else {
+        page[sel] = id;
+        const free = page.indexOf(null);
+        if (free >= 0) sel = free;
+      }
+      commit();
+      sfx("card");
+      draw();
+    }));
+  };
+  const commit = () => setLoadout(cid, page);
+  const close = () => {
+    md.remove();
+    onClose && onClose();
+  };
+  md.onclick = (e) => e.target === md && close();
+  uiRoot().appendChild(md);
+  draw();
+}
+
+// ------------------------------------------------------------------ mode / map select
+function showModes() {
+  const m = load(), pm = playMode();
+  const md = el("div", "modal mode-modal");
+  const mapCard = (id) => {
+    const d = MAPS[id], ok = mapUnlocked(id), clears = (m.maps || {})[id] || 0;
+    return `<button class="mcard th-${id}${ok ? "" : " lock"}${!pm.endless && pm.map === id ? " on" : ""}" data-map="${id}">
+      <span class="mc-art"></span><b class="mc-t">${d.name}</b><small>${d.desc}</small>
+      <span class="mc-foot">${ok ? `血量×${d.hp} · 奖励×${d.reward}${clears ? ` · 通关 ${clears} 次` : " · 首通+200"}` : `🔒 先通关【${MAPS[d.need].name}】`}</span></button>`;
+  };
+  const eok = endlessUnlocked();
+  md.innerHTML = `<div class="panel mode-panel"><div class="kit-head"><h2 class="outline">选择模式</h2><button class="btn gray small x-btn">关闭</button></div>
+    <div class="mode-sec o1">主线闯关 · 7 个房间（含补给站），击败首领【幻觉之眼】</div>
+    <div class="mode-maps">${MAP_ORDER.map(mapCard).join("")}</div>
+    <div class="mode-sec o1">无尽回廊</div>
+    <button class="mcard wide th-endless${eok ? "" : " lock"}${pm.endless ? " on" : ""}" data-endless="1"><span class="mc-art"></span><b class="mc-t">无尽回廊</b><small>一层接一层永不结束：每 5 层补给站、每 10 层首领，并轮换三张地图的地形；敌人越来越多越来越强。倒下时按到达层数结算。</small><span class="mc-foot">${eok ? `最佳纪录 ${m.stats.endlessBest || 0} 层` : "🔒 完成任意一局后解锁"}</span></button>
+    <div class="mode-sec o1">以上均为单人模式，可离线游玩</div></div>`;
+  uiRoot().appendChild(md);
+  const close = () => (md.remove(), showLobby());
+  q(".x-btn", md).onclick = close;
+  md.onclick = (e) => e.target === md && close();
+  md.querySelectorAll(".mcard").forEach((b) => (b.onclick = () => {
+    if (b.classList.contains("lock")) return toast(b.dataset.endless ? "完成任意一局后解锁无尽回廊" : `先通关【${MAPS[MAPS[b.dataset.map].need].name}】解锁`);
+    m.playMode = b.dataset.endless ? { map: pm.map, endless: true } : { map: b.dataset.map, endless: false };
+    save();
+    sfx("card");
+    close();
+  }));
 }
 
 function showSettings() {

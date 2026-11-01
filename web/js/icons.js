@@ -501,6 +501,25 @@ const DRAW = {
   cardgold(p) {
     card(p, GOLD);
   },
+  overclock(p) {
+    // a CPU chip with a lightning bolt
+    for (let i = 0; i < 4; i++) p.rect(5 + i * 3, 1, 1, 3, STEEL.base), p.rect(5 + i * 3, 16, 1, 3, STEEL.base), p.rect(1, 5 + i * 3, 3, 1, STEEL.base), p.rect(16, 5 + i * 3, 3, 1, STEEL.base);
+    p.rect(4, 4, 12, 12, "#3a3a5a");
+    p.rect(5, 5, 10, 10, "#5a5a8a");
+    bolt(p, GOLD, 0.62, 0, 0);
+  },
+  firewall(p) {
+    shield(p, VIOLET);
+    p.poly([[10, 6], [13, 10], [12, 13], [10, 14], [8, 13], [7, 10]], "#ff8a3a");
+    p.poly([[10, 9], [11.6, 11.4], [10, 13], [8.4, 11.4]], "#ffe36a");
+  },
+  ensemble(p) {
+    for (const [dy, c] of [[-6, BLUE], [0, GOLD], [6, GREEN]]) {
+      p.line(2, 10, 15, 10 + dy, c.base, 2);
+      p.poly([[13, 7 + dy], [19, 10 + dy], [13, 13 + dy]], c.light);
+    }
+    p.disc(3, 10, 2.4, "#ffffff");
+  },
   pool(p) {
     // fanned stack of cards (gacha pool)
     p.poly([[2, 6], [9, 3], [12, 15], [5, 18]], "#8a6ad8");
@@ -521,7 +540,7 @@ const MAP = {
   atk_up: "sword", rate_up: "rate", hp_up: "hp", shield_up: "shield", speed_up: "boot", range_up: "target", big_bullet: "bigorb", coin_up: "coin",
   multishot: "multishot", pierce: "pierce", bounce: "bounce", crit: "crit", cd_down: "hourglass", ult_charge: "battery", vamp: "vamp", dodge_crit: "wing", low_rage: "flame",
   kill_boom: "bomb", reaction_amp: "atom", element_spread: "spread", shield_nova: "nova", echo: "echo", second_ult: "infinity",
-  t_dmg: "sword", t_hp: "heart", t_shield: "shield", t_speed: "boot", t_coin: "coin", t_start_coin: "bag", t_crit: "crit", t_ult: "battery", t_revive: "revive", t_startcard: "scroll",
+  t_dmg: "sword", t_hp: "heart", t_shield: "shield", t_speed: "boot", t_coin: "coin", t_start_coin: "bag", t_crit: "crit", t_ult: "battery", t_revive: "revive", t_startcard: "scroll", t_overclock: "overclock", t_firewall: "firewall", t_ensemble: "ensemble",
   u_kill_boom: "bomb", u_reaction_amp: "atom", u_element_spread: "spread", u_shield_nova: "nova", u_echo: "echo", u_second_ult: "infinity", u_links: "links",
 };
 

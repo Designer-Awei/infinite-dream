@@ -69,6 +69,30 @@ export class Renderer {
       g.fillRect(X + 4 + Math.round(Math.sin(ph) * 3), Y + 10, 8, 1);
       g.fillRect(X + 16 + Math.round(Math.cos(ph * 1.1) * 3), Y + 20, 9, 1);
     }
+    // live hazard floor: lava glows and bubbles, ice glints
+    if (m.hazard === "lava" || m.hazard === "ice") {
+      for (let y = ty0; y <= ty1; y++) for (let x = tx0; x <= tx1; x++) if (m.mud[y * m.W + x]) {
+        const X = x * T, Y = y * T, ph = this.t * (m.hazard === "lava" ? 2.2 : 1.1) + x * 1.7 + y * 2.3;
+        if (m.hazard === "lava") {
+          g.globalAlpha = 0.18 + 0.14 * Math.sin(ph);
+          g.fillStyle = "#ffd04a";
+          g.fillRect(X + 2, Y + 2, T - 4, T - 4);
+          g.globalAlpha = 1;
+          const b = (ph * 0.8) % 3;
+          if (b < 1) {
+            g.fillStyle = "#fff0a0";
+            g.fillRect(X + 8 + ((x * 7) % 14), Y + 12 + ((y * 5) % 10) - Math.round(b * 3), 2, 2);
+          }
+        } else if ((ph % 6) < 0.6) {
+          g.fillStyle = "#ffffff";
+          const k = Math.round((ph % 6) * 20);
+          g.fillRect(X + 4 + k, Y + 6 + (k >> 1), 3, 1);
+          g.fillRect(X + 5 + k, Y + 5 + (k >> 1), 1, 3);
+        }
+      }
+    }
+    // 算力据点 capture zone
+    if (game.pvp && game.pvpRule && game.pvpRule.zone) this.drawKoth(g, game, me);
     // spikes
     for (const s of m.spikes) if (s.x >= tx0 && s.x <= tx1 && s.y >= ty0 && s.y <= ty1) drawSpikes(g, s.x * T, s.y * T, game.spikeUp || 0);
     // zones on the floor (before the back fx layer)
@@ -173,12 +197,34 @@ export class Renderer {
     }
   }
 
+  drawKoth(g, game, me) {
+    const c = game.map.center, R0 = game.pvpRule.zone;
+    const inside = game.players.filter((p) => !p.downed && !p.dead && Math.hypot(p.x - c.x, p.y - c.y) < R0);
+    const own = inside.length === 1 ? inside[0].id : inside.length ? -1 : 0;
+    const col = own > 0 ? (own === (me && me.id) ? "#5dff7a" : "#ff4a5a") : own < 0 ? "#ffd84a" : "#c8b8ff";
+    g.save();
+    g.globalAlpha = 0.16 + (own > 0 ? 0.1 * Math.sin(this.t * 8) : 0);
+    g.fillStyle = col;
+    g.beginPath();
+    g.ellipse(c.x, c.y, R0, R0 * 0.62, 0, 0, TAU);
+    g.fill();
+    g.globalAlpha = 0.9;
+    g.strokeStyle = col;
+    g.lineWidth = 2;
+    g.setLineDash([8, 6]);
+    g.lineDashOffset = -this.t * 20;
+    g.stroke();
+    g.setLineDash([]);
+    g.restore();
+    this.text(g, own > 0 ? "占领中" : own < 0 ? "争夺中" : "算力据点", c.x, c.y - R0 * 0.62 - 6, col, 10);
+  }
   /** arrows at the screen edge for off-screen goals: portal, chest, last enemies, teammates */
   drawEdgeArrows(g, game, me, cx, cy) {
     if (!me) return;
     const goals = [];
     if (game.portal && game.phase !== "fight" && !game.pvp) goals.push({ x: game.portal.x, y: game.portal.y, c: "#b48cff", s: "门" });
     if (game.chest && !game.chest.opened) goals.push({ x: game.chest.x, y: game.chest.y, c: "#ffd84a", s: "箱" });
+    if (game.pvp && game.pvpRule && game.pvpRule.zone) goals.push({ x: game.map.center.x, y: game.map.center.y, c: "#7dffb0", s: "点" });
     const live = game.enemies.filter((e) => e.spawnT <= 0);
     if (live.length && live.length <= 3) for (const e of live) goals.push({ x: e.x, y: e.y - 10, c: e.boss ? "#ff3a6a" : "#ff6a5a", s: e.boss ? "王" : "" });
     for (const p of game.players) if (p !== me && !p.dead && !p.pvpEnemy) goals.push({ x: p.x, y: p.y - 20, c: p.downed ? "#ff4a5a" : "#4ab8ff", s: p.downed ? "救" : "友" });

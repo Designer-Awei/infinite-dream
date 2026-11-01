@@ -1,5 +1,5 @@
 // HTML overlay: lobby, roster, gacha, net rooms, HUD, card picks, pause, results.
-import { CHARS, CHAR_ORDER, ELEM, UNLOCKS, CARDS, fusionCards, RARITY, GACHA, RUN, STATUS, ITEMS, REACTIONS } from "./data.js";
+import { CHARS, CHAR_ORDER, ELEM, UNLOCKS, CARDS, fusionCards, RARITY, GACHA, RUN, STATUS, ITEMS, REACTIONS, MAPS, MAP_ORDER, PVP_MODES } from "./data.js";
 import { load, save, unlockProgress, pull, checkUnlocks } from "./save.js";
 import { A } from "./assets.js";
 import { sfx, setSound, setMusic, playMusic } from "./audio.js";
@@ -64,7 +64,8 @@ export function showHelp() {
   <b style="color:#ffe36a">循环</b>　每局 7 个房间：战斗 → 战斗 → 补给站 → 精英战 → 战斗 → 补给站 → 首领。清场后开箱三选一技能卡，构筑你的流派。护盾受击后几秒自动回复，生命不会。<br><br>
   <b style="color:#ffe36a">技能混搭 · 元素反应</b>　每位角色带一种元素。拿到【融合】【联动】卡后可以借用其他AI娘的弹幕和技能，不同元素先后命中同一敌人触发反应：<br>${reacts}<br><br>
   <b style="color:#ffe36a">地图道具</b>　${Object.values(ITEMS).map((i) => `<span class="chip" style="background:${i.color};color:#1a1020">${i.name}</span>`).join(" ")}　草丛可以隐身；毒雾、泥沼、尖刺、炸药桶会伤人（也会伤敌）。<br><br>
-  <b style="color:#ffe36a">养成</b>　通关获得💎晶石，扭蛋机抽取永久天赋与稀有技能卡；达成条件解锁新角色。联机可 2~4 人合作闯关，或进入竞技场 PVP。
+  <b style="color:#ffe36a">模式与地图</b>　点开始按钮上方的模式栏切换：主线三张地图（${MAP_ORDER.map((k) => MAPS[k].name).join(" → ")}，通关上一张解锁下一张，越往后敌人越硬、奖励越高；泥沼减速、冰面打滑、熔岩灼烧）；无尽回廊一层层往下打，看你能走多远。全部支持离线单机。<br><br>
+  <b style="color:#ffe36a">养成</b>　通关获得💎晶石，扭蛋机抽取永久天赋与稀有技能卡。N/R/SR 天赋自动生效；SSR 天赋要在角色介绍卡右上角的「天赋」页装配，每个角色一页、${2} 个槽位，PVE 和 PVP 都生效。达成条件解锁新角色。
   </div><div class="row" style="margin-top:10px"></div></div>`;
   $(".row", md).appendChild(btn("知道了", "", () => md.remove()));
   root.appendChild(md);
@@ -83,7 +84,7 @@ export function showNet(pre = {}) {
      <div style="width:3px;height:70px;background:#1a1020;border-radius:2px"></div>
      <div style="text-align:center"><div class="o1" style="margin-bottom:6px">加入房间</div><div class="row"><input class="code-in" maxlength="4" placeholder="房间码"></div><div class="row j-btns" style="margin-top:6px"></div></div>
    </div>
-   <div class="muted" style="margin-top:10px">把 4 位房间码发给朋友即可一起玩（2~4人，点对点直连，无需注册）。<br>合作模式：敌人血量与数量随人数提升，倒地队友靠近 2 秒可救起。竞技场：自由混战，先拿 5 次击倒获胜。</div>
+   <div class="muted" style="margin-top:10px">把 4 位房间码发给朋友即可一起玩（2~4人，点对点直连，无需注册）。<br>合作模式：敌人血量与数量随人数提升，倒地队友靠近 2 秒可救起。竞技场：自由混战，先拿 5 次击倒获胜。各自装配的天赋都会生效。</div>
    <div class="row back" style="margin-top:8px"></div></div>`;
   root.appendChild(s);
   const nm = $(".nm", s);
@@ -260,8 +261,8 @@ export function updateHud(game, me) {
   });
   me.nearShop = null;
   if (game.pvp) {
-    const sc = game.players.map((p) => `${p.name}:${game.pvpScore[p.id] || 0}`).join(" ");
-    set("pvp", sc, (v) => (hud.querySelector(".pvpscore").textContent = "⚔ " + v));
+    const sc = game.players.map((p) => `${p.name}:${game.pvpScore[p.id] || 0}`).join(" ") + ` / ${game.pvpRule.goal}`;
+    set("pvp", sc, (v) => (hud.querySelector(".pvpscore").textContent = (game.pvpRule.zone ? "⛳ " : "⚔ ") + v));
   }
 }
 
@@ -363,6 +364,7 @@ export function showTutorial(go) {
   root.appendChild(md);
 }
 export function showResult(r, onAgain, onLobby) {
+  closeCards(); // a pending card choice must not cover the results
   // landscape two-column panel: everything (incl. the buttons) fits a 360px-tall phone screen without scrolling
   const md = el("div", "modal result");
   const hero = r.cid ? `<div class="res-hero${r.win ? "" : " lost"}"><i class="res-glow"></i><img src="assets/hero_${r.cid}.png" alt=""></div>` : "";

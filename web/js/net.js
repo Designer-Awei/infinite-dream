@@ -1,7 +1,7 @@
 // Online play. The host runs the simulation; clients send input and render snapshots.
 // Transports: PeerJS WebRTC (static hosting, no account), BroadcastChannel (?local, two tabs), claude room (artifact).
-import { ENEMIES, RUN, CHARS, ELEM } from "./data.js";
-import { load } from "./save.js";
+import { ENEMIES, CHARS, ELEM, GACHA, LOADOUT_SLOTS } from "./data.js";
+import { load, makeKit } from "./save.js";
 import * as UI from "./ui.js";
 import { sfx } from "./audio.js";
 import { tileAt } from "./map.js";
@@ -179,12 +179,13 @@ export class Net {
     this.started = false;
   }
   // ---------------- host
-  async host(pvp) {
+  async host(pvp, opt = {}) {
     this.isHost = true;
     this.pvp = pvp;
+    this.opt = pvp ? { pvpMode: "brawl", map: "grass", ...opt } : { map: "grass", endless: false, ...opt };
     const m = load();
     this.code = Array.from({ length: 4 }, () => ALPH[(Math.random() * ALPH.length) | 0]).join("");
-    this.members = [{ peer: null, id: 1, name: m.name, cid: m.sel, host: true }];
+    this.members = [{ peer: null, id: 1, name: m.name, cid: m.sel, host: true, kit: makeKit(m.sel) }];
     this.status = "正在创建房间…";
     this.showRoom();
     this.t = makeTransport(this.code, true);
@@ -202,10 +203,10 @@ export class Net {
   showRoom() {
     if (this.started) return;
     const me = this.isHost ? this.members[0] : this.members.find((x) => x.id === this.myId) || { cid: load().sel };
-    UI.showRoom({ code: this.code, pvp: this.pvp, players: this.members, isHost: this.isHost, myCid: me.cid, status: this.status });
+    UI.showRoom({ code: this.code, pvp: this.pvp, opt: this.opt || {}, players: this.members, isHost: this.isHost, myCid: me.cid, status: this.status });
   }
   lobbyMsg() {
-    return { t: "lobby", pvp: this.pvp, code: this.code, players: this.members.map(({ id, name, cid, host }) => ({ id, name, cid, host })) };
+    return { t: "lobby", pvp: this.pvp, opt: this.opt, code: this.code, players: this.members.map(({ id, name, cid, host }) => ({ id, name, cid, host })) };
   }
   onHostMsg(from, d) {
     if (!d || !d.t) return;
@@ -213,7 +214,7 @@ export class Net {
       if (this.started || this.members.length >= 4) return this.t.send(from, { t: "full", started: this.started });
       let id = 2;
       while (this.members.some((x) => x.id === id)) id++;
-      this.members.push({ peer: from, id, name: String(d.name || "玩家").slice(0, 8), cid: CHARS[d.cid] ? d.cid : "deepseek" });
+      this.members.push({ peer: from, id, name: String(d.name || "玩家").slice(0, 8), cid: CHARS[d.cid] ? d.cid : "deepseek", kit: cleanKit(d.kit) });
       this.t.send(from, { t: "welcome", id });
       this.t.send(null, this.lobbyMsg());
       sfx("pickup");
@@ -224,6 +225,7 @@ export class Net {
     if (!mem) return;
     if (d.t === "cid" && !this.started && CHARS[d.cid]) {
       mem.cid = d.cid;
+      if (d.kit) mem.kit = cleanKit(d.kit);
       this.t.send(null, this.lobbyMsg());
       this.showRoom();
     }
@@ -266,13 +268,21 @@ export class Net {
       }
     }
   }
+  /** host: change the room's mode options (map / rule) */
+  setOpt(o) {
+    if (!this.isHost || this.started) return;
+    this.opt = { ...this.opt, ...o };
+    this.t && this.t.send(null, this.lobbyMsg());
+    this.showRoom();
+  }
   setChar(cid) {
     if (this.isHost) {
       this.members[0].cid = cid;
+      this.members[0].kit = makeKit(cid);
       this.t && this.t.send(null, this.lobbyMsg());
       this.showRoom();
     } else {
-      this.t && this.t.send("host", { t: "cid", cid });
+      this.t && this.t.send("host", { t: "cid", cid, kit: makeKit(cid) });
       const me = this.members.find((x) => x.id === this.myId);
       if (me) me.cid = cid;
       this.showRoom();
@@ -283,9 +293,9 @@ export class Net {
     if (this.pvp && this.members.length < 2) return UI.toast("竞技场需要至少 2 名玩家");
     this.started = true;
     const seed = (Math.random() * 1e9) | 0;
-    const players = this.members.map(({ id, name, cid }) => ({ id, name, cid }));
-    this.t.send(null, { t: "start", seed, pvp: this.pvp, players });
-    this.app.beginLoading({ mode: "host", pvp: this.pvp, seed, players, myId: 1 });
+    const players = this.members.map(({ id, name, cid, kit }) => ({ id, name, cid, kit }));
+    this.t.send(null, { t: "start", seed, pvp: this.pvp, opt: this.opt, players });
+    this.app.beginLoading({ mode: "host", pvp: this.pvp, seed, players, myId: 1, opt: this.opt });
   }
   hostTick(dt) {
     const g = this.app.game;
@@ -311,7 +321,7 @@ export class Net {
     };
     this.t.onerror = (e) => UI.showMsg("无法加入", e, "返回", () => this.app.leaveNet());
     const m = load();
-    this.t.onopen = () => this.t.send("host", { t: "hello", name: m.name, cid: m.sel });
+    this.t.onopen = () => this.t.send("host", { t: "hello", name: m.name, cid: m.sel, kit: makeKit(m.sel) });
     try {
       await this.t.open();
       this.joinTimer = setTimeout(() => {
@@ -337,12 +347,13 @@ export class Net {
       case "lobby":
         this.members = d.players;
         this.pvp = d.pvp;
+        this.opt = d.opt || {};
         this.status = "已加入房间";
         if (!this.started) this.showRoom();
         break;
       case "start":
         this.started = true;
-        this.app.beginLoading({ mode: "client", pvp: d.pvp, seed: d.seed, players: d.players, myId: this.myId });
+        this.app.beginLoading({ mode: "client", pvp: d.pvp, seed: d.seed, players: d.players, myId: this.myId, opt: d.opt || {} });
         break;
       case "s":
         applySnapshot(this.app, d);
@@ -434,13 +445,13 @@ function applySnapshot(app, s) {
   for (const ev of s.ev) if (ev.t === "room") {
     g.seed = ev.seed;
     g.roomIdx = ev.idx;
-    g.loadRoom(ev.idx, g.pvp ? { kind: "combat", waves: [], items: 0 } : RUN[ev.idx]);
+    g.loadRoom(ev.idx, g.pvp ? { kind: "combat", waves: [], items: 0 } : g.roomDef(ev.idx));
     g.onUi("room");
   }
   if (!s.ev.some((e) => e.t === "room") && s.ri >= 0 && (g.roomIdx !== s.ri || !g.map)) {
     // joined late / missed the room event: build the room from the shared seed
     g.roomIdx = s.ri;
-    g.loadRoom(s.ri, g.pvp ? { kind: "combat", waves: [], items: 0 } : RUN[s.ri]);
+    g.loadRoom(s.ri, g.pvp ? { kind: "combat", waves: [], items: 0 } : g.roomDef(s.ri));
     g.onUi("room");
   }
   if (!g.map) return;
@@ -599,4 +610,17 @@ function clientUpdate(g, me, dt) {
   g.updateBullets(dt);
   for (const z of g.zones) (z.t += dt), (z.life -= dt);
   for (const q of g.pickups) q.t += dt;
+}
+
+/** a kit received from another player: only known talents, sane levels */
+function cleanKit(k) {
+  const out = { tal: {}, eq: {}, cards: [] };
+  if (!k || typeof k !== "object") return out;
+  for (const it of GACHA.pool) {
+    const lv = Math.max(0, Math.min(it.max, Math.floor(+((it.eq ? k.eq : k.tal) || {})[it.id] || 0)));
+    if (lv) (it.eq ? out.eq : out.tal)[it.id] = lv;
+  }
+  if (Object.keys(out.eq).length > LOADOUT_SLOTS) out.eq = {};
+  out.cards = Array.isArray(k.cards) ? k.cards.filter((c) => typeof c === "string").slice(0, 40) : [];
+  return out;
 }

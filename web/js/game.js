@@ -1,16 +1,20 @@
 // The simulation: players, enemies, bullets, zones, pickups, rooms. The host (or solo) runs it; clients mirror it.
-import { T, BAL, CHARS, ELEM, ELEM_KEYS, REACTIONS, reactionKey, ENEMIES, RUN, ITEMS, ITEM_WEIGHTS, CARDS, fusionCards, RARITY, REWARD } from "./data.js";
+import { T, BAL, CHARS, CHAR_ORDER, ELEM, ELEM_KEYS, REACTIONS, reactionKey, ENEMIES, RUN, ITEMS, ITEM_WEIGHTS, CARDS, fusionCards, RARITY, REWARD, MAPS, endlessRoom, PVP_MODES } from "./data.js";
 import { clamp, dist, dist2, angTo, R, rng, nid, TAU } from "./util.js";
 import { generateRoom, renderGround, tileAt, mudAt, moveCircle, los, flowField, flowDir, WALL, WATER, BUSH, CRATE, BARREL, BLOCKS_SHOT } from "./map.js";
 import { sfx } from "./audio.js";
-import { load as loadSave, talent } from "./save.js";
 import { castSkill, castUlt, fireAttack, onBulletHit } from "./skills.js";
 import { updateEnemy, spawnBossAdds } from "./enemies.js";
 
 export class Game {
-  constructor({ mode = "solo", pvp = false, seed = (Math.random() * 1e9) | 0, fx }) {
+  constructor({ mode = "solo", pvp = false, seed = (Math.random() * 1e9) | 0, fx, opt = {} }) {
     this.mode = mode; // solo | host | client
     this.pvp = pvp;
+    // mode options: map (chapter) for PVE, endless corridor, PVP rule set
+    this.opt = { map: MAPS[opt.map] ? opt.map : "grass", endless: !!opt.endless, pvpMode: PVP_MODES[opt.pvpMode] ? opt.pvpMode : "brawl" };
+    this.endless = !pvp && this.opt.endless;
+    this.mapDef = MAPS[this.opt.map];
+    this.pvpRule = PVP_MODES[this.opt.pvpMode];
     this.seed = seed;
     this.fx = fx;
     this.players = [];
@@ -38,8 +42,11 @@ export class Game {
   }
 
   // ------------------------------------------------------------ players
-  addPlayer({ id, cid, name, local }) {
-    const c = CHARS[cid], m = loadSave();
+  addPlayer({ id, cid, name, local, kit }) {
+    const c = CHARS[cid];
+    // every player is built from their own meta progression (sent by their client), not the host's save
+    kit = kit && kit.tal ? kit : { tal: {}, eq: {}, cards: [] };
+    const talent = (k) => +kit.tal[k] || 0;
     const p = {
       id, cid, name, local, kind: "player",
       x: 0, y: 0, r: 12, vx: 0, vy: 0, face: 0, moving: false, animT: Math.random() * 3,
@@ -50,7 +57,7 @@ export class Game {
       cards: {}, fusions: [], links: [],
       buff: {}, // name -> seconds left
       coins: 15 * talent("t_start_coin"), cubes: 0,
-      downed: false, reviveT: 0, dead: false, revives: talent("t_revive"),
+      downed: false, reviveT: 0, dead: false, revives: kit.eq.t_revive ? 1 : 0, kit, fwCd: 0,
       target: null, input: { mx: 0, my: 0, atk: false, aim: null, skill: false, ult: false, dash: false, castAim: {} },
       dodgeCrit: 0, sunCd: 0, barrier: 0, breathT: 0, orbs: 0, kills: 0, pvpAcc: 0, respawnT: 0,
     };
@@ -69,17 +76,62 @@ export class Game {
     this.roomIdx = -1;
     this.nextRoom();
   }
+  /** host: apply every player's equipped SSR talents at the start of a run / match */
+  applyLoadouts() {
+    for (const p of this.players) {
+      const eq = p.kit.eq;
+      if (eq.t_overclock) {
+        p.st.ultG *= 1.3;
+        p.ult = Math.max(p.ult, 0.5);
+      }
+      if (eq.u_echo) applyCard(this, p, "echo");
+      if (eq.u_second_ult) applyCard(this, p, "second_ult");
+      if (eq.u_links) applyCard(this, p, "fs_" + R.pick(CHAR_ORDER.filter((id) => id !== p.cid)));
+      if (eq.t_startcard) {
+        const n = Math.min(2, +eq.t_startcard || 1);
+        if (this.pvp) {
+          // PVP: no time to pick, so they're dealt at random from the basic combat cards
+          const pool = CARDS.filter((c) => !c.locked && c.id !== "coin_up");
+          for (let i = 0; i < n; i++) applyCard(this, p, R.pick(pool).id);
+        } else p.startCards = n;
+      }
+    }
+    if (!this.pvp) for (const p of this.players) if (p.startCards > 0) (p.startCards--, this.offerCards(p, 3, "SR"));
+    this.onUi("hud");
+  }
   nextRoom() {
     this.roomIdx++;
-    const def = this.pvp ? { kind: "combat", waves: [], items: 6 } : RUN[this.roomIdx];
+    const def = this.pvp ? { kind: "combat", waves: [], items: 6 } : this.roomDef(this.roomIdx);
     if (!def) return this.victory();
     this.loadRoom(this.roomIdx, def);
     if (this.host) this.emit({ t: "room", idx: this.roomIdx, seed: this.seed });
   }
+  roomDef(i) {
+    return this.endless ? endlessRoom(i, this.seed) : this.mapRoom(RUN[i]);
+  }
+  /** the map (chapter) swaps some enemies for its own residents */
+  mapRoom(def) {
+    if (!def || !def.waves || !this.mapDef.swap) return def;
+    const rr = rng(this.seed + 4242 + (def.waves.length || 0));
+    const sw = this.mapDef.swap;
+    return { ...def, waves: def.waves.map((w) => w.map((k) => {
+      const base = k.replace("*", ""), star = k.endsWith("*") ? "*" : "";
+      return sw[base] && rr() < sw[base][1] ? sw[base][0] + star : k;
+    })) };
+  }
+  /** which map's look / hazard a room uses (endless walks through all of them, 10 floors each) */
+  roomMap(idx) {
+    if (this.pvp) return MAPS[this.opt.map] || MAPS.grass;
+    if (!this.endless) return this.mapDef;
+    const ids = Object.keys(MAPS);
+    return MAPS[ids[Math.floor(idx / 10) % ids.length]];
+  }
   loadRoom(idx, def) {
     this.room = def;
     const kind = def.kind;
-    this.map = generateRoom(this.pvp ? "combat" : kind, this.seed + idx * 1013, kind === "boss" ? 1 : 0);
+    const md = this.roomMap(idx);
+    this.hazard = kind === "boss" || kind === "shop" ? "mud" : md.hazard;
+    this.map = generateRoom(this.pvp ? "combat" : kind, this.seed + idx * 1013, kind === "boss" ? 1 : md.theme, { hazard: this.hazard, koth: this.pvp && this.opt.pvpMode === "koth" });
     this.ground = renderGround(this.map);
     this.enemies.length = 0;
     this.bullets.length = 0;
@@ -127,7 +179,8 @@ export class Game {
     if (kind === "shop") this.setupShop();
     this.phase = kind === "shop" ? "shop" : "fight";
     if (this.pvp) this.phase = "pvp";
-    this.banner = { text: this.pvp ? "竞技场 · 自由混战" : kind === "boss" ? "首领 · 幻觉之眼" : kind === "shop" ? "补给站" : `第 ${idx + 1} 层 · 数据草原`, sub: this.pvp ? "先拿到 5 次击倒者获胜" : kind === "shop" ? "扭蛋机 / 补给 · 准备好后进入传送门" : kind === "boss" ? "击败它！" : "清除所有敌人", t: 2.4 };
+    const floor = this.endless ? `无尽回廊 · 第 ${idx + 1} 层` : `第 ${idx + 1} 层 · ${md.name}`;
+    this.banner = { text: this.pvp ? `竞技场 · ${this.pvpRule.name}` : kind === "boss" ? (this.endless ? `第 ${idx + 1} 层 · 首领` : "首领 · 幻觉之眼") : kind === "shop" ? "补给站" : floor, sub: this.pvp ? this.pvpRule.goalText : kind === "shop" ? "扭蛋机 / 补给 · 准备好后进入传送门" : kind === "boss" ? "击败它！" : md.hazardText || "清除所有敌人", t: 2.4 };
     if (kind === "boss") sfx("boss");
     this.flowT = 0;
     this.onUi("room");
@@ -171,9 +224,11 @@ export class Game {
   }
   spawnEnemy(type, x, y, elite = false, delay = 0.8) {
     const d = ENEMIES[type], np = this.players.length;
-    const hpMul = 1.5 * (1 + BAL.roomHp * Math.max(0, this.roomIdx)) * (1 + BAL.coop.hp * (np - 1)) * (elite ? 3 : 1);
+    const mapK = this.endless ? 1 : this.mapDef.hp || 1;
+    const hpMul = 1.5 * (1 + BAL.roomHp * Math.max(0, this.roomIdx)) * (1 + BAL.coop.hp * (np - 1)) * (elite ? 3 : 1) * mapK;
+    const bossK = (1 + BAL.coop.hp * (np - 1)) * mapK * (this.endless ? 0.55 + 0.35 * Math.floor(this.roomIdx / 10) : 1);
     const e = {
-      id: nid(), kind: "enemy", type, def: d, x, y, r: d.r * (elite ? 1.2 : 1) * (d.scale || 1), hp: d.hp * (d.boss ? 1 + BAL.coop.hp * (np - 1) : hpMul), elite, boss: !!d.boss,
+      id: nid(), kind: "enemy", type, def: d, x, y, r: d.r * (elite ? 1.2 : 1) * (d.scale || 1), hp: d.hp * (d.boss ? bossK : hpMul), elite, boss: !!d.boss,
       vx: 0, vy: 0, kbx: 0, kby: 0, t: 0, cd: 1 + Math.random() * 1.5, st: "idle", anim: Math.random() * 5, face: 1, flash: 0,
       marks: {}, tide: 0, tideBy: null, sun: 0, bubble: 0, inkMark: 0, inkCd: 0, burnT: 0, burnDps: 0, slowT: 0, slowK: 0, stunT: 0, freezeT: 0, vulnT: 0, burnTick: 0,
       spawnT: delay, wob: Math.random() * 6, lastBy: null,
@@ -527,6 +582,7 @@ export class Game {
       left -= a;
       if (p.shield <= 0) {
         this.sound("shieldbreak");
+        if (p.kit.eq.t_firewall && p.fwCd <= this.time) this.firewall(p);
         if (p.cards.shield_nova) {
           this.vfx("ice/frost-nova", p.x, p.y, { palette: ["#06101e", "#10284a", "#20508a", "#4a90d0", "#8ac8ff", "#c0e4ff", "#eef8ff", "#ffffff"], speed2: 2, opts: { reach: 70 } });
           for (const o of this.enemiesNear(p.x, p.y, 80)) (this.hit(o, 18, { p, noReact: true })), this.knock(o, p.x, p.y, 300);
@@ -555,12 +611,22 @@ export class Game {
       o.invuln = 0;
       this.hurt(o, n, src);
       o.invuln = Math.min(o.invuln, 0.15) + inv * 0;
-      if (o.downed && src.p) {
-        this.pvpScore[src.p.id] = (this.pvpScore[src.p.id] || 0) + 1;
+      if ((o.downed || o.koFlag) && src.p) {
+        o.koFlag = false;
+        if (this.pvpRule.koScore) this.pvpScore[src.p.id] = (this.pvpScore[src.p.id] || 0) + 1;
         this.text(src.p.x, src.p.y - 80, "击倒！", "#ffe14a", 1.4);
       }
     }
     return dmg;
+  }
+  /** SSR 零信任防火墙: shield broken -> shockwave */
+  firewall(p) {
+    p.fwCd = this.time + 8;
+    this.vfx("ice/frost-nova", p.x, p.y, { palette: ["#0a0618", "#24104a", "#4a2a8a", "#7a5ad0", "#b090ff", "#dccaff", "#f4eeff", "#ffffff"], speed2: 2.2, opts: { reach: 80 } });
+    this.text(p.x, p.y - 70, "防火墙！", "#c8b0ff", 1.2);
+    this.shake = Math.max(this.shake, 6);
+    for (const o of this.enemiesNear(p.x, p.y, 90)) (this.hit(o, 20, { p, noReact: true }), this.knock(o, p.x, p.y, 320));
+    if (this.pvp) for (const o of this.players) if (o !== p && !o.downed && dist(o.x, o.y, p.x, p.y) < 90) this.hitPlayerPvp(o, 9, { p, x: p.x, y: p.y });
   }
   barrierBurst(p) {
     const tgt = p.target || this.nearestEnemy(p.x, p.y, 260);
@@ -571,8 +637,9 @@ export class Game {
     }
   }
   down(p) {
-    if (p.revives > 0 && !this.pvp) {
+    if (p.revives > 0) {
       p.revives--;
+      if (this.pvp) p.koFlag = true; // the knock-out still counts for the opponent
       p.hp = p.maxHp;
       p.shield = p.maxShield;
       p.invuln = 2;
@@ -749,6 +816,9 @@ export class Game {
     }
     for (const p of this.players) this.updatePlayer(p, dt);
     for (const e of this.enemies) if (!e.dead) updateEnemy(this, e, dt);
+    // lava burns walking enemies too
+    if (this.hazard === "lava" && this.host)
+      for (const e of this.enemies) if (!e.dead && !e.def.fly && e.spawnT <= 0 && mudAt(this.map, e.x, e.y) && (e.lavaCd || 0) < this.time) (e.lavaCd = this.time + 1), this.hit(e, 8, { noReact: true });
     // separate enemies a little
     for (let i = 0; i < this.enemies.length; i++) {
       const a = this.enemies[i];
@@ -819,7 +889,8 @@ export class Game {
       } else p.reviveT = Math.max(0, p.reviveT - dt);
     }
     if (this.pvp) {
-      for (const p of this.players) if ((this.pvpScore[p.id] || 0) >= 5 && this.phase !== "win") {
+      if (this.pvpRule.zone) this.updateKoth(dt);
+      for (const p of this.players) if ((this.pvpScore[p.id] || 0) >= this.pvpRule.goal && this.phase !== "win") {
         this.phase = "win";
         this.pvpWinner = p.id;
         this.emit({ t: "pvpwin", id: p.id });
@@ -855,12 +926,30 @@ export class Game {
       }
     }
   }
+  /** 算力据点: whoever holds the centre alone scores 1 point per second */
+  updateKoth(dt) {
+    const c = this.map.center, R0 = this.pvpRule.zone;
+    const inside = this.players.filter((p) => !p.downed && !p.dead && dist(p.x, p.y, c.x, c.y) < R0);
+    this.kothOwner = inside.length === 1 ? inside[0].id : inside.length ? -1 : 0;
+    if (inside.length !== 1) {
+      this.kothT = 0;
+      return;
+    }
+    this.kothT = (this.kothT || 0) + dt;
+    if (this.kothT >= 1) {
+      this.kothT -= 1;
+      const p = inside[0];
+      this.pvpScore[p.id] = (this.pvpScore[p.id] || 0) + 1;
+      this.text(p.x, p.y - 74, "+1", "#7dffb0", 1);
+      p.ult = Math.min(1, p.ult + 0.03);
+    }
+  }
   roomCleared() {
     if (this.phase !== "fight") return;
     this.phase = "clear";
     this.sound("clear");
     this.runStats.rooms = Math.max(this.runStats.rooms, this.roomIdx + 1);
-    if (this.room.kind === "boss") {
+    if (this.room.kind === "boss" && !this.endless) {
       this.after(2.5, () => this.victory());
       return;
     }
@@ -881,7 +970,7 @@ export class Game {
   }
   /** roll 3 card offers for a player (host) */
   offerCards(p, n = 3, rarityFloor = null) {
-    const meta = loadSave();
+    const meta = { cards: (p.kit && p.kit.cards) || [] };
     const pool = [...CARDS, ...fusionCards(p.cid)].filter((c) => {
       if ((p.cards[c.id] || 0) >= c.max) return false;
       if (c.locked) {
@@ -911,6 +1000,7 @@ export class Game {
     delete this.cardOffers[pid];
     if (p.local) this.onUi("cardsClosed");
     applyCard(this, p, cardId);
+    if (p.startCards > 0) (p.startCards--, this.after(0.4, () => this.offerCards(p, 3, "SR")));
     this.sound("card");
     this.vfx("pickups/collect-burst", p.x, p.y - 10, { palette: ELEM[CHARS[p.cid].elem].ramp });
     if (this.phase === "cards" && Object.keys(this.cardOffers).length === 0) this.openPortal();
@@ -978,7 +1068,9 @@ export class Game {
     if (p.buff.ultOn > 0 && p.cid === "grok") spd *= 1.4;
     if (p.buff.inkHaste > 0) spd *= 1.3;
     if (p.buff.slow > 0) spd *= 0.6;
-    if (mudAt(this.map, p.x, p.y)) spd *= 0.55;
+    const onHz = mudAt(this.map, p.x, p.y);
+    if (onHz && this.hazard === "mud") spd *= 0.55;
+    if (onHz && this.hazard === "ice") spd *= 1.12;
     if (p.breathT > 0) spd *= 0.7;
     let mx = inp.mx || 0, my = inp.my || 0;
     const ml = Math.hypot(mx, my);
@@ -995,6 +1087,12 @@ export class Game {
       p.dashT -= dt;
       moveCircle(this.map, p, p.dashDx * BAL.dashSpeed * dt, p.dashDy * BAL.dashSpeed * dt);
       if (Math.random() < 0.6) p.trail = (p.trail || []).concat([{ x: p.x, y: p.y, t: 0.25 }]).slice(-6);
+    } else if (this.hazard === "ice") {
+      // ice: momentum carries you (accelerate / brake slowly while standing on it)
+      const k = onHz ? 1 - Math.exp(-3 * dt) : 1;
+      p.ivx = (p.ivx || 0) + (mx * spd - (p.ivx || 0)) * k;
+      p.ivy = (p.ivy || 0) + (my * spd - (p.ivy || 0)) * k;
+      moveCircle(this.map, p, p.ivx * dt, p.ivy * dt);
     } else moveCircle(this.map, p, mx * spd * dt, my * spd * dt);
     if (remote) p.moving = ml > 0.1;
     if (p.trail) for (const q of p.trail) q.t -= dt;
@@ -1007,6 +1105,14 @@ export class Game {
       p.shieldT += dt * p.st.shieldRegen;
       if (p.shieldT >= BAL.shieldTick) (p.shieldT = 0), p.shield++;
     }
+    // lava floor
+    if (this.hazard === "lava" && onHz) {
+      p.lavaT = (p.lavaT || 0) + dt;
+      if (p.lavaT > 1) {
+        p.lavaT = 0;
+        if (this.hurt(p, 1, {})) this.text(p.x, p.y - 50, "灼烧", "#ff8a3a", 0.9);
+      }
+    } else p.lavaT = Math.min(p.lavaT || 0, 0.6);
     // status damage
     if (p.buff.burn > 0) {
       p.burnTick = (p.burnTick || 0) + dt;

@@ -154,6 +154,47 @@ export const RUN = [
 ];
 export const ROOM_NAMES = { combat: "战斗", shop: "补给站", boss: "首领" };
 
+// ---------------------------------------------------------------- maps (chapters), endless, PVP rules
+// theme: index into map.js THEMES. hazard: what the scattered floor patches do (mud slows / ice slides / lava burns)
+// swap: some enemies of the base run are replaced by the map's residents [type, chance]
+export const MAPS = {
+  grass: { name: "数据草原", theme: 0, hazard: "mud", hazardText: "泥沼会减速 · 清除所有敌人", hp: 1, reward: 1, desc: "入门地图：泥沼减速，敌人中规中矩。", need: null },
+  ice: { name: "显存冰原", theme: 2, hazard: "ice", hazardText: "冰面会打滑 · 清除所有敌人", hp: 1.3, reward: 1.35, desc: "冰面上会打滑停不住；冷却史莱姆和过期缓存更多。", need: "grass",
+    swap: { slime: ["slime_blue", 0.8], frog: ["ghost", 0.5], bat: ["wisp", 0.35] } },
+  lava: { name: "算力熔炉", theme: 3, hazard: "lava", hazardText: "熔岩会灼烧 · 清除所有敌人", hp: 1.6, reward: 1.7, desc: "熔岩地块持续灼烧（敌人也会）；过热骷髅和死循环蛇横行。", need: "ice",
+    swap: { slime: ["slime_purple", 0.7], eyeball: ["skull", 0.3], bat: ["snake", 0.5], jelly: ["skull", 0.4] } },
+};
+export const MAP_ORDER = ["grass", "ice", "lava"];
+export const PVP_MODES = {
+  brawl: { name: "自由混战", goal: 5, koScore: true, goalText: "先拿到 5 次击倒者获胜", desc: "击倒对手得 1 分，先到 5 分获胜。" },
+  koth: { name: "算力据点", goal: 45, koScore: false, zone: 52, goalText: "独占中心据点每秒 +1 分，先到 45 分获胜", desc: "独自站在中心据点里每秒得 1 分；多人在里面时谁都不得分。" },
+};
+// endless corridor: shop every 5th floor, boss every 10th, then the next map's look; enemies get more and tougher
+const ENDLESS_POOL = [
+  ["slime", "slime_blue", "bat", "eyeball", "frog"],
+  ["slime_purple", "frog", "eyeball", "bat", "ghost", "jelly"],
+  ["ghost", "jelly", "wisp", "skull", "snake", "eyeball"],
+  ["skull", "snake", "wisp", "jelly", "ghost", "frog", "eyeball"],
+];
+export function endlessRoom(i, seed) {
+  if (i % 10 === 9) return { kind: "boss", boss: "boss_eye" };
+  if (i % 5 === 4) return { kind: "shop" };
+  let x = (seed ^ (i * 2654435761)) >>> 0;
+  const rnd = () => ((x = (x * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const tier = Math.min(ENDLESS_POOL.length - 1, Math.floor(i / 5));
+  const pool = [...ENDLESS_POOL[tier], ...(tier > 0 ? ENDLESS_POOL[tier - 1] : [])];
+  const nWaves = Math.min(5, 3 + Math.floor(i / 8));
+  const perWave = Math.min(10, 5 + Math.floor(i / 4));
+  const eliteP = Math.min(0.35, 0.06 + i * 0.012);
+  const waves = [];
+  for (let w = 0; w < nWaves; w++) {
+    const wave = [];
+    for (let k = 0; k < perWave; k++) wave.push(pool[Math.floor(rnd() * pool.length)] + (rnd() < eliteP ? "*" : ""));
+    waves.push(wave);
+  }
+  return { kind: "combat", waves, items: 2 + (i % 3) };
+}
+
 // ---------------------------------------------------------------- map items and hazards
 export const ITEMS = {
   cube: { name: "算力方块", desc: "本局伤害+6%，生命上限+0.5", color: "#7dffb0", icon: "◆" },
@@ -244,17 +285,23 @@ export const GACHA = {
     { id: "t_start_coin", r: "N", name: "预训练", desc: "开局金币 +15", max: 5 },
     { id: "t_crit", r: "R", name: "高温采样", desc: "暴击率 +3%", max: 5 },
     { id: "t_ult", r: "SR", name: "预热缓存", desc: "开局大招充能 +30%", max: 2 },
-    { id: "t_revive", r: "SSR", name: "断点续训", desc: "每局一次：倒下时满血复活", max: 1 },
-    { id: "t_startcard", r: "SSR", name: "先验知识", desc: "开局额外选择 1 张技能卡", max: 2 },
+    { id: "t_revive", r: "SSR", name: "断点续训", desc: "每局一次：倒下时原地满血复活", max: 1, eq: 1 },
+    { id: "t_startcard", r: "SSR", name: "先验知识", desc: "开局额外获得技能卡（每级 1 张；PVE 三选一，PVP 随机）", max: 2, eq: 1 },
+    { id: "t_overclock", r: "SSR", name: "超频推理", desc: "大招充能速度 +30%，开局大招 50%", max: 1, eq: 1 },
+    { id: "t_firewall", r: "SSR", name: "零信任防火墙", desc: "护盾被打破时释放冲击波：伤害并击退周围敌人（8秒冷却）", max: 1, eq: 1 },
+    { id: "t_ensemble", r: "SSR", name: "模型集成", desc: "每第 4 次普攻额外射出 3 发散射弹（每发 40% 伤害）", max: 1, eq: 1 },
     { id: "u_kill_boom", r: "SR", name: "卡牌·连锁崩溃", desc: "解锁技能卡【连锁崩溃】", max: 1, card: "kill_boom" },
     { id: "u_reaction_amp", r: "SR", name: "卡牌·跨模态融合", desc: "解锁技能卡【跨模态融合】", max: 1, card: "reaction_amp" },
     { id: "u_element_spread", r: "SR", name: "卡牌·知识蒸馏", desc: "解锁技能卡【知识蒸馏】", max: 1, card: "element_spread" },
     { id: "u_shield_nova", r: "SR", name: "卡牌·防御反制", desc: "解锁技能卡【防御反制】", max: 1, card: "shield_nova" },
-    { id: "u_echo", r: "SSR", name: "卡牌·自洽回声", desc: "解锁技能卡【自洽回声】", max: 1, card: "echo" },
-    { id: "u_second_ult", r: "SSR", name: "卡牌·持续学习", desc: "解锁技能卡【持续学习】", max: 1, card: "second_ult" },
-    { id: "u_links", r: "SSR", name: "卡牌包·技能联动", desc: "解锁全部【联动】技能卡", max: 1, card: "links" },
+    { id: "u_echo", r: "SSR", name: "卡牌·自洽回声", desc: "解锁技能卡【自洽回声】；装配后开局自带（小技能 35% 再释放一次）", max: 1, card: "echo", eq: 1 },
+    { id: "u_second_ult", r: "SSR", name: "卡牌·持续学习", desc: "解锁技能卡【持续学习】；装配后开局自带（放大招返还 40% 充能）", max: 1, card: "second_ult", eq: 1 },
+    { id: "u_links", r: "SSR", name: "卡牌包·技能联动", desc: "解锁全部【联动】技能卡；装配后开局随机自带 1 张联动卡", max: 1, card: "links", eq: 1 },
   ],
 };
+
+// out-of-run talent loadout: every character has one page with this many SSR slots (works in PVE and PVP)
+export const LOADOUT_SLOTS = 2;
 
 // tokens earned per run
 export const REWARD = { room: 15, kill: 1, elite: 6, boss: 120, firstBoss: 200 };
