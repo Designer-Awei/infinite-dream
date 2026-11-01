@@ -271,67 +271,77 @@ function showCharDetail(id) {
 
 // ------------------------------------------------------------------ talent loadout (one page per character)
 export function showLoadout(cid, onClose) {
-  const c = CHARS[cid];
+  const c = CHARS[cid], m = load();
   const md = el("div", "modal kit-modal");
   let page = loadoutOf(cid), sel = page.indexOf(null) >= 0 ? page.indexOf(null) : 0;
-  const draw = () => {
-    const m = load();
-    const ssr = GACHA.pool.filter((it) => it.eq);
-    const passive = GACHA.pool.filter((it) => !it.eq && !it.card && m.talents[it.id]);
-    md.innerHTML = `<div class="panel kit-panel">
-      <div class="kit-head"><img class="kit-face" src="assets/head_${cid}.png" alt=""><div><h2 class="outline">天赋装配 · ${c.short}</h2><div class="kit-sub o1">每个角色一页 · ${LOADOUT_SLOTS} 个 SSR 槽位 · PVE 与 PVP 都生效</div></div><button class="btn gray small x-btn">完成</button></div>
-      <div class="kit-body">
-        <div class="kit-l">
-          <div class="kit-slots">${page.map((t, i) => {
-            const it = t && GACHA.pool.find((p) => p.id === t);
-            return `<button class="kslot${i === sel ? " sel" : ""}${it ? " full" : ""}" data-i="${i}"><span class="kn o1">槽位 ${i + 1}</span>${it ? `<img src="${iconURL(it.id, 3)}" alt=""><b class="outline">${it.name}</b>${it.max > 1 ? `<small>Lv${m.talents[it.id]}</small>` : ""}<em class="kx">卸下</em>` : `<span class="kplus">+</span><small>点右侧天赋装上</small>`}</button>`;
-          }).join("")}</div>
-          <div class="kit-pass o1"><div class="kp-h">通用天赋（N/R/SR · 自动生效）</div>${passive.length ? passive.map((it) => `<span class="chip"><img src="${iconURL(it.id, 1)}" alt="">${it.name} Lv${m.talents[it.id]}</span>`).join("") : `<span class="muted">还没有——去扭蛋机抽吧</span>`}</div>
-        </div>
-        <div class="kit-list">${ssr.map((it) => {
-          const lv = m.talents[it.id] || 0, at = page.indexOf(it.id);
-          return `<button class="kcard${lv ? "" : " no"}${at >= 0 ? " eq" : ""}" data-id="${it.id}"><img src="${iconURL(it.id, 2)}" alt=""><span class="kt"><b>${it.name}${it.max > 1 && lv ? ` Lv${lv}` : ""}</b><small>${it.desc}</small></span><i class="ktag o1">${at >= 0 ? "槽位" + (at + 1) : lv ? "装配" : "未拥有"}</i></button>`;
-        }).join("")}</div>
-      </div></div>`;
-    q(".x-btn", md).onclick = close;
-    md.querySelectorAll(".kslot").forEach((b) => (b.onclick = (ev) => {
-      const i = +b.dataset.i;
-      if (ev.target.closest(".kx")) {
-        page[i] = null;
-        sel = i;
-        commit();
-        sfx("click");
-      } else {
-        sel = i;
-        sfx("click");
-      }
-      draw();
-    }));
-    md.querySelectorAll(".kcard").forEach((b) => (b.onclick = () => {
-      const id = b.dataset.id, it = GACHA.pool.find((p) => p.id === id);
-      if (!load().talents[id]) return toast(`${it.name}：还没有获得，去扭蛋机抽取（SSR）`);
-      const at = page.indexOf(id);
-      if (at >= 0) {
-        page[at] = null; // tap again to take it off
-        sel = at;
-      } else {
-        page[sel] = id;
-        const free = page.indexOf(null);
-        if (free >= 0) sel = free;
-      }
-      commit();
-      sfx("card");
-      draw();
-    }));
+  const ssr = GACHA.pool.filter((it) => it.eq);
+  const passive = GACHA.pool.filter((it) => !it.eq && !it.card && m.talents[it.id]);
+  // built once; taps only update the slots and the card states in place (no re-render, no flicker)
+  md.innerHTML = `<div class="panel kit-panel">
+    <div class="kit-head"><img class="kit-face" src="assets/head_${cid}.png" alt=""><div><h2 class="outline">天赋装配 · ${c.short}</h2><div class="kit-sub o1">每个角色一页 · ${LOADOUT_SLOTS} 个 SSR 槽位 · PVE 与 PVP 都生效</div></div><button class="btn gray small x-btn">完成</button></div>
+    <div class="kit-body">
+      <div class="kit-l">
+        <div class="kit-slots">${page.map((_, i) => `<button class="kslot" data-i="${i}"><span class="kn o1">槽位 ${i + 1}</span><span class="ks-in"></span></button>`).join("")}</div>
+        <div class="kit-pass o1"><div class="kp-h">通用天赋（N/R/SR · 自动生效）</div>${passive.length ? passive.map((it) => `<span class="chip"><img src="${iconURL(it.id, 1)}" alt="">${it.name} Lv${m.talents[it.id]}</span>`).join("") : `<span class="muted">还没有——去扭蛋机抽吧</span>`}</div>
+      </div>
+      <div class="kit-list">${ssr.map((it) => {
+        const lv = m.talents[it.id] || 0;
+        return `<button class="kcard${lv ? "" : " no"}" data-id="${it.id}"><img src="${iconURL(it.id, 2)}" alt=""><span class="kt"><b>${it.name}${it.max > 1 && lv ? ` Lv${lv}` : ""}</b><small>${it.desc}</small></span><i class="ktag o1"></i></button>`;
+      }).join("")}</div>
+    </div></div>`;
+  const slots = [...md.querySelectorAll(".kslot")], cards = [...md.querySelectorAll(".kcard")];
+  const refresh = () => {
+    slots.forEach((b, i) => {
+      const t = page[i], it = t && GACHA.pool.find((p) => p.id === t);
+      b.classList.toggle("sel", i === sel);
+      b.classList.toggle("full", !!it);
+      const inner = it
+        ? `<img src="${iconURL(it.id, 3)}" alt=""><b>${it.name}</b>${it.max > 1 ? `<small>Lv${m.talents[it.id]}</small>` : ""}<em class="kx">卸下</em>`
+        : `<span class="kplus">+</span><small>点右侧天赋装上</small>`;
+      const box = q(".ks-in", b);
+      if (box.dataset.k !== (t || "")) (box.innerHTML = inner), (box.dataset.k = t || "");
+    });
+    cards.forEach((b) => {
+      const id = b.dataset.id, at = page.indexOf(id), lv = m.talents[id] || 0;
+      b.classList.toggle("eq", at >= 0);
+      q(".ktag", b).textContent = at >= 0 ? "槽位" + (at + 1) : lv ? "装配" : "未拥有";
+    });
   };
   const commit = () => setLoadout(cid, page);
+  slots.forEach((b) => (b.onclick = (ev) => {
+    const i = +b.dataset.i;
+    if (ev.target.closest(".kx")) {
+      page[i] = null;
+      commit();
+    }
+    sel = i;
+    sfx("click");
+    refresh();
+  }));
+  cards.forEach((b) => (b.onclick = () => {
+    const id = b.dataset.id, it = GACHA.pool.find((p) => p.id === id);
+    if (!m.talents[id]) return toast(`${it.name}：还没有获得，去扭蛋机抽取（SSR）`);
+    const at = page.indexOf(id);
+    if (at >= 0) {
+      page[at] = null; // tap again to take it off
+      sel = at;
+    } else {
+      page[sel] = id;
+      const free = page.indexOf(null);
+      if (free >= 0) sel = free;
+    }
+    commit();
+    sfx("card");
+    refresh();
+  }));
   const close = () => {
     md.remove();
     onClose && onClose();
   };
+  q(".x-btn", md).onclick = close;
   md.onclick = (e) => e.target === md && close();
   uiRoot().appendChild(md);
-  draw();
+  refresh();
 }
 
 // ------------------------------------------------------------------ mode carousel (swipe left/right on the lobby)

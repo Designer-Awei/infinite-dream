@@ -1,0 +1,15 @@
+import { createRequire } from "module"; const require = createRequire(import.meta.url); const { chromium } = require("playwright");
+const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 1206, height: 540 }, deviceScaleFactor: 2 });
+p.on("pageerror", (e) => console.log("ERR", e.message));
+await p.goto("http://localhost:8765/index.html"); await p.waitForTimeout(200);
+await p.evaluate(() => localStorage.setItem("ai-girls-dungeon-v1", JSON.stringify({ tutorialSeen: true, chars: ["deepseek", "gpt"], talents: { t_startcard: 1, u_echo: 1, t_firewall: 1, t_dmg: 5 }, cards: ["echo"], loadout: { deepseek: ["t_startcard", "u_echo"] } })));
+await p.reload(); await p.waitForTimeout(2200);
+await p.evaluate(() => document.querySelector(".li-kit").click()); await p.waitForTimeout(500);
+const panel = await p.evaluateHandle(() => document.querySelector(".kit-panel"));
+await p.click('.kcard[data-id="u_echo"]'); await p.waitForTimeout(150);
+await p.click('.kcard[data-id="t_firewall"]'); await p.waitForTimeout(150);
+await p.click(".kslot >> nth=0"); await p.click('.kslot >> nth=0 >> .kx'); await p.waitForTimeout(150);
+await p.click('.kcard[data-id="u_echo"]'); await p.waitForTimeout(400);
+console.log("same panel:", await p.evaluate((x) => x === document.querySelector(".kit-panel"), panel), "page:", await p.evaluate(() => JSON.stringify(JSON.parse(localStorage.getItem("ai-girls-dungeon-v1")).loadout.deepseek)));
+await p.screenshot({ path: "/home/claude/game/tmp/kitfix.png" });
+await b.close();
