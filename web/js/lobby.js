@@ -5,6 +5,7 @@ import { load, save, unlockProgress, pull, checkUnlocks } from "./save.js";
 import { sfx, setSound, setMusic, playMusic } from "./audio.js";
 import { el } from "./util.js";
 import { iconURL, skillIcon } from "./icons.js";
+import { localVersion } from "./updater.js";
 import { bushSprite, crateSprite } from "./map.js";
 import { btn, toast, clear, showNet, showHelp, showUnlock, uiRoot } from "./ui.js";
 import { app } from "./main.js";
@@ -256,6 +257,7 @@ function showSettings() {
     });
   q(".r1", md).append(tg("音效", "sound", setSound), tg("音乐", "music", setMusic));
   q(".r2", md).append(btn("关闭", "", () => md.remove()));
+  q(".panel", md).appendChild(el("div", "muted", `版本 ${localVersion || "dev"}${window.Capacitor ? " · 安卓版（启动时自动增量更新）" : ""}`));
   uiRoot().appendChild(md);
 }
 

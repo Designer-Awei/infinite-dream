@@ -26,13 +26,8 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Install Capacitor and PeerJS
+      - name: Install Capacitor (+ Filesystem plugin for hot updates)
         run: npm install --no-audit --no-fund
-
-      - name: Bundle PeerJS locally (no CDN needed for online play)
-        run: |
-          mkdir -p docs/vendor
-          cp node_modules/peerjs/dist/peerjs.min.js docs/vendor/peerjs.min.js
 
       - name: Create Android project
         run: npx cap add android
@@ -54,6 +49,9 @@ jobs:
             cp "$d"/*.png "android/app/src/main/res/$name/"
           done
           grep -n "screenOrientation" "$MAN"
+          # every build gets a higher versionCode: installing a newer APK resets hot updates to its own files
+          sed -i -E "s/versionCode [0-9]+/versionCode ${{ github.run_number }}/; s/versionName \"[^\"]*\"/versionName \"1.0.${{ github.run_number }}\"/" android/app/build.gradle
+          grep -nE "versionCode|versionName" android/app/build.gradle
 
       - name: Sync web assets
         run: npx cap sync android
@@ -79,6 +77,7 @@ jobs:
           body: |
             手机下载 `ai-girls-dungeon.apk` 安装即可（需允许"安装未知来源应用"）。
             横屏全屏运行，存档保存在本机；联机与网页版互通（房间码相同）。
+            以后网页版更新时，APK 启动会自动从 GitHub 增量下载变化的文件，无需重装。
             构建自提交 ${{ github.sha }}
           files: out/ai-girls-dungeon.apk
           make_latest: true

@@ -10,6 +10,7 @@ import { load, save, talent, checkUnlocks } from "./save.js";
 import * as UI from "./ui.js";
 import { showLobby, showGacha } from "./lobby.js";
 import { Net } from "./net.js";
+import { initUpdater } from "./updater.js";
 
 const canvas = document.getElementById("view");
 const uiRoot = document.getElementById("ui");
@@ -293,6 +294,7 @@ async function boot() {
   document.getElementById("loading").remove();
   showLobby();
   requestAnimationFrame(frame);
+  initUpdater();
   // deep link: #join-ABCD
   const h = location.hash.match(/^#join-([A-Z0-9]{4})$/i);
   if (h) app.joinRoom(h[1].toUpperCase());

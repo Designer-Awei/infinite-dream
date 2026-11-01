@@ -301,34 +301,34 @@ const DRAW = {
     p.line(0, 10, 7, 10, c.light);
     p.line(1, 13, 6, 13, c.hi);
   },
-  // classic diagonal short-sword attack icon (shared by every girl's attack button)
+  // attack: a diagonal sword (tip top-left) between two crescent slash arcs
   attack(p) {
-    const blade = { edge: "#ffffff", hi: "#e8f0fa", base: "#b8c6d8", dark: "#7a889e" };
-    // blade: a 3px-wide diagonal strip from the guard to a sharp tip
-    for (let i = 0; i <= 11; i++) {
-      const x = 7 + i, y = 12 - i;
-      p.set(x, y, blade.hi);
-      p.set(x + 1, y, blade.base);
-      p.set(x, y + 1, blade.base);
-      p.set(x + 1, y + 1, blade.dark);
-      p.set(x - 1 + 0, y + 0, i > 0 ? blade.edge : blade.hi);
-    }
-    p.set(19, 0, blade.edge);
-    p.set(18, 0, blade.hi);
-    p.set(19, 1, blade.base);
-    // fuller (center groove)
-    for (let i = 2; i <= 8; i++) p.set(7 + i, 12 - i + 1, blade.hi);
-    // crossguard
-    p.line(3, 11, 9, 17, GOLD.dark, 2);
-    p.line(3, 10.5, 9, 16.5, GOLD.light, 1);
-    p.rect(2, 10, 2, 2, GOLD.base);
-    p.rect(9, 16, 2, 2, GOLD.base);
-    // grip and pommel
-    p.line(2.5, 17.5, 5.5, 14.5, "#7a3a1a", 2);
-    p.set(3, 16, "#b0602a");
-    p.set(4, 15, "#b0602a");
-    p.rect(0, 18, 3, 2, GOLD.base);
-    p.set(0, 18, GOLD.hi);
+    const SL = { out: "#ffb21e", mid: "#ffd84a", inn: "#fff6c0" };
+    // moon-shaped slash: a disc minus the same disc shifted toward the blade
+    const moon = (cx, cy, r, sx, sy) => {
+      for (let y = 0; y < N; y++)
+        for (let x = 0; x < N; x++) {
+          const d1 = Math.hypot(x + 0.5 - cx, y + 0.5 - cy), d2 = Math.hypot(x + 0.5 - cx - sx, y + 0.5 - cy - sy);
+          if (d1 <= r && d2 > r) p.set(x, y, d1 > r - 0.9 ? SL.out : d2 < r + 1.1 ? SL.inn : SL.mid);
+        }
+    };
+    moon(13.6, 6.4, 6, -2.3, 2.3); // upper-right swoosh
+    moon(6.4, 13.6, 6, 2.3, -2.3); // lower-left swoosh
+    const r2 = Math.SQRT1_2;
+    for (let y = 0; y < N; y++)
+      for (let x = 0; x < N; x++) {
+        const ux = x + 0.5 - 2.6, uy = y + 0.5 - 2.6;
+        const s2 = (ux + uy) * r2, perp = (ux - uy) * r2, ap = Math.abs(perp);
+        if (s2 >= 0 && s2 <= 13.4) {
+          const hw = Math.min(1.9, 0.25 + s2 * 0.55);
+          if (ap > hw) continue;
+          let c = perp < -0.55 ? STEEL.hi : perp > 0.7 ? STEEL.dark : STEEL.base;
+          if (ap < 0.5 && s2 > 3.2 && s2 < 11.2) c = "#ffffff";
+          p.set(x, y, c);
+        } else if (s2 > 13.4 && s2 <= 15.1 && ap <= 3.7) p.set(x, y, perp < 0 ? GOLD.light : GOLD.base);
+        else if (s2 > 15.1 && s2 <= 19 && ap <= 1) p.set(x, y, s2 % 1.4 < 0.7 ? "#8a4a22" : "#5a2a12");
+        else if (s2 > 19 && s2 <= 20.6 && ap <= 1.5) p.set(x, y, GOLD.base);
+      }
   },
   // ---- element badges
   elem_water(p) { DRAW.deepseek_atk(p); },
