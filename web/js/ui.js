@@ -363,11 +363,21 @@ export function showTutorial(go) {
   root.appendChild(md);
 }
 export function showResult(r, onAgain, onLobby) {
+  // landscape two-column panel: everything (incl. the buttons) fits a 360px-tall phone screen without scrolling
   const md = el("div", "modal result");
-  md.innerHTML = `<div class="panel" style="min-width:340px;text-align:center"><h2 class="outline">${r.title}</h2>
-    <div class="o1" style="font-size:14px;color:#d8d0ff">${r.sub || ""}</div>
-    <table class="o1">${r.rows.map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join("")}</table>
-    <div class="big outline">+${r.tokens} 💎</div><div class="row acts" style="margin-top:10px"></div></div>`;
+  const hero = r.cid ? `<div class="res-hero${r.win ? "" : " lost"}"><i class="res-glow"></i><img src="assets/hero_${r.cid}.png" alt=""></div>` : "";
+  md.innerHTML = `<div class="panel res2 ${r.win ? "win" : "lose"}">
+    <div class="res-l">
+      <h2 class="outline">${r.title}</h2>
+      <div class="res-sub o1">${r.sub || ""}</div>
+      ${hero}
+      <div class="res-gain"><span class="big outline">+${r.tokens}</span><div class="gem"></div></div>
+      ${(r.extras || []).map(([a, b]) => `<div class="res-chip o1"><span>${a}</span><b>${b}</b></div>`).join("")}
+    </div>
+    <div class="res-r">
+      <div class="res-stats">${r.rows.map(([a, b], i) => `<div class="res-st" style="animation-delay:${0.08 + i * 0.05}s"><span>${a}</span><b class="outline">${b}</b></div>`).join("")}</div>
+      <div class="row acts"></div>
+    </div></div>`;
   const a = $(".acts", md);
   if (onAgain) a.appendChild(btn("再来一局", "", onAgain));
   a.appendChild(btn("返回大厅", "blue", onLobby));

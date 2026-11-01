@@ -145,9 +145,10 @@ export const app = {
     const unl = checkUnlocks();
     sfx(win ? "win" : "lose");
     const rows = [["清理房间", rs.rooms + " / 7"], ["击败敌人", rs.kills], ["精英", rs.elites], ["元素反应", rs.reactions], ["造成伤害", Math.round(rs.dmg)], ["承受伤害", rs.hurt || 0], ["技能卡", Object.keys(this.me.cards).length]];
-    if (first) rows.push(["首通奖励", "+" + REWARD.firstBoss + "💎"]);
-    if (unl.length) rows.push(["🔓 新角色解锁", unl.map((id) => CHARS[id].short).join("、")]);
-    UI.showResult({ title: win ? "通关！幻觉已破除" : "倒下了…", sub: win ? `${CHARS[this.me.cid].name} 击败了幻觉之眼` : "再接再厉，构筑会更强！", rows, tokens },
+    const extras = [];
+    if (first) extras.push(["首通奖励", "+" + REWARD.firstBoss + "💎"]);
+    if (unl.length) extras.push(["🔓 新角色解锁", unl.map((id) => CHARS[id].short).join("、")]);
+    UI.showResult({ title: win ? "通关！幻觉已破除" : "倒下了…", sub: win ? `${CHARS[this.me.cid].name} 击败了幻觉之眼` : "再接再厉，构筑会更强！", rows, extras, tokens, win, cid: this.me.cid },
       this.net ? null : () => this.startSolo(),
       () => this.toLobby());
   },
@@ -161,7 +162,7 @@ export const app = {
     m.tokens += tokens;
     save();
     sfx(mine ? "win" : "lose");
-    UI.showResult({ title: mine ? "胜利！" : `${w ? w.name : "对手"} 获胜`, sub: "竞技场 · 自由混战", rows: g.players.map((p) => [p.name + "（" + CHARS[p.cid].short + "）", (g.pvpScore[p.id] || 0) + " 击倒"]), tokens }, null, () => this.toLobby());
+    UI.showResult({ title: mine ? "胜利！" : `${w ? w.name : "对手"} 获胜`, sub: "竞技场 · 自由混战", rows: g.players.map((p) => [p.name + "（" + CHARS[p.cid].short + "）", (g.pvpScore[p.id] || 0) + " 击倒"]), tokens, win: mine, cid: (w || this.me).cid }, null, () => this.toLobby());
   },
   toLobby() {
     this.game = null;

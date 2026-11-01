@@ -2,7 +2,7 @@
   "name": "infinite-dream",
   "version": "1.0.0",
   "private": true,
-  "description": "AI娘·幻觉地牢 — pixel roguelike (web + Android)",
+  "description": "无限梦境 Infinite Dream — pixel roguelike (web + Android)",
   "scripts": {
     "build": "sh tools/build.sh"
   },

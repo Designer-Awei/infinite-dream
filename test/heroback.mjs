@@ -1,0 +1,13 @@
+import { createRequire } from "module"; const require = createRequire(import.meta.url); const { chromium } = require("playwright");
+const browser = await chromium.launch(); const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+const p = await ctx.newPage(); p.on("pageerror", (e) => console.log("PAGEERROR", e.message));
+await p.goto("http://localhost:8765/index.html"); await p.waitForTimeout(300);
+await p.evaluate(() => localStorage.setItem("ai-girls-dungeon-v1", JSON.stringify({ tutorialSeen: true, chars: ["deepseek", "gpt", "claude"], seenUnlock: ["claude"], sel: "claude" })));
+await p.reload(); await p.waitForTimeout(2000);
+await p.tap(".play-btn"); await p.waitForTimeout(2500);
+await p.evaluate(() => { __app.game.runStats.boss = true; __app.endRun(true); }); await p.waitForTimeout(1200);
+await p.screenshot({ path: "/home/claude/game/tmp/hb_result.png" });
+await p.tap("button:has-text('返回大厅')", { force: true }); await p.waitForTimeout(2000);
+await p.evaluate(()=>document.querySelectorAll(".modal button").forEach(b=>b.click())); await p.waitForTimeout(800); await p.screenshot({ path: "/home/claude/game/tmp/hb_lobby.png" });
+console.log(await p.evaluate(() => { const h = document.querySelector(".lb-hero"), i = h.querySelector("img"), cs = getComputedStyle(h), r = h.getBoundingClientRect(); return JSON.stringify({ src: i.getAttribute("src"), nat: i.naturalWidth, cls: h.className, anim: cs.animationName, op: cs.opacity, tr: cs.transform, r: [r.x, r.y, r.width, r.height].map(Math.round), lb: document.querySelector(".lb").className }); }));
+await browser.close();

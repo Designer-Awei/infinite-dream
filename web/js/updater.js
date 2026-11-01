@@ -36,29 +36,102 @@ async function fetchJSON(url) {
   return r.json();
 }
 
+const dirOf = (v) => "hot/" + String(v).replace(/[^\w.-]/g, "_");
+const LS_TRY = "updTry";
+function lsGet(k) {
+  try {
+    return JSON.parse(localStorage.getItem(k) || "null");
+  } catch {
+    return null;
+  }
+}
+function lsSet(k, v) {
+  try {
+    localStorage.setItem(k, JSON.stringify(v));
+  } catch {}
+}
+async function readJSONFile(FS, path) {
+  try {
+    const r = await FS.readFile({ path, directory: "DATA", encoding: "utf8" });
+    return JSON.parse(typeof r.data === "string" ? r.data : await r.data.text());
+  } catch {
+    return null;
+  }
+}
+/** a downloaded folder is usable only if its manifest is there and every file it lists was written */
+async function folderOK(FS, dir, version) {
+  const man = await readJSONFile(FS, dir + "/update.json");
+  if (!man || man.version !== version) return null;
+  try {
+    for (const f of Object.keys(man.files)) {
+      const st = await FS.stat({ path: dir + "/" + f, directory: "DATA" });
+      if (st.size != null && +st.size !== man.files[f].s) return null;
+    }
+  } catch {
+    return null;
+  }
+  return man;
+}
+async function switchTo(FS, WV, dir, version) {
+  // remember the attempt: if this folder never boots (2 tries) we give up on it instead of looping
+  const t = lsGet(LS_TRY);
+  const n = t && t.v === version ? t.n + 1 : 1;
+  lsSet(LS_TRY, { v: version, n });
+  const { uri } = await FS.getUri({ path: dir, directory: "DATA" });
+  await WV.setServerBasePath({ path: decodeURIComponent(uri.replace(/^file:\/\//, "")).replace(/\/+$/, "") });
+}
+
 /** called once at boot */
 export async function initUpdater() {
+  let man = null;
   try {
-    localVersion = (await fetchJSON("update.json")).version || "";
+    man = await fetchJSON("update.json");
+    localVersion = man.version || "";
   } catch {}
   if (!native()) return;
   const P = window.Capacitor.Plugins, FS = P.Filesystem, WV = P.WebView;
   if (!FS || !WV) return;
-  // we booted fine from a downloaded folder: make it permanent, and drop older folders
   let current = "";
   try {
-    current = (await WV.getServerBasePath()).path || "";
-    if (current.includes("/hot/")) await WV.persistServerBasePath();
+    current = ((await WV.getServerBasePath()).path || "").replace(/\/+$/, "");
+  } catch {}
+  const runningHot = current.includes("/hot/");
+  // we booted fine from a downloaded folder: make it permanent (also re-persist every boot, cheap and self-healing)
+  if (runningHot) {
+    try {
+      await WV.persistServerBasePath();
+    } catch {}
+    lsSet("updApplied", localVersion);
+  }
+  const t = lsGet(LS_TRY);
+  if (t && t.v === localVersion) lsSet(LS_TRY, null);
+  // tidy up: keep the folder we're running from and the newest good one, drop the rest
+  try {
+    const keep = new Set([dirOf(localVersion).slice(4)]);
+    const applied = lsGet("updApplied");
+    if (applied && applied > localVersion) keep.add(dirOf(applied).slice(4));
+    if (runningHot) keep.add(current.slice(current.lastIndexOf("/hot/") + 5).split("/")[0]);
     const list = await FS.readdir({ path: "hot", directory: "DATA" }).catch(() => ({ files: [] }));
     for (const f of list.files || []) {
       const name = typeof f === "string" ? f : f.name;
-      if (!current.endsWith("/hot/" + name)) await FS.rmdir({ path: "hot/" + name, directory: "DATA", recursive: true }).catch(() => {});
+      if (!keep.has(name)) await FS.rmdir({ path: "hot/" + name, directory: "DATA", recursive: true }).catch(() => {});
     }
   } catch {}
+  // booted the bundled copy although a newer, complete folder exists (persist didn't stick): just switch, no download
+  if (!runningHot) {
+    const applied = lsGet("updApplied");
+    if (applied && applied > localVersion && (await folderOK(FS, dirOf(applied), applied))) {
+      const tr = lsGet(LS_TRY);
+      if (!tr || tr.v !== applied || tr.n < 2) return switchTo(FS, WV, dirOf(applied), applied).catch(() => {});
+    }
+  }
   setTimeout(() => checkUpdate(FS, WV), 1500);
 }
 
+let checking = false;
 async function checkUpdate(FS, WV) {
+  if (checking) return;
+  checking = true;
   let local, remote, base;
   try {
     local = await fetchJSON("update.json");
@@ -73,11 +146,18 @@ async function checkUpdate(FS, WV) {
     } catch {}
   }
   if (!remote || !remote.version || remote.version <= local.version) return;
+  const dir = dirOf(remote.version);
+  // already downloaded earlier (e.g. the switch didn't persist): reuse it silently
+  if (await folderOK(FS, dir, remote.version)) {
+    const tr = lsGet(LS_TRY);
+    if (tr && tr.v === remote.version && tr.n >= 2) return; // that folder failed to boot twice; wait for a newer build
+    lsSet("updApplied", remote.version);
+    return switchTo(FS, WV, dir, remote.version).catch(() => {});
+  }
   const names = Object.keys(remote.files);
   const changed = names.filter((f) => !local.files[f] || local.files[f].h !== remote.files[f].h);
   const bytes = changed.reduce((a, f) => a + remote.files[f].s, 0);
   const ui = progressUI(remote.version, changed.length, bytes);
-  const dir = "hot/" + remote.version.replace(/[^\w.-]/g, "_");
   try {
     let done = 0, got = 0;
     for (const f of names) {
@@ -103,12 +183,14 @@ async function checkUpdate(FS, WV) {
       if (isNew) got += buf.byteLength;
       ui.set(done / names.length, isNew ? got : null);
     }
-    await FS.writeFile({ path: dir + "/update.json", data: b64(new TextEncoder().encode(JSON.stringify(remote))), directory: "DATA", recursive: true });
-    const { uri } = await FS.getUri({ path: dir, directory: "DATA" });
+    // the manifest is written last: its presence marks the folder as complete
+    await FS.writeFile({ path: dir + "/update.json", data: JSON.stringify(remote), encoding: "utf8", directory: "DATA", recursive: true });
+    lsSet("updApplied", remote.version);
+    lsSet(LS_TRY, null);
     ui.done();
     await new Promise((r) => setTimeout(r, 600));
     // switch the WebView to the new folder (reloads the page); it is persisted on the next successful boot
-    await WV.setServerBasePath({ path: decodeURIComponent(uri.replace(/^file:\/\//, "")) });
+    await switchTo(FS, WV, dir, remote.version);
   } catch (e) {
     ui.fail(e.message || String(e));
     FS.rmdir({ path: dir, directory: "DATA", recursive: true }).catch(() => {});

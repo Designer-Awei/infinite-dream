@@ -501,6 +501,14 @@ const DRAW = {
   cardgold(p) {
     card(p, GOLD);
   },
+  pool(p) {
+    // fanned stack of cards (gacha pool)
+    p.poly([[2, 6], [9, 3], [12, 15], [5, 18]], "#8a6ad8");
+    p.poly([[3.4, 7], [8.4, 4.8], [10.8, 14.4], [5.8, 16.6]], "#c8b0ff");
+    p.rect(8, 2, 9, 14, "#ffd84a");
+    p.rect(9, 3, 7, 12, "#fff3b0");
+    star(p, { light: "#ffb04a", base: "#ff7a2e", hi: "#fff" }, 12.5, 9, 3.8, 1.6, 4);
+  },
   links(p) {
     p.ring(7, 10, 5.5, 2, GOLD.light);
     p.ring(13, 10, 5.5, 2, VIOLET.light);

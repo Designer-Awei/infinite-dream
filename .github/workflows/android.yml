@@ -62,22 +62,22 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
           mkdir -p ../out
-          cp app/build/outputs/apk/debug/app-debug.apk ../out/ai-girls-dungeon.apk
+          cp app/build/outputs/apk/debug/app-debug.apk ../out/infinite-dream.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ai-girls-dungeon-apk
-          path: out/ai-girls-dungeon.apk
+          name: infinite-dream-apk
+          path: out/infinite-dream.apk
 
       - name: Publish release "latest"
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: AI娘·幻觉地牢 安卓版（最新构建）
+          name: 无限梦境 Infinite Dream 安卓版（最新构建）
           body: |
-            手机下载 `ai-girls-dungeon.apk` 安装即可（需允许"安装未知来源应用"）。
+            手机下载 `infinite-dream.apk` 安装即可（需允许"安装未知来源应用"）。
             横屏全屏运行，存档保存在本机；联机与网页版互通（房间码相同）。
             以后网页版更新时，APK 启动会自动从 GitHub 增量下载变化的文件，无需重装。
             构建自提交 ${{ github.sha }}
-          files: out/ai-girls-dungeon.apk
+          files: out/infinite-dream.apk
           make_latest: true

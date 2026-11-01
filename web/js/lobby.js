@@ -88,7 +88,7 @@ export function showLobby() {
   const pulls = Math.floor(m.tokens / GACHA.cost1);
   s.innerHTML = `<div class="sparkles"></div><div class="lb-glow"></div>
   <div class="topbar">
-    <div class="logo outline">AI娘<span>幻觉地牢</span></div>
+    <div class="logo outline">无限梦境<span>INFINITE DREAM</span></div>
     <div class="spacer"></div>
     <div class="pill o1"><span>👤</span><span class="pname"></span></div>
     <div class="pill o1"><div class="gem"></div><span class="tok">${m.tokens}</span></div>
@@ -199,6 +199,12 @@ function renderHero(s, id, swap) {
   s.style.setProperty("--eg", e.glow);
   const hero = q(".lb-hero", s), img = q("img", hero);
   const apply = () => {
+    // retry once with a cache-buster if the image fails (e.g. the file host was swapped by a hot update)
+    img.onerror = () => {
+      if (img.dataset.retry === id) return;
+      img.dataset.retry = id;
+      setTimeout(() => (img.src = `assets/hero_${id}.png?r=${Date.now()}`), 250);
+    };
     img.src = `assets/hero_${id}.png`;
     hero.classList.toggle("dark", !open);
     const isl = q(".lb-island", s);
@@ -280,11 +286,9 @@ export function showGacha() {
     <div class="gm-base"><div class="gm-label outline">算力扭蛋</div><div class="gm-slot"></div><div class="gm-crank"><i></i></div><div class="gm-chute"></div></div>
   </div>
   <div class="gp">
-    <div class="gp-banner"><div class="gp-title outline">常驻扭蛋 · 永久天赋与稀有技能卡</div><div class="gp-feat"></div></div>
+    <div class="gp-banner"><div class="gp-head"><div class="gp-title outline">常驻扭蛋 · 永久天赋与稀有技能卡</div><button class="gp-poolbtn o1"><img src="${iconURL("pool", 2)}" alt=""><span>卡池预览</span></button></div><div class="gp-feat"></div><div class="gp-tip o1">点击卡片预览效果</div></div>
     <div class="gp-pity o1"></div>
     <div class="gp-btns"></div>
-    <div class="gp-owned-h o1">收藏（点击查看说明）</div>
-    <div class="gp-owned"></div>
   </div>`;
   root.appendChild(s);
   q(".back-btn", s).onclick = () => (sfx("click"), showLobby());
@@ -305,8 +309,11 @@ export function showGacha() {
   for (const id of FEATURED) {
     const it = GACHA.pool.find((p) => p.id === id);
     const lv = m.talents[id] || 0;
-    feat.appendChild(el("div", "fcard " + it.r, `<div class="fr o1">${it.r}</div><div class="fi">${ICON(it)}</div><div class="fn">${it.name}</div><div class="fd">${it.desc}</div>${lv ? `<div class="fo">已拥有</div>` : ""}`));
+    const fc = el("div", "fcard " + it.r, `<div class="fr o1">${it.r}</div><div class="fi">${ICON(it)}</div><div class="fn">${it.name}</div><div class="fd">${it.desc}</div>${lv ? `<div class="fo">已拥有</div>` : ""}<div class="feye"></div>`);
+    fc.onclick = () => (sfx("card"), showItemPreview(it));
+    feat.appendChild(fc);
   }
+  q(".gp-poolbtn", s).onclick = () => (sfx("click"), showPool());
   const pity = q(".gp-pity", s);
   pity.innerHTML = `<div class="pb"><span>SSR 保底</span><div class="st"><i style="width:${(m.pity / GACHA.pity) * 100}%;background:linear-gradient(90deg,#ffe36a,#ff9a2e)"></i></div><span>${m.pity}/${GACHA.pity}</span></div>
     <div class="pb"><span>SR 保底</span><div class="st"><i style="width:${Math.min(10, m.pity10) * 10}%;background:linear-gradient(90deg,#e0b0ff,#a060ff)"></i></div><span>${Math.min(10, m.pity10)}/10</span></div>
@@ -317,7 +324,6 @@ export function showGacha() {
   if (m.tokens < GACHA.cost1) b1.classList.add("poor");
   if (m.tokens < GACHA.cost10) b10.classList.add("poor");
   b.append(b1, b10);
-  renderOwned(s);
 
   async function doPull(n) {
     const cost = n === 1 ? GACHA.cost1 : GACHA.cost10;
@@ -333,19 +339,64 @@ export function showGacha() {
   }
 }
 
-function renderOwned(s) {
-  const m = load(), o = q(".gp-owned", s);
-  o.innerHTML = "";
-  for (const it of GACHA.pool) {
-    const lv = m.talents[it.id] || 0;
-    const d = el("div", "own " + it.r + (lv ? "" : " no"), `<span class="oi">${ICON(it, 1)}</span><span class="on">${it.name}</span><span class="ol">${lv ? (it.max > 1 ? "Lv" + lv : "✔") : "—"}</span>`);
-    d.title = it.desc;
-    d.onclick = () => toast(`${it.name}：${it.desc}${lv ? `（${it.max > 1 ? "Lv" + lv + "/" + it.max : "已拥有"}）` : "（未拥有）"}`, 2200);
-    o.appendChild(d);
+// ------------------------------------------------------------------ pool preview + item effect preview
+/** exact per-item odds of a single pull (pity aside): rarity rate split evenly inside the rarity */
+export function itemRate(it) {
+  const n = GACHA.pool.filter((p) => p.r === it.r).length;
+  return GACHA.rates[it.r] / n;
+}
+const pct = (x) => (x * 100 >= 1 ? (x * 100).toFixed(1).replace(/\.0$/, "") : (x * 100).toFixed(2)) + "%";
+
+function showPool() {
+  const m = load();
+  const md = el("div", "modal pool-modal");
+  const groups = ["SSR", "SR", "R", "N"].map((r) => {
+    const items = GACHA.pool.filter((p) => p.r === r);
+    return `<div class="pl-g"><div class="pl-gh o1"><span class="pl-r ${r}">${r}</span>品质总概率 <b>${pct(GACHA.rates[r])}</b><small>· 每张 ${pct(GACHA.rates[r] / items.length)}</small></div>
+      ${items.map((it) => { const lv = m.talents[it.id] || 0; return `<div class="pl-it ${r}${lv ? "" : " no"}" data-id="${it.id}"><span class="pl-ic">${ICON(it, 2)}</span><span class="pl-tx"><b>${it.name}</b><small>${it.desc}</small></span><span class="pl-lv">${lv ? (it.max > 1 ? `Lv${lv}/${it.max}` : "已拥有") : it.max > 1 ? `上限 Lv${it.max}` : "未拥有"}</span><span class="pl-p">${pct(itemRate(it))}</span></div>`; }).join("")}</div>`;
+  }).join("");
+  md.innerHTML = `<div class="panel pool-panel"><div class="pl-head"><h2 class="outline">卡池预览</h2><button class="btn gray small x-btn">×</button></div>
+    <div class="pl-rule o1">单抽 ${GACHA.cost1}💎 · 十连 ${GACHA.cost10}💎 必出 SR 及以上 · ${GACHA.pity} 抽内必出 SSR · 满级重复返还晶石（N ${GACHA.refund.N} / R ${GACHA.refund.R} / SR ${GACHA.refund.SR} / SSR ${GACHA.refund.SSR}）</div>
+    <div class="pl-list">${groups}</div></div>`;
+  uiRoot().appendChild(md);
+  const close = () => md.remove();
+  q(".x-btn", md).onclick = close;
+  md.onclick = (e) => e.target === md && close();
+  md.querySelectorAll(".pl-it").forEach((d) => (d.onclick = () => (sfx("card"), showItemPreview(GACHA.pool.find((p) => p.id === d.dataset.id)))));
+}
+
+/** a little looping stage that demonstrates what the item does */
+function previewScene(it) {
+  const m = load();
+  const me = CHARS[m.sel] ? m.sel : "deepseek";
+  const mate = me === "gpt" ? "deepseek" : "gpt";
+  const hero = (id, cls = "") => `<img class="sc-hero ${cls}" src="assets/hero_${id}.png" alt="">`;
+  const ic = (name, cls = "") => `<img class="sc-ic ${cls}" src="${iconURL(name, 3)}" alt="">`;
+  switch (it.id) {
+    case "t_revive":
+      return `<div class="sc sc-revive"><div class="sc-hp"><i></i></div>${hero(me)}<i class="sc-ring"></i><i class="sc-ring b"></i><div class="sc-pop outline">满血复活！</div><div class="sc-cap o1">倒下的瞬间 → 读取断点 → 满血站起（每局 1 次）</div></div>`;
+    case "t_startcard":
+      return `<div class="sc sc-deal">${["atk_up", "multishot", "crit"].map((c, i) => `<div class="sc-card" style="--i:${i}">${ic(c)}</div>`).join("")}<div class="sc-card gold" style="--i:3">${ic("cardgold")}<b class="outline">+1</b></div><div class="sc-cap o1">开局：额外多选 1 张技能卡（满级 +2）</div></div>`;
+    case "u_links":
+      return `<div class="sc sc-link"><div class="sc-who">${hero(me)}${ic(skillIcon(me, "skill"), "sk")}</div><div class="sc-beam"><i></i></div><div class="sc-who b">${hero(mate)}${ic(skillIcon(mate, "skill"), "sk")}</div><div class="sc-pop outline">联动！</div><div class="sc-cap o1">放小技能时，同时放出另一位 AI 娘的小技能（70% 效果）</div></div>`;
+    case "u_echo":
+      return `<div class="sc sc-echo">${ic(skillIcon(me, "skill"), "big")}${ic(skillIcon(me, "skill"), "big ghost")}<div class="sc-pop outline">×2</div><div class="sc-cap o1">小技能有 35% 概率自动再释放一次</div></div>`;
+    case "u_second_ult":
+      return `<div class="sc sc-ult"><div class="sc-meter">${ic(skillIcon(me, "ult"), "big")}<svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"/></svg></div><div class="sc-pop outline">+40%</div><div class="sc-cap o1">放完大招，立刻返还 40% 充能</div></div>`;
+    default:
+      return `<div class="sc sc-basic">${ic(it.id, "big")}<div class="sc-cap o1">${it.desc}${it.max > 1 ? `（可叠加至 Lv${it.max}）` : ""}</div></div>`;
   }
 }
 
-// ---------------------------------------------------------------- the staged pull
+function showItemPreview(it) {
+  const m = load(), lv = m.talents[it.id] || 0;
+  const md = el("div", "modal pv-modal");
+  md.innerHTML = `<div class="pvm ${it.r}"><div class="pvm-card rc ${it.r}" style="--c:${RCOL[it.r]}"><div class="rc-front"><div class="rr o1">${it.r}</div><div class="ri">${ICON(it, 4)}</div><div class="rn">${it.name}</div><div class="rd">${it.desc}</div><div class="rl">${lv ? (it.max > 1 ? `已拥有 Lv${lv}/${it.max}` : "已拥有") : "未拥有"}</div></div></div>
+    <div class="pvm-r"><div class="pvm-h outline">效果预览</div>${previewScene(it)}<div class="pvm-odds o1">单抽获得概率 <b>${pct(itemRate(it))}</b>${it.r === "SSR" ? ` · ${GACHA.pity} 抽保底必出 SSR` : ""}</div><div class="pvm-close o1">点击任意处关闭</div></div></div>`;
+  uiRoot().appendChild(md);
+  md.onclick = () => md.remove();
+}
+
 const ORDER = ["N", "R", "SR", "SSR"];
 const RCOL = { N: "#b8c4d6", R: "#5fb4ff", SR: "#c27bff", SSR: "#ffc93a" };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
