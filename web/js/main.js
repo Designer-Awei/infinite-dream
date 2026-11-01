@@ -53,9 +53,30 @@ export const app = {
     if (!m.tutorialSeen) {
       m.tutorialSeen = true;
       save();
+      UI.clear(); // drop the lobby (and its white launch wipe) so the tutorial is visible
       return UI.showTutorial(() => this.startSolo());
     }
-    this.begin({ mode: "solo", pvp: false, seed: (Math.random() * 1e9) | 0, players: [{ id: 1, cid: m.sel, name: m.name }], myId: 1 });
+    this.beginLoading({ mode: "solo", pvp: false, seed: (Math.random() * 1e9) | 0, players: [{ id: 1, cid: m.sel, name: m.name }], myId: 1 });
+  },
+  /** show a loading screen, build the run behind it, then fade it out */
+  beginLoading(cfg) {
+    const ov = document.createElement("div");
+    ov.className = "enter-ld";
+    const c = CHARS[cfg.players.find((p) => p.id === cfg.myId)?.cid || "deepseek"];
+    ov.innerHTML = `<div class="el-box"><div class="el-t outline">${cfg.pvp ? "进入竞技场" : "进入地牢"}</div><div class="el-s o1">${c.short} · ${c.title}</div><div class="ld-bar"><i></i></div><div class="el-tip o1">${TIPS[(Math.random() * TIPS.length) | 0]}</div></div>`;
+    uiRoot.appendChild(ov);
+    const bar = ov.querySelector(".ld-bar i");
+    requestAnimationFrame(() => (bar.style.width = "45%"));
+    setTimeout(() => {
+      try {
+        this.begin(cfg);
+      } finally {
+        uiRoot.appendChild(ov); // keep it on top of the freshly built HUD
+        bar.style.width = "100%";
+        setTimeout(() => ov.classList.add("out"), 450);
+        setTimeout(() => ov.remove(), 900);
+      }
+    }, 80);
   },
   /** start a run (solo, host or client). cfg: {mode, pvp, seed, players:[{id,cid,name}], myId} */
   begin(cfg) {
@@ -193,6 +214,7 @@ window.__app = app;
 import { flowField, flowDir } from "./map.js";
 window.__dbg = { input, flowField, flowDir, UI, get renderer() { return renderer; } };
 
+const TIPS = ["小提示：护盾受击后几秒会自动回满，生命不会", "小提示：躲进草丛，敌人就找不到你", "小提示：不同元素先后命中同一敌人会触发元素反应", "小提示：炸药桶会伤到所有人，包括敌人", "小提示：大招靠造成伤害充能，蓄满会发光", "小提示：融合卡能借用其他 AI 娘的子弹"];
 let fadeEl = null;
 function fade() {
   if (!fadeEl) {

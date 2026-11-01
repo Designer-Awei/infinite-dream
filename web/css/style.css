@@ -621,3 +621,15 @@ body.touchmode .c-key { display: none; }
 .lb .sk-tx span { -webkit-line-clamp: 2; }
 .lb .lb-info { gap: 10px; }
 @media (max-height: 420px) { .lb .lb-roster { height: 64px; } .lb .sk-tx span { -webkit-line-clamp: 1; } .rcard img.el-ico { width: 15px; height: 15px; left: 2px; top: 2px; } .lb .lb-info { gap: 5px; } }
+/* the full-screen HUD and touch layers must not swallow taps (#ui > * would make them hit-testable) */
+#ui > .touchpad, #ui > .hud { pointer-events: none; }
+.hud .pausebtn { width: 46px !important; height: 46px !important; font-size: 18px !important; position: relative; }
+.hud .pausebtn::after { content: ""; position: absolute; inset: -10px; }
+.enter-ld { position: absolute; inset: 0; z-index: 45; display: flex; align-items: center; justify-content: center; background: radial-gradient(#3a2a8a, #140c30); transition: opacity .4s; }
+.enter-ld.out { opacity: 0; pointer-events: none; }
+.enter-ld .el-box { width: min(60vw, 520px); display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.enter-ld .el-t { font-size: clamp(26px, 4vw, 44px); }
+.enter-ld .el-s { color: var(--y1); font-size: 15px; }
+.enter-ld .ld-bar { width: 100%; }
+.enter-ld .ld-bar i { transition: width .35s ease-out; }
+.enter-ld .el-tip { font-size: 13px; color: #d8d0ff; }

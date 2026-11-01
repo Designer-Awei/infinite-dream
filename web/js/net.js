@@ -5,6 +5,8 @@ import { load } from "./save.js";
 import * as UI from "./ui.js";
 import { sfx } from "./audio.js";
 import { tileAt } from "./map.js";
+import { fireAttack } from "./skills.js";
+import { angTo } from "./util.js";
 
 const PREFIX = "aigirls-dungeon-v1-";
 const ALPH = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -20,7 +22,12 @@ class LocalT {
   constructor(code, isHost) {
     this.id = isHost ? "host" : "c" + Math.random().toString(36).slice(2, 8);
     this.bc = new BroadcastChannel(PREFIX + code);
+    const lag = +(new URLSearchParams(location.search).get("lag") || 0); // test hook: simulated one-way latency (ms)
     this.bc.onmessage = (e) => {
+      if (lag) return void setTimeout(() => this.bc.onmessage2(e), lag * (0.8 + Math.random() * 0.4));
+      this.bc.onmessage2(e);
+    };
+    this.bc.onmessage2 = (e) => {
       const m = e.data;
       if (m.to && m.to !== this.id) return;
       if (m.from === this.id) return;
@@ -278,14 +285,14 @@ export class Net {
     const seed = (Math.random() * 1e9) | 0;
     const players = this.members.map(({ id, name, cid }) => ({ id, name, cid }));
     this.t.send(null, { t: "start", seed, pvp: this.pvp, players });
-    this.app.begin({ mode: "host", pvp: this.pvp, seed, players, myId: 1 });
+    this.app.beginLoading({ mode: "host", pvp: this.pvp, seed, players, myId: 1 });
   }
   hostTick(dt) {
     const g = this.app.game;
     if (!g) return;
     this.snapT -= dt;
     if (this.snapT > 0) return;
-    this.snapT = 1 / 15;
+    this.snapT = 1 / 20;
     this.t.send(null, snapshot(g));
     g.events.length = 0;
   }
@@ -335,7 +342,7 @@ export class Net {
         break;
       case "start":
         this.started = true;
-        this.app.begin({ mode: "client", pvp: d.pvp, seed: d.seed, players: d.players, myId: this.myId });
+        this.app.beginLoading({ mode: "client", pvp: d.pvp, seed: d.seed, players: d.players, myId: this.myId });
         break;
       case "s":
         applySnapshot(this.app, d);
@@ -405,10 +412,10 @@ function snapshot(g) {
     const fl = (p.moving ? 1 : 0) | (p.downed ? 2 : 0) | (p.dashT > 0 ? 4 : 0) | (p.hurtT > 0 ? 8 : 0) | (p.castT > 0 ? 16 : 0) | (p.input.atk ? 32 : 0);
     const bf = {};
     for (const k in p.buff) if (p.buff[k] > 0) bf[k] = Math.round(p.buff[k] * 10) / 10;
-    return [p.id, r1(p.x), r1(p.y), round2(p.face), p.hp, p.maxHp, p.shield, p.maxShield, fl, Math.round(p.ult * 100), p.coins, p.cubes, Math.round(p.recoil), Math.round((Math.max(0, p.skillCd) / (CHARS[p.cid].skill.cd * p.st.cd)) * 100), Math.round((Math.max(0, p.dashCd) / 1.6) * 100), bf, p.target ? p.target.id : 0, p.cards, p.infuseElem || null, round2(p.reviveT), round2(p.respawnT || 0), p.barrier > 0 ? 1 : 0];
+    return [p.id, r1(p.x), r1(p.y), round2(p.face), p.hp, p.maxHp, p.shield, p.maxShield, fl, Math.round(p.ult * 100), p.coins, p.cubes, Math.round(p.recoil), Math.round((Math.max(0, p.skillCd) / (CHARS[p.cid].skill.cd * p.st.cd)) * 100), Math.round((Math.max(0, p.dashCd) / 1.6) * 100), bf, p.target ? p.target.id : 0, p.cards, p.infuseElem || null, round2(p.reviveT), round2(p.respawnT || 0), p.barrier > 0 ? 1 : 0, p.st, p.fusions];
   });
   const E = g.enemies.map((e) => [e.id, e.type, r1(e.x), r1(e.y), Math.ceil(e.hp), Math.ceil(e.maxHp), (e.elite ? 1 : 0) | (e.flash > 0 ? 4 : 0) | (e.freezeT > 0 ? 8 : 0) | (e.slowT > 0 ? 16 : 0) | (e.burnT > 0 ? 32 : 0), e.st, r1(e.z || 0), e.face, Object.keys(e.marks).filter((k) => e.marks[k] > g.time).join(","), e.lx != null ? r1(e.lx) : null, e.ly != null ? r1(e.ly) : null, round2(Math.max(0, e.spawnT)), round2(e.cd), e.bubble > g.time ? 1 : 0]);
-  const B = g.bullets.map((b) => [b.id, b.side === "e" ? 1 : 0, b.kind, r1(b.x), r1(b.y), r1(b.vx), r1(b.vy), b.r, b.elem || 0, b.big ? 1 : 0, b.wave ? 1 : 0, b.arcTo ? [r1(b.arcTo.x0), r1(b.arcTo.y0), r1(b.arcTo.x), r1(b.arcTo.y), b.arcTo.dur, round2(b.t)] : 0, r1(b.h || 0)]);
+  const B = g.bullets.map((b) => [b.id, b.side === "e" ? 1 : 0, b.kind, r1(b.x), r1(b.y), r1(b.vx), r1(b.vy), b.r, b.elem || 0, b.big ? 1 : 0, b.wave ? 1 : 0, b.arcTo ? [r1(b.arcTo.x0), r1(b.arcTo.y0), r1(b.arcTo.x), r1(b.arcTo.y), b.arcTo.dur, round2(b.t)] : 0, r1(b.h || 0), b.owner || 0, b.atk ? 1 : 0]);
   const Z = g.zones.map((z) => [z.id, z.kind, r1(z.x), r1(z.y), z.r, round2(z.life), round2(z.t)]);
   const Q = g.pickups.map((q) => [q.id, q.kind, q.item || 0, r1(q.x), r1(q.y), r1(q.z || 0), round2(q.t), round2(q.life)]);
   return {
@@ -430,6 +437,12 @@ function applySnapshot(app, s) {
     g.loadRoom(ev.idx, g.pvp ? { kind: "combat", waves: [], items: 0 } : RUN[ev.idx]);
     g.onUi("room");
   }
+  if (!s.ev.some((e) => e.t === "room") && s.ri >= 0 && (g.roomIdx !== s.ri || !g.map)) {
+    // joined late / missed the room event: build the room from the shared seed
+    g.roomIdx = s.ri;
+    g.loadRoom(s.ri, g.pvp ? { kind: "combat", waves: [], items: 0 } : RUN[s.ri]);
+    g.onUi("room");
+  }
   if (!g.map) return;
   g.phase = s.ph;
   g.serverTime = s.tm;
@@ -437,8 +450,10 @@ function applySnapshot(app, s) {
   for (const a of s.P) {
     const p = g.player(a[0]);
     if (!p) continue;
-    const [, x, y, face, hp, maxHp, sh, maxSh, fl, ult, coins, cubes, rec, skf, dkf, bf, tid, cards, inf, rv, rsp, bar] = a;
+    const [, x, y, face, hp, maxHp, sh, maxSh, fl, ult, coins, cubes, rec, skf, dkf, bf, tid, cards, inf, rv, rsp, bar, st, fus] = a;
     p.hp = hp; p.maxHp = maxHp; p.shield = sh; p.maxShield = maxSh; p.ult = ult / 100; p.coins = coins; p.cubes = cubes;
+    if (st) p.st = st;
+    if (fus) p.fusions = fus;
     p.skillCdFrac = skf / 100; p.dashCdFrac = dkf / 100; p.buff = bf; p.cards = cards; p.infuseElem = inf; p.reviveT = rv; p.respawnT = rsp; p.barrier = bar;
     const wasDowned = p.downed;
     p.downed = !!(fl & 2);
@@ -448,8 +463,7 @@ function applySnapshot(app, s) {
       // own position is client-authoritative; only accept the host's on respawn/teleport, never mid-dash
       const far = Math.hypot(p.x - x, p.y - y) > 200 && !(p.dashT > 0) && !(p.lastDash > g.time - 0.6);
       if (p.downed || wasDowned !== p.downed || far) (p.x = x), (p.y = y);
-      if (fl & 16) p.face = face;
-      if (rec > 1) p.recoil = rec;
+      // facing and recoil of the local girl are predicted locally (taking the host's would make her flicker)
     } else {
       p.tx = x; p.ty = y; p.face = face; p.moving = !!(fl & 1); p.recoil = rec;
       if (fl & 4) p.dashT = 0.1;
@@ -472,12 +486,25 @@ function applySnapshot(app, s) {
     return e;
   });
   for (const p of g.players) p.target = p.targetId ? g.enemies.find((e) => e.id === p.targetId) || g.players.find((q) => q.id === p.targetId) || null : null;
-  // bullets
-  g.bullets = s.B.map((a) => {
-    const b = { id: a[0], side: a[1] ? "e" : "p", kind: a[2], x: a[3], y: a[4], vx: a[5], vy: a[6], r: a[7], elem: a[8] || null, big: !!a[9], wave: !!a[10], h: a[12] || 0, t: 0.05, life: 2, hits: new Set() };
+  // bullets: keep the client-simulated ones (no snapping back by the latency), drop the host's copies of
+  // our own attack shots (we draw predicted ones from where we really are), add new ones
+  const oldB = new Map(g.bullets.filter((b) => !b.pred).map((b) => [b.id, b]));
+  const nb = g.bullets.filter((b) => b.pred);
+  for (const a of s.B) {
+    if (!a[1] && a[13] === me.id && a[14]) continue;
+    let b = oldB.get(a[0]);
+    if (b) {
+      if (!b.arcTo && Math.hypot(b.x - a[3], b.y - a[4]) > 36) (b.x = a[3]), (b.y = a[4]);
+      b.vx = a[5];
+      b.vy = a[6];
+      nb.push(b);
+      continue;
+    }
+    b = { id: a[0], side: a[1] ? "e" : "p", kind: a[2], x: a[3], y: a[4], vx: a[5], vy: a[6], r: a[7], elem: a[8] || null, big: !!a[9], wave: !!a[10], h: a[12] || 0, t: 0.05, life: 2, hits: new Set(), owner: a[13] };
     if (a[11]) (b.arcTo = { x0: a[11][0], y0: a[11][1], x: a[11][2], y: a[11][3], dur: a[11][4] }), (b.t = a[11][5]);
-    return b;
-  });
+    nb.push(b);
+  }
+  g.bullets = nb;
   g.zones = s.Z.map((a) => ({ id: a[0], kind: a[1], x: a[2], y: a[3], r: a[4], life: a[5], t: a[6] }));
   g.pickups = s.Q.map((a) => ({ id: a[0], kind: a[1], item: a[2] || undefined, x: a[3], y: a[4], z: a[5], t: a[6], life: a[7], vx: 0, vy: 0, vz: 0 }));
   g.chest = s.ch ? { x: s.ch[0], y: s.ch[1], opened: !!s.ch[2] } : null;
@@ -496,7 +523,7 @@ function applySnapshot(app, s) {
         g.fx.spawn(ev.id, ev.x, ev.y, o);
         break;
       }
-      case "snd": sfx(ev.n); break;
+      case "snd": if (!ev.n.startsWith("shoot_")) sfx(ev.n); break; // our own shots are predicted locally
       case "txt": g.floaters.push({ x: ev.x, y: ev.y, s: ev.s, color: ev.c, size: ev.z, life: 0.8, max: 0.8, vy: -38 }); break;
       case "ln": g.lines.push({ x0: ev.a[0], y0: ev.a[1], x1: ev.a[2], y1: ev.a[3], color: ev.c, w: ev.w, life: ev.l, max: ev.l, kind: ev.k }); break;
       case "tile": if (g.map.crates[ev.i]) (g.map.crates[ev.i].dead = true), (g.map.t[ev.i] = 0); break;
@@ -507,6 +534,35 @@ function applySnapshot(app, s) {
     }
   }
   if (s.ev.some((e) => e.t === "room")) return;
+}
+/** the client fires its own (visual) shots immediately from where it really is: same timing rules as the host */
+function predictAttack(g, me, dt) {
+  const c = CHARS[me.cid], inp = me.input;
+  me.atkCdP = (me.atkCdP || 0) - dt;
+  me.castT = (me.castT || 0) - dt;
+  const tgt = inp.aim == null ? g.findTarget(me) : null;
+  me.target = tgt;
+  const aim = inp.aim != null ? inp.aim : tgt ? angTo(me.x, me.y - 18, tgt.x, tgt.y - (tgt.r || 12)) : null;
+  if (aim != null && (inp.atk || me.castT > 0)) me.face = aim;
+  else if (me.moving) me.face = Math.atan2(inp.my, inp.mx);
+  if (!inp.atk) {
+    me.idleP = (me.idleP || 0) + dt;
+    if (me.idleP > 0.5) me.rampP = 0;
+    return;
+  }
+  me.idleP = 0;
+  if (me.cid === "grok") me.rampP = Math.min(2, (me.rampP || 0) + dt);
+  if (me.atkCdP > 0) return;
+  const n0 = g.bullets.length;
+  fireAttack(g, me, aim ?? me.face, inp.aim == null ? tgt : null);
+  for (let i = n0; i < g.bullets.length; i++) g.bullets[i].pred = true;
+  me.recoil = 2;
+  me.castT = 0.25;
+  let rate = c.atk.rate * (me.st?.rate || 1);
+  if (me.buff?.rage > 0) rate *= 1.6;
+  if (me.cid === "grok") rate *= 1 + c.atk.ramp * ((me.rampP || 0) / 2);
+  if (me.cid === "grok" && me.buff?.ultOn > 0) rate *= 1.6;
+  me.atkCdP = 1 / rate;
 }
 /** client-side frame: local movement prediction, interpolation of everything else */
 function clientUpdate(g, me, dt) {
@@ -524,11 +580,7 @@ function clientUpdate(g, me, dt) {
     me.input.dash = false;
     g.updatePlayer(me, dt);
     me.input.dash = save;
-    // face: toward target when attacking
-    if (me.input.aim != null && me.input.atk) me.face = me.input.aim;
-    else if (me.target && me.input.atk) me.face = Math.atan2(me.target.y - me.y, me.target.x - me.x);
-    else if (me.moving) me.face = Math.atan2(me.input.my, me.input.mx);
-    if (me.input.atk) me.recoil = Math.max(me.recoil, 0);
+    predictAttack(g, me, dt);
   }
   if (me.hurtT > 0) me.hurtT -= dt;
   const k = Math.min(1, dt * 14);

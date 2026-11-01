@@ -657,6 +657,23 @@ export class Game {
         }
         if (b.side === "p" && b.kind !== "fire") this.fx.spawn("impacts/hit-spark", b.x - b.vx * 0.012, b.y - b.vy * 0.012, { angle: Math.atan2(b.vy, b.vx) + Math.PI, palette: ELEM[b.elem]?.ramp?.slice(1, 8), light: 0.6, opts: { height: 0 } });
       } else if (!gone && b.wave && t === WALL) b.life = Math.min(b.life, 0.05);
+      if (!gone && !this.host && b.pred) {
+        // client-side predicted shots: purely visual, vanish where they meet an enemy (the host deals the damage)
+        for (const e of this.enemies) {
+          if (e.spawnT > 0 || b.hits.has(e.id) || dist2(b.x, b.y, e.x, e.y - e.r) > (b.r + e.r + 2) ** 2) continue;
+          b.hits.add(e.id);
+          this.fx.spawn("impacts/hit-spark", b.x, b.y, { angle: Math.atan2(b.vy, b.vx) + Math.PI, palette: ELEM[b.elem]?.ramp?.slice(1, 8), light: 0.6, opts: { height: 0 } });
+          if (b.pierce > 0) b.pierce--;
+          else gone = true;
+          break;
+        }
+        if (!gone && this.pvp)
+          for (const o of this.players) {
+            if (o.id === b.owner || o.downed || dist2(b.x, b.y, o.x, o.y - 16) > (b.r + 12) ** 2) continue;
+            gone = true;
+            break;
+          }
+      }
       if (!gone && this.host) {
         if (b.side === "p") {
           const owner = this.player(b.owner);

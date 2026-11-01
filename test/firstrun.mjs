@@ -1,0 +1,13 @@
+import { createRequire } from "module"; const require = createRequire(import.meta.url); const { chromium } = require("playwright");
+const browser = await chromium.launch(); const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+const p = await ctx.newPage(); p.on("pageerror", (e) => console.log("PAGEERROR", e.message));
+await p.goto("http://localhost:8765/index.html"); await p.waitForTimeout(2500);
+await p.tap(".play-btn"); await p.waitForTimeout(900);
+await p.screenshot({ path: "/home/claude/game/tmp/fr_tutorial.png" });
+await p.tap("button:has-text('出发！')"); await p.waitForTimeout(250);
+await p.screenshot({ path: "/home/claude/game/tmp/fr_loading.png" });
+await p.waitForTimeout(1500);
+await p.screenshot({ path: "/home/claude/game/tmp/fr_game.png" });
+await p.tap(".pausebtn"); await p.waitForTimeout(400);
+console.log("pause opens:", await p.locator(".pause-modal").count());
+await browser.close();

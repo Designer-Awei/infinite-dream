@@ -1,0 +1,13 @@
+import { createRequire } from "module"; const require = createRequire(import.meta.url); const { chromium } = require("playwright");
+const browser = await chromium.launch(); const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true });
+const p = await ctx.newPage(); const ext = new Set(); const errs = [];
+await ctx.route("**/*", (r) => { const u = new URL(r.request().url()); if (u.hostname !== "localhost") { ext.add(u.hostname); return r.abort(); } return r.continue(); });
+p.on("pageerror", (e) => errs.push(e.message));
+await p.goto("http://localhost:8766/index.html"); await p.waitForTimeout(2500);
+await p.evaluate(() => localStorage.setItem("ai-girls-dungeon-v1", JSON.stringify({ tutorialSeen: true })));
+await p.reload(); await p.waitForTimeout(2000);
+await p.tap(".play-btn"); await p.waitForTimeout(2500);
+await p.evaluate(() => (__dbg.input.atk = true)); await p.waitForTimeout(8000);
+console.log(JSON.stringify(await p.evaluate(() => ({ room: __app.game?.roomIdx, phase: __app.game?.phase, t: Math.round(__app.game?.time || 0), font: document.fonts.check("12px Cubic") }))));
+console.log("external hosts requested:", [...ext].join(",") || "none", "| errors:", errs.join("|") || "none");
+await browser.close();

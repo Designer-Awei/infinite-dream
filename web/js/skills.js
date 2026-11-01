@@ -14,6 +14,7 @@ function baseBullet(g, p, cid, a, o = {}) {
     splash: at.splash || 0, splashDmg: at.splashDmg || 0, fusion: o.fusion, from: cid,
   });
 }
+const atkBullet = (...a) => Object.assign(baseBullet(...a), { atk: true });
 
 /** one trigger of the normal attack */
 export function fireAttack(g, p, a, target) {
@@ -41,7 +42,7 @@ export function fireAttack(g, p, a, target) {
       if (segDist(e.x, e.y - e.r, x0, y0, x1, y1) < e.r + 6) {
         let dmg = c.atk.dmg * 1.6 * k;
         if (e.marks.dragon > g.time) dmg += 6;
-        g.hit(e, dmg, { p, elem });
+        if (g.host) g.hit(e, dmg, { p, elem });
       }
     }
     g.sound("shoot_dragon", 0.05);
@@ -49,15 +50,15 @@ export function fireAttack(g, p, a, target) {
   }
   for (let i = 0; i < n; i++) {
     const aa = a + (i - (n - 1) / 2) * 0.13;
-    g.bullets.push(baseBullet(g, p, p.cid, aa, { dmgK: k, elem, pierce: p.cid === "grok" && p.buff.ultOn > 0 ? 1 : 0 }));
+    g.bullets.push(atkBullet(g, p, p.cid, aa, { dmgK: k, elem, pierce: p.cid === "grok" && p.buff.ultOn > 0 ? 1 : 0 }));
   }
   // Grok ult side shots
-  if (p.cid === "grok" && p.buff.ultOn > 0) for (const d of [-0.5, 0.5]) g.bullets.push(baseBullet(g, p, "grok", a + d, { dmgK: 0.5 }));
+  if (p.cid === "grok" && p.buff.ultOn > 0) for (const d of [-0.5, 0.5]) g.bullets.push(atkBullet(g, p, "grok", a + d, { dmgK: 0.5 }));
   // fusion: every 3rd attack fires the other girls' bullets
   if (p.fusions.length && p.atkCount % 3 === 0)
     for (const fid of p.fusions) {
       const fa = target ? angTo(p.x, p.y - MUZZLE, target.x, target.y - (target.r || 12)) : a;
-      g.bullets.push(baseBullet(g, p, fid, fa, { dmgK: 0.9, fusion: true, elem: CHARS[fid].elem }));
+      g.bullets.push(atkBullet(g, p, fid, fa, { dmgK: 0.9, fusion: true, elem: CHARS[fid].elem }));
     }
   g.sound("shoot_" + c.elem, 0.05);
 }
