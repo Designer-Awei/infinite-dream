@@ -44,7 +44,7 @@ jobs:
           # lock to landscape (either side), handle rotation/resize in the WebView
           sed -i 's#<activity#<activity android:screenOrientation="sensorLandscape"#' "$MAN"
           # immersive fullscreen activity
-          cp app/android/MainActivity.java android/app/src/main/java/com/designerawei/infinitedream/MainActivity.java
+          cp app/native/MainActivity.java android/app/src/main/java/com/designerawei/infinitedream/MainActivity.java
           # launcher icons from app/icon.png
           rm -rf android/app/src/main/res/mipmap-anydpi-v26
           for d in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do

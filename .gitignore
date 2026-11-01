@@ -2,5 +2,5 @@ node_modules/
 tmp/
 dist/
 package-lock.json
-android/
-out/
+/android/
+/out/
