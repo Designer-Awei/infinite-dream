@@ -9,11 +9,11 @@ for (const [n, p] of [["A", A], ["B", B]]) { p.on("pageerror", (e) => errs.push(
 await A.goto("http://localhost:8765/index.html?local"); await B.goto("http://localhost:8765/index.html?local");
 await A.waitForTimeout(2500);
 await B.evaluate(() => { const s = JSON.parse(localStorage.getItem("ai-girls-dungeon-v1")); });
-await A.click("text=联机 / 对战"); await A.waitForTimeout(300);
+await A.click(".t-net"); await A.waitForTimeout(300);
 await A.click(pvp ? "button:has-text(\"竞技场PVP\")" : "button:has-text(\"合作闯关\")"); await A.waitForTimeout(800);
 const code = await A.locator(".code").textContent();
 console.log("code", code);
-await B.click("text=联机 / 对战"); await B.waitForTimeout(300);
+await B.click(".t-net"); await B.waitForTimeout(300);
 await B.fill(".code-in", code); await B.click("button:has-text(\"加入\")"); await B.waitForTimeout(1200);
 await B.screenshot({ path: out + "/b_room.png" });
 await B.click(".mychars >> text=小龙娘"); await B.waitForTimeout(500);

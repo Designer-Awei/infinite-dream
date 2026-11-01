@@ -5,7 +5,7 @@ A.on("pageerror", (e) => console.log("PAGEERROR " + e.message + " " + e.stack));
 A.on("console", (m) => console.log("console", m.type(), m.text()));
 await A.goto("http://localhost:8765/index.html?local");
 await A.waitForTimeout(2500);
-await A.click("text=联机 / 对战"); await A.waitForTimeout(500);
+await A.click(".t-net"); await A.waitForTimeout(500);
 await A.screenshot({ path: "/home/claude/game/tmp/net0.png" });
 await A.click("text=合作闯关"); await A.waitForTimeout(800);
 await A.screenshot({ path: "/home/claude/game/tmp/net1.png" });

@@ -6,12 +6,13 @@ import { sfx, setSound, setMusic, playMusic } from "./audio.js";
 import { el } from "./util.js";
 
 let root, app;
-const $ = (s, r = root) => r.querySelector(s);
+export const $ = (s, r = root) => r.querySelector(s);
+export const uiRoot = () => root;
 export function initUI(r, a) {
   root = r;
   app = a;
 }
-function clear() {
+export function clear() {
   root.querySelectorAll(":scope > .screen, :scope > .modal, :scope > .hud").forEach((n) => n.remove());
 }
 export function toast(msg, ms = 1800) {
@@ -20,14 +21,14 @@ export function toast(msg, ms = 1800) {
   setTimeout(() => t.remove(), ms);
 }
 const cardById = (id, cid) => CARDS.find((c) => c.id === id) || fusionCards(cid).find((c) => c.id === id);
-function spriteCanvas(cid, view = "front") {
+export function spriteCanvas(cid, view = "front") {
   const s = A.girls[cid], c = document.createElement("canvas");
   c.width = s.w;
   c.height = s.foot;
   c.getContext("2d").drawImage(s.views[view], 0, 0);
   return c;
 }
-function btn(label, cls, fn) {
+export function btn(label, cls, fn) {
   const b = el("button", "btn " + (cls || ""), label);
   b.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -37,86 +38,6 @@ function btn(label, cls, fn) {
   return b;
 }
 
-// ------------------------------------------------------------------ lobby
-export function showLobby() {
-  clear();
-  document.body.classList.remove("ingame");
-  playMusic("lobby");
-  const m = load();
-  if (!m.chars.includes(m.sel)) m.sel = m.chars[0];
-  const s = el("div", "screen lobby");
-  s.innerHTML = `<div class="sparkles"></div>
-  <div class="topbar">
-    <div class="logo outline">AI娘<span>幻觉地牢</span></div>
-    <div class="spacer"></div>
-    <div class="pill o1"><span>👤</span><span class="pname"></span></div>
-    <div class="pill o1"><div class="gem"></div><span class="tok">${m.tokens}</span></div>
-  </div>
-  <div class="hero-stage"><div class="platform"></div></div>
-  <div class="hero-info"></div>
-  <div class="menu-col"></div>
-  <div class="roster"></div>`;
-  root.appendChild(s);
-  $(".pname", s).textContent = m.name;
-  const col = $(".menu-col", s);
-  col.append(
-    btn("开始冒险", "big", () => app.startSolo()),
-    btn("联机 / 对战", "blue", () => showNet()),
-    btn(`扭蛋机 <small style="font-size:12px">(${GACHA.cost1}💎)</small>`, "pink", () => showGacha()),
-    btn("玩法说明", "gray small", () => showHelp()),
-  );
-  const tip = el("div", "muted o1", `累计击败 ${m.stats.kills} · 反应 ${m.stats.reactions} · 首领 ${m.stats.bossKills}<br>音效 <a class="snd" style="color:#ffe36a;cursor:pointer">${m.sound ? "开" : "关"}</a> · 音乐 <a class="mus" style="color:#ffe36a;cursor:pointer">${m.music ? "开" : "关"}</a>`);
-  col.appendChild(tip);
-  $(".snd", tip).onclick = () => ((m.sound = !m.sound), setSound(m.sound), save(), showLobby());
-  $(".mus", tip).onclick = () => ((m.music = !m.music), setMusic(m.music), save(), showLobby());
-  renderRoster(s);
-  renderHero(s);
-  // newly unlocked?
-  const fresh = m.chars.filter((c) => !["deepseek", "gpt"].includes(c) && !m.seenUnlock.includes(c));
-  if (fresh.length) showUnlock(fresh[0]);
-}
-function renderRoster(s) {
-  const m = load(), r = $(".roster", s);
-  r.innerHTML = "";
-  for (const id of CHAR_ORDER) {
-    const c = CHARS[id], open = m.chars.includes(id);
-    const d = el("div", "rcard" + (m.sel === id ? " sel" : "") + (open ? "" : " locked"));
-    d.style.background = `linear-gradient(180deg, ${c.color}, #2a2470)`;
-    d.innerHTML = `<img src="assets/portrait_${id}.png" alt=""><div class="el o1" style="background:${ELEM[c.elem].color}">${ELEM[c.elem].name}</div><div class="nm o1">${c.short}</div>`;
-    if (!open) {
-      const u = UNLOCKS[id], pr = unlockProgress(id);
-      d.insertAdjacentHTML("beforeend", `<div class="lock o1"><div class="ic">🔒</div><div>${u.text}</div><div class="bar"><i style="width:${Math.round(pr * 100)}%"></i></div></div>`);
-    }
-    d.onclick = () => {
-      sfx("click");
-      if (open) {
-        m.sel = id;
-        save();
-      }
-      renderRoster(s);
-      renderHero(s, id);
-    };
-    r.appendChild(d);
-  }
-}
-function renderHero(s, show) {
-  const m = load(), id = show || m.sel, c = CHARS[id], open = m.chars.includes(id);
-  const st = $(".hero-stage", s);
-  st.querySelectorAll("canvas").forEach((n) => n.remove());
-  const cv = spriteCanvas(id);
-  if (!open) cv.style.filter = "brightness(0) opacity(.6)";
-  st.appendChild(cv);
-  const e = ELEM[c.elem];
-  $(".hero-info", s).innerHTML = `<h1 class="outline">${c.name}</h1>
-    <div class="title outline">「${c.title}」 · ${c.role}</div>
-    <div class="stats o1"><span class="stat">❤ ${c.hp}</span><span class="stat">🛡 ${c.shield}</span><span class="stat">👟 ${c.speed}</span><span class="stat" style="background:${e.color}">${e.name}元素</span></div>
-    <div class="kit o1">
-      <div><span class="key">J</span><b>${c.atk.name}</b>：${c.passive}</div>
-      <div><span class="key">K</span><b>${c.skill.name}</b>：${c.skill.desc}（冷却${c.skill.cd}秒）</div>
-      <div><span class="key">L</span><b>${c.ult.name}</b>：${c.ult.desc}</div>
-    </div>
-    <div class="lore o1">${open ? c.lore : "🔒 解锁条件：" + UNLOCKS[id].text}</div>`;
-}
 export function showUnlock(id) {
   const m = load(), c = CHARS[id];
   if (!m.seenUnlock.includes(id)) m.seenUnlock.push(id);
@@ -132,7 +53,7 @@ export function showUnlock(id) {
   root.appendChild(md);
   sfx("ssr");
 }
-function showHelp() {
+export function showHelp() {
   const md = el("div", "modal");
   const reacts = Object.entries(REACTIONS).map(([k, r]) => `<span class="chip">${k === "bubble" ? "泡+任意" : k.split("+").map((x) => ELEM[x].name).join("+")} → ${r.name}</span>`).join(" ");
   md.innerHTML = `<div class="panel" style="max-width:720px"><h2 class="outline">玩法说明</h2>
@@ -146,97 +67,6 @@ function showHelp() {
   </div><div class="row" style="margin-top:10px"></div></div>`;
   $(".row", md).appendChild(btn("知道了", "", () => md.remove()));
   root.appendChild(md);
-}
-
-// ------------------------------------------------------------------ gacha
-export function showGacha() {
-  clear();
-  playMusic("lobby");
-  const m = load();
-  const s = el("div", "screen gacha");
-  s.innerHTML = `<div class="sparkles"></div>
-  <div class="topbar"><div class="logo outline">扭蛋机<span>算力抽卡</span></div><div class="spacer"></div><div class="pill o1"><div class="gem"></div><span class="tok">${m.tokens}</span></div></div>
-  <div class="machine"><div class="glass"></div><div class="base"></div></div>
-  <div class="gpanel">
-    <div class="rates o1">概率：<span style="color:#ffd84a">SSR 3%</span> · <span style="color:#d0a0ff">SR 14%</span> · <span style="color:#8ac8ff">R 33%</span> · N 50%<br>十连必出 SR 以上 · ${GACHA.pity} 抽内必出 SSR（当前已 ${m.pity} 抽）<br>重复且已满级的天赋会返还晶石。</div>
-    <div class="row g-btns"></div>
-    <div class="o1" style="font-size:13px">已拥有：</div>
-    <div class="owned o1"></div>
-  </div>`;
-  root.appendChild(s);
-  const glass = $(".glass", s), cols = ["#ffd84a", "#5fb4ff", "#c27bff", "#5dff7a", "#ff7cc8", "#ff8a5a"];
-  for (let i = 0; i < 14; i++) {
-    const c = el("div", "capsule");
-    c.style.setProperty("--c", cols[i % cols.length]);
-    c.style.left = 8 + ((i * 37) % 70) + "%";
-    c.style.top = 30 + ((i * 53) % 55) + "%";
-    c.style.transform = `rotate(${i * 47}deg)`;
-    glass.appendChild(c);
-  }
-  const b = $(".g-btns", s);
-  b.append(
-    btn(`单抽 ${GACHA.cost1}💎`, "blue", () => doPull(1)),
-    btn(`十连 ${GACHA.cost10}💎`, "pink", () => doPull(10)),
-    btn("返回", "gray", () => showLobby()),
-  );
-  renderOwned(s);
-  function doPull(n) {
-    const cost = n === 1 ? GACHA.cost1 : GACHA.cost10;
-    if (m.tokens < cost) return toast("晶石不足：去地牢里赚吧！");
-    m.tokens -= cost;
-    const res = [];
-    for (let i = 0; i < n; i++) res.push(pull());
-    save();
-    const unl = checkUnlocks();
-    $(".machine", s).classList.add("shake");
-    sfx("gacha");
-    const order = ["N", "R", "SR", "SSR"];
-    const best = res.reduce((b, r) => (order.indexOf(r.r) > order.indexOf(b) ? r.r : b), "N");
-    setTimeout(() => {
-      $(".machine", s).classList.remove("shake");
-      const cap = el("div", "dropcap " + best);
-      cap.style.setProperty("--c", RARITY[best].color);
-      $(".machine", s).appendChild(cap);
-      setTimeout(() => sfx(best === "SSR" ? "ssr" : "coin"), 520);
-      setTimeout(() => {
-        cap.classList.add("open");
-        setTimeout(() => revealPulls(res, () => {
-          showGacha();
-          if (unl.length) showUnlock(unl[0]);
-        }), 350);
-      }, 1050);
-    }, 700);
-  }
-}
-function renderOwned(s) {
-  const m = load(), o = $(".owned", s);
-  o.innerHTML = "";
-  for (const it of GACHA.pool) {
-    const lv = m.talents[it.id] || 0;
-    if (!lv) continue;
-    const sp = el("span", "", `${it.name} ${it.max > 1 ? "Lv" + lv : ""}`);
-    sp.style.background = RARITY[it.r].color;
-    sp.style.color = "#1a1020";
-    sp.title = it.desc;
-    o.appendChild(sp);
-  }
-  if (!o.children.length) o.innerHTML = '<span style="border:0">还没有，来一发？</span>';
-}
-function revealPulls(res, done) {
-  const md = el("div", "modal");
-  md.innerHTML = `<div class="panel"><h2 class="outline">抽卡结果</h2><div class="reveal"></div><div class="row" style="margin-top:12px"></div></div>`;
-  const rv = $(".reveal", md);
-  let best = "N";
-  const order = ["N", "R", "SR", "SSR"];
-  res.forEach((r, i) => {
-    if (order.indexOf(r.r) > order.indexOf(best)) best = r.r;
-    const d = el("div", "rv " + r.r, `<span class="chip" style="background:${RARITY[r.r].color};color:#1a1020">${r.r}</span><b>${r.item.name}</b><i>${r.item.desc}</i><i>${r.dup ? "已满级 → 返还" + r.refund + "💎" : r.item.max > 1 ? "Lv" + r.lv : "新获得！"}</i>`);
-    d.style.animationDelay = i * 0.09 + "s";
-    rv.appendChild(d);
-  });
-  $(".row", md).appendChild(btn("收下", "", () => (md.remove(), done())));
-  root.appendChild(md);
-  setTimeout(() => sfx(best === "SSR" ? "ssr" : best === "SR" ? "card" : "pickup"), 300);
 }
 
 // ------------------------------------------------------------------ net

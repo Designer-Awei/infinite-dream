@@ -8,6 +8,7 @@ import { input, initInput, consume } from "./input.js";
 import { initAudio, playMusic, sfx, setSound, setMusic } from "./audio.js";
 import { load, save, talent, checkUnlocks } from "./save.js";
 import * as UI from "./ui.js";
+import { showLobby, showGacha } from "./lobby.js";
 import { Net } from "./net.js";
 
 const canvas = document.getElementById("view");
@@ -144,7 +145,7 @@ export const app = {
     this.game = null;
     this.me = null;
     if (this.net) this.net.close(), (this.net = null);
-    UI.showLobby();
+    showLobby();
   },
   pause() {
     if (!this.game || this.pauseMd) return;
@@ -184,7 +185,7 @@ export const app = {
   leaveNet() {
     if (this.net) this.net.close();
     this.net = null;
-    UI.showLobby();
+    showLobby();
   },
 };
 window.__app = app;
@@ -290,7 +291,7 @@ async function boot() {
   addEventListener("pointerdown", unlock, { once: false });
   addEventListener("keydown", unlock, { once: false });
   document.getElementById("loading").remove();
-  UI.showLobby();
+  showLobby();
   requestAnimationFrame(frame);
   // deep link: #join-ABCD
   const h = location.hash.match(/^#join-([A-Z0-9]{4})$/i);
