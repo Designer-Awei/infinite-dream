@@ -1,5 +1,5 @@
 // Boot, the frame loop, and the app controller tying UI, game and network together.
-import { VIEW_H, VIEW_W, setViewW, CHARS, REWARD, ELEM } from "./data.js";
+import { VIEW_H, VIEW_W, setViewW, CHARS, REWARD, ELEM, RS, setRS } from "./data.js";
 import { loadAll, A } from "./assets.js";
 import { loadFx, FxLayer } from "./fx.js";
 import { Renderer } from "./render.js";
@@ -17,10 +17,10 @@ let fx = null, renderer = null;
 function resize() {
   const W = innerWidth, H = innerHeight, aspect = W / H;
   const vw = Math.max(560, Math.min(820, Math.round((VIEW_H * aspect) / 2) * 2));
-  if (vw !== VIEW_W || !fx) {
+  if (vw !== VIEW_W || !fx || canvas.width !== vw * RS) {
     setViewW(vw);
-    canvas.width = vw;
-    canvas.height = VIEW_H;
+    canvas.width = vw * RS;
+    canvas.height = VIEW_H * RS;
     fx = new FxLayer(vw, VIEW_H);
     if (renderer) {
       const old = renderer;
@@ -211,7 +211,7 @@ function frame(now) {
   last = now;
   const g = app.game;
   if (!g) {
-    renderer.g.setTransform(1, 0, 0, 1, 0, 0);
+    renderer.g.setTransform(RS, 0, 0, RS, 0, 0);
     renderer.g.fillStyle = "#120c1e";
     renderer.g.fillRect(0, 0, VIEW_W, VIEW_H);
     return;
@@ -246,6 +246,15 @@ function frame(now) {
   }
   renderer.follow(g, me, dt);
   renderer.draw(g, me, frozen ? 0 : dt);
+  // adaptive quality: slow devices drop to 1x canvas resolution
+  app.ft = (app.ft ?? 16) * 0.97 + (now - (app.lastNow ?? now)) * 0.03;
+  app.lastNow = now;
+  app.slowT = app.ft > 24 ? (app.slowT || 0) + dt : 0;
+  if (RS > 1 && app.slowT > 3) {
+    setRS(1);
+    resize();
+    app.slowT = 0;
+  }
   app.hudT -= dt;
   if (app.hudT <= 0) {
     app.hudT = 0.06;

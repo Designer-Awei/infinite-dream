@@ -60,6 +60,23 @@ def process(view, fname):
         res[n] = Image.fromarray(rgba[y0:y1, x0:x1], 'RGBA')
     return res
 
+def hires(img, th):
+    # high-res sprite: premultiplied area/lanczos downscale, crisp alpha, keeps the original colors
+    w, h = img.size; tw = max(1, round(w*th/h))
+    arr = np.array(img).astype(np.float32)
+    a = arr[..., 3:4]/255
+    prem = Image.fromarray(np.dstack([arr[..., :3]*a, a*255]).astype(np.uint8), 'RGBA')
+    sm = np.array(prem.resize((tw, th), Image.LANCZOS)).astype(np.float32)
+    al = np.clip(sm[..., 3], 0, 255)/255
+    rgb = np.where(al[..., None] > 0.01, sm[..., :3]/np.maximum(al[..., None], 1e-3), 0)
+    mask = al > 0.5
+    out = np.zeros((th+2, tw+2, 4), np.uint8)
+    out[1:-1, 1:-1, :3] = np.clip(rgb, 0, 255); out[1:-1, 1:-1, 3] = mask*255
+    m = out[..., 3] > 0
+    ring = ndimage.binary_dilation(m) & ~m
+    out[ring] = (22, 16, 30, 255)
+    return Image.fromarray(out, 'RGBA')
+
 def pixelize(img, th):
     # downscale to target height th with box filter, binarize alpha, quantize, re-outline
     w, h = img.size; tw = max(1, round(w*th/h))
@@ -95,7 +112,7 @@ meta = {}
 cells = []
 for n in NAMES:
     for v in VIEWS:
-        cells.append((n, v, pixelize(allv[v][n], TH)))
+        cells.append((n, v, (hires if len(sys.argv) > 4 and sys.argv[4] == 'hires' else pixelize)(allv[v][n], TH)))
 CW = max(c[2].size[0] for c in cells); CH = max(c[2].size[1] for c in cells)
 atlas = Image.new('RGBA', (CW*3, CH*6), (0,0,0,0))
 for k, (n, v, im) in enumerate(cells):

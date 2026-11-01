@@ -6,6 +6,8 @@ body { font-family: "Cubic", "PingFang SC", "Microsoft YaHei", sans-serif; color
 #app { position: fixed; inset: 0; }
 #stage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #120c1e; }
 #view { image-rendering: pixelated; image-rendering: crisp-edges; display: block; }
+#stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, transparent 58%, rgba(10,20,30,.42) 100%); }
+body:not(.ingame) #stage::after { display: none; }
 #ui { position: absolute; inset: 0; pointer-events: none; }
 #ui > * { pointer-events: auto; }
 .outline { text-shadow: -2px -2px 0 var(--ink), 2px -2px 0 var(--ink), -2px 2px 0 var(--ink), 2px 2px 0 var(--ink), 0 3px 0 var(--ink); }

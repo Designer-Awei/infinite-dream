@@ -1,5 +1,5 @@
 // Loads images and prepares the sprite canvases the renderer draws from.
-import { CHAR_ORDER, ELEM, CHARS } from "./data.js";
+import { CHAR_ORDER, ELEM, CHARS, SPR_K } from "./data.js";
 
 export const A = { girls: {}, critters: {}, portraits: {}, ready: false };
 
@@ -64,7 +64,7 @@ export async function loadAll(progress = () => {}) {
       if (v === "side") views.sideL = crop(gi, x, y, w, h, true);
     }
     const b = bounds(views.front);
-    const set = { w: gj.cw, h: gj.ch, foot: b.y1 + 1, top: b.y0, views, white: {}, tint: {} };
+    const set = { w: gj.cw, h: gj.ch, foot: b.y1 + 1, top: b.y0, k: SPR_K, views, white: {}, tint: {} };
     for (const v of ["front", "back", "side", "sideL"]) {
       set.white[v] = silhouette(views[v], "#ffffff");
       set.tint[v] = silhouette(views[v], ELEM[CHARS[id].elem].glow);

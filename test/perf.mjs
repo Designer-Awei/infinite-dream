@@ -10,6 +10,6 @@ await page.evaluate(() => { const s = JSON.parse(localStorage.getItem("ai-girls-
 await page.tap("text=开始冒险"); await page.waitForTimeout(800); if (await page.locator("button:has-text('出发！')").count()) await page.tap("button:has-text('出发！')"); await page.waitForTimeout(1200);
 await page.evaluate(() => { const g = __app.game; g.roomIdx = 5; g.nextRoom(); __app.me.maxHp = 99; __app.me.hp = 99; __dbg.input.atk = true; });
 await page.waitForTimeout(6000);
-const r = await page.evaluate(() => new Promise((res) => { let n = 0, t0 = performance.now(), worst = 0, last = t0; function f(t) { n++; worst = Math.max(worst, t - last); last = t; if (t - t0 < 5000) requestAnimationFrame(f); else res({ fps: (n / ((t - t0) / 1000)).toFixed(1), worst: worst.toFixed(0), bullets: __app.game.bullets.length, fx: __app.game.fx.list.length, en: __app.game.enemies.length }); } requestAnimationFrame(f); }));
+const r = await page.evaluate(() => new Promise((res) => { let n = 0, t0 = performance.now(), worst = 0, last = t0; function f(t) { n++; worst = Math.max(worst, t - last); last = t; if (t - t0 < 5000) requestAnimationFrame(f); else res({ fps: (n / ((t - t0) / 1000)).toFixed(1), worst: worst.toFixed(0), bullets: __app.game.bullets.length, fx: __app.game.fx.list.length, en: __app.game.enemies.length, cw: document.getElementById("view").width }); } requestAnimationFrame(f); }));
 console.log("throttled x4 mobile:", JSON.stringify(r));
 await browser.close();

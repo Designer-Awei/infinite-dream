@@ -4,6 +4,11 @@
 
 export const T = 32; // tile size
 export let VIEW_W = 640, VIEW_H = 360;
+export let RS = 2; // render scale: the canvas has 2x the world resolution so the girls keep their detail
+export function setRS(v) {
+  RS = v;
+}
+export const SPR_K = 2; // hero sprites are drawn at 2x the world pixel size
 export function setViewW(w) {
   VIEW_W = w;
 }

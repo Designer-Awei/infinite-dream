@@ -10,6 +10,8 @@ await page.goto("http://localhost:8765/index.html");
 await page.waitForTimeout(2500);
 await page.screenshot({ path: out + "/01_lobby.png" });
 await page.click("text=开始冒险");
+await page.waitForTimeout(600);
+if (await page.locator("button:has-text('出发！')").count()) await page.click("button:has-text('出发！')");
 await page.waitForTimeout(1500);
 await page.screenshot({ path: out + "/02_start.png" });
 await page.keyboard.down("KeyD");

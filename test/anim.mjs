@@ -12,8 +12,8 @@ const frames = await page.evaluate(async (cid) => {
     __dbg.input.mx = dx; __dbg.input.my = dy;
     await new Promise((r) => setTimeout(r, 70));
     const cam = __dbg.renderer.cam;
-    const c = document.createElement("canvas"); c.width = 90; c.height = 90;
-    c.getContext("2d").drawImage(cv, Math.round(me.x - cam.x - 45), Math.round(me.y - cam.y - 70), 90, 90, 0, 0, 90, 90);
+    const c = document.createElement("canvas"); c.width = 180; c.height = 180;
+    c.getContext("2d").drawImage(cv, Math.round((me.x - cam.x - 45) * 2), Math.round((me.y - cam.y - 70) * 2), 180, 180, 0, 0, 180, 180);
     out.push(c.toDataURL());
   }
   __dbg.input.mx = 0; __dbg.input.my = 0;
