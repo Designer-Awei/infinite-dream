@@ -171,7 +171,7 @@ export class Game {
   }
   spawnEnemy(type, x, y, elite = false, delay = 0.8) {
     const d = ENEMIES[type], np = this.players.length;
-    const hpMul = (1 + BAL.roomHp * Math.max(0, this.roomIdx)) * (1 + BAL.coop.hp * (np - 1)) * (elite ? 3 : 1);
+    const hpMul = 1.5 * (1 + BAL.roomHp * Math.max(0, this.roomIdx)) * (1 + BAL.coop.hp * (np - 1)) * (elite ? 3 : 1);
     const e = {
       id: nid(), kind: "enemy", type, def: d, x, y, r: d.r * (elite ? 1.2 : 1) * (d.scale || 1), hp: d.hp * (d.boss ? 1 + BAL.coop.hp * (np - 1) : hpMul), elite, boss: !!d.boss,
       vx: 0, vy: 0, kbx: 0, kby: 0, t: 0, cd: 1 + Math.random() * 1.5, st: "idle", anim: Math.random() * 5, face: 1, flash: 0,
@@ -516,6 +516,7 @@ export class Game {
       return false;
     }
     p.lastHit = 0;
+    this.runStats.hurt = (this.runStats.hurt || 0) + n;
     p.invuln = BAL.hurtInvuln;
     p.hurtT = 0.3;
     this.shake = Math.max(this.shake, p.local ? 6 : 2);
@@ -769,7 +770,9 @@ export class Game {
   updateFlow(dt) {
     if (this.phase === "fight") {
       const alive = this.enemies.length;
-      if (alive === 0) {
+      const more = !this.room.boss && this.wave >= 0 && this.wave < (this.room.waves || []).length - 1;
+      // the next wave rolls in while the last two or so are still alive: keeps the pressure on
+      if (alive === 0 || (more && alive <= 2 && this.enemies.every((e) => e.spawnT <= 0))) {
         this.waveDelay -= dt;
         if (this.waveDelay <= 0) {
           if (!this.spawnWave()) this.roomCleared();
@@ -1149,7 +1152,7 @@ export class Game {
         if (bd < 20 && q.t > 0.3) {
           if (q.kind === "orb") {
             if (best.hp < best.maxHp) (best.hp = Math.min(best.maxHp, best.hp + 2)), this.text(best.x, best.y - 62, "+2", "#ff7aa0");
-            else (best.shield = Math.min(best.maxShield + 2, best.shield + 2)), this.text(best.x, best.y - 62, "护盾+2", "#a8c8ff");
+            else (best.shield = Math.min(best.maxShield, best.shield + 2)), this.text(best.x, best.y - 62, "护盾+2", "#a8c8ff");
             this.vfx("holy/heal-aoe", best.x, best.y, {palette: ELEM.bubble.ramp, opts: { reach: 34 }, speed2: 1.6 });
             this.sound("heal");
             const owner = this.player(q.owner);

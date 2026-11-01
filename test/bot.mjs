@@ -67,12 +67,22 @@ let shots = 0, lastRoom = -2;
 const MAXI = +(process.argv.find(a => a.startsWith("--secs=")) || "--secs=600").slice(7);
 for (let i = 0; i < MAXI; i++) {
   await page.waitForTimeout(1000);
-  const st = await page.evaluate(() => { const g = __app.game; if (!g) return { over: true, html: document.querySelector(".result h2")?.textContent }; return { room: g.roomIdx, phase: g.phase, en: g.enemies.length, hp: __app.me.hp, coins: __app.me.coins, t: g.time.toFixed(0), cards: Object.keys(__app.me.cards).length, fx: g.fx.list.length, res: document.querySelector(".result h2")?.textContent }; });
+  const st = await page.evaluate(() => { const g = __app.game; if (!g) return { over: true, html: document.querySelector(".result h2")?.textContent }; return { room: g.roomIdx, phase: g.phase, en: g.enemies.length, hp: __app.me.hp, sh: __app.me.shield, hurt: g.runStats.hurt || 0, coins: __app.me.coins, t: g.time.toFixed(0), cards: Object.keys(__app.me.cards).length, fx: g.fx.list.length, res: document.querySelector(".result h2")?.textContent }; });
   if (i % 5 === 0) console.log(JSON.stringify(st));
   if (st.room !== lastRoom && st.room != null) { lastRoom = st.room; await page.waitForTimeout(1500); await page.screenshot({ path: `${out}/room${st.room}.png` }); }
   if (i % 8 === 6) await page.screenshot({ path: `${out}/t${i}.png` });
   if (st.res || st.over) { console.log("RESULT", st.res); await page.screenshot({ path: `${out}/result.png` }); break; }
 }
 console.log((await page.evaluate(() => window.__bot.log)).join("\n"));
+if (process.argv.includes("--after")) {
+  await page.waitForTimeout(1500);
+  await page.click("button:has-text('返回大厅')"); await page.waitForTimeout(1200);
+  await page.screenshot({ path: `${out}/lobby_after.png` });
+  await page.click("button:has-text('扭蛋机')"); await page.waitForTimeout(800);
+  const n = await page.evaluate(() => JSON.parse(localStorage.getItem("ai-girls-dungeon-v1")).tokens);
+  console.log("tokens after run", n);
+  if (n >= 900) await page.click("button:has-text('十连')"); else if (n >= 100) await page.click("button:has-text('单抽')");
+  await page.waitForTimeout(2500); await page.screenshot({ path: `${out}/gacha_after.png` });
+}
 console.log("ERRORS:\n" + errs.slice(0, 20).join("\n"));
 await browser.close();

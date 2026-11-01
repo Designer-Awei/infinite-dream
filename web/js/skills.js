@@ -142,7 +142,7 @@ export function castSkill(g, p, cid, a, target, pw = 1) {
       g.vfx("water/splash", p.x + Math.cos(a) * 18, p.y + Math.sin(a) * 10, { palette: pal, opts: { stone: false }, speed2: 1.8 });
       const sh = pw < 1 ? 1 : 2;
       for (const q of g.alivePlayers()) if (dist(q.x, q.y, p.x, p.y) < 110) {
-        q.shield = Math.min(q.maxShield + 2, q.shield + sh);
+        q.shield = Math.min(q.maxShield, q.shield + sh);
         g.vfx("holy/divine-shield", q.x, q.y, { palette: pal, follow: q, life: 1 });
       }
       break;
@@ -283,7 +283,7 @@ export function castUlt(g, p, a, target) {
     }
     case "gpt": {
       p.buff.ultOn = 6;
-      p.shield = Math.min(p.maxShield + 3, p.shield + 3);
+      p.shield = Math.min(p.maxShield + 2, p.shield + 3);
       g.vfx("explosions/plasma-explosion", p.x, p.y - 16, { palette: ELEM.dragon.ramp.slice(1) });
       g.vfx("holy/divine-shield", p.x, p.y, { palette: pal, follow: p, life: 6 });
       for (const e of g.enemiesNear(p.x, p.y, 90)) (g.hit(e, 10, { p, elem: "dragon" })), g.knock(e, p.x, p.y, 320);

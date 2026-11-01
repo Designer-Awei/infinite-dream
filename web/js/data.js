@@ -9,8 +9,8 @@ export function setViewW(w) {
 }
 
 export const BAL = {
-  shieldDelay: 2.4, // s without damage before shield regenerates
-  shieldTick: 0.75, // s per shield point
+  shieldDelay: 3.2, // s without damage before shield regenerates
+  shieldTick: 1.0, // s per shield point
   hurtInvuln: 0.7,
   dashCd: 1.6, dashTime: 0.17, dashSpeed: 520, dashInvuln: 0.24,
   critMul: 1.8,
@@ -58,7 +58,7 @@ export const CHARS = {
     name: "DeepSeek 鲸鱼娘", short: "鲸鱼娘", title: "潮汐侍者", role: "潮汐法师 / 护盾辅助", elem: "water", color: "#3a8cff",
     hp: 6, shield: 5, speed: 112,
     atk: { name: "潮汐水弹", dmg: 4.2, rate: 3.6, spd: 300, range: 215, size: 4 },
-    skill: { name: "深海回响", cd: 6.5, desc: "向前释放穿透水波：伤害、减速、击退，并为自身与附近队友提供2点护盾" },
+    skill: { name: "深海回响", cd: 7, desc: "向前释放穿透水波：伤害、减速、击退，并为自身与附近队友回复2点护盾" },
     ult: { name: "鲸落潮域", need: 210, desc: "鲸影冲击目标区域造成范围伤害，留下持续伤害、周期回盾的潮域" },
     passive: "潮印：连续命中同一目标3次触发小范围水爆",
     lore: "温柔勤快，喜欢照顾同伴，偶尔一本正经地犯迷糊。",
@@ -124,21 +124,22 @@ export const UNLOCKS = {
 // ai: hop (slime), flit (bat), shooter (eyeball), ghost, caster (skull), leap (frog), pulse (jelly), kamikaze (wisp), snake
 export const ENEMIES = {
   slime: { name: "缓存史莱姆", hp: 20, spd: 46, r: 12, ai: "hop", sprite: "slime", coin: [1, 2], touch: 1 },
+  slime_blue: { name: "冷却史莱姆", hp: 24, spd: 50, r: 12, ai: "hop", sprite: "slime_blue", coin: [1, 2], touch: 1 },
   slime_purple: { name: "毒性史莱姆", hp: 26, spd: 42, r: 12, ai: "hop", sprite: "slime_purple", coin: [1, 2], touch: 1, puddle: true },
   bat: { name: "爬虫蝙蝠", hp: 12, spd: 104, r: 9, ai: "flit", sprite: "bat", coin: [0, 1], touch: 1, fly: true },
-  eyeball: { name: "幻觉眼球", hp: 24, spd: 44, r: 11, ai: "shooter", sprite: "eyeball", coin: [1, 2], fly: true, shot: { cd: 1.8, spd: 165, n: 1 } },
+  eyeball: { name: "幻觉眼球", hp: 24, spd: 44, r: 11, ai: "shooter", sprite: "eyeball", coin: [1, 2], fly: true, shot: { cd: 1.5, spd: 165, n: 1 } },
   frog: { name: "跳转青蛙", hp: 26, spd: 40, r: 12, ai: "leap", sprite: "frog", coin: [1, 2], touch: 1 },
   ghost: { name: "过期缓存", hp: 30, spd: 38, r: 11, ai: "ghost", sprite: "ghost", coin: [1, 3], fly: true, phase: true, shot: { cd: 2.6, spd: 135, n: 3, spread: 0.32, slow: true } },
-  skull: { name: "过热骷髅", hp: 40, spd: 34, r: 12, ai: "caster", sprite: "skull", coin: [2, 3], fly: true, shot: { cd: 3, spd: 135, n: 10, ring: true, burn: true } },
+  skull: { name: "过热骷髅", hp: 40, spd: 34, r: 12, ai: "caster", sprite: "skull", coin: [2, 3], fly: true, shot: { cd: 2.6, spd: 135, n: 10, ring: true, burn: true } },
   jelly: { name: "漏电水母", hp: 34, spd: 36, r: 12, ai: "pulse", sprite: "jelly", coin: [1, 3], fly: true },
   wisp: { name: "游离进程", hp: 10, spd: 70, r: 8, ai: "kamikaze", sprite: "wisp", coin: [0, 1], fly: true },
   snake: { name: "死循环蛇", hp: 22, spd: 72, r: 10, ai: "snake", sprite: "snake", coin: [1, 2], touch: 1 },
-  boss_eye: { name: "幻觉之眼", hp: 2100, spd: 40, r: 16, ai: "boss_eye", sprite: "eyeball", coin: [30, 30], fly: true, boss: true, scale: 2 },
+  boss_eye: { name: "幻觉之眼", hp: 3000, spd: 40, r: 16, ai: "boss_eye", sprite: "eyeball", coin: [30, 30], fly: true, boss: true, scale: 2 },
 };
 
 // rooms of one run: the core loop
 export const RUN = [
-  { kind: "combat", waves: [["slime", "slime", "slime", "bat", "bat", "slime"], ["slime", "bat", "bat", "slime", "eyeball", "eyeball"]], items: 2 },
+  { kind: "combat", waves: [["slime", "slime", "slime", "bat", "bat"], ["slime", "bat", "bat", "slime", "eyeball", "eyeball"], ["slime_blue*", "slime", "slime", "bat", "eyeball"]], items: 2 },
   { kind: "combat", waves: [["frog", "eyeball", "slime", "slime", "bat", "bat"], ["slime_purple", "frog", "eyeball", "bat", "bat", "eyeball"], ["frog", "frog", "slime_purple", "eyeball*"]], items: 3 },
   { kind: "shop" },
   { kind: "combat", waves: [["ghost", "jelly", "slime", "bat", "bat", "eyeball"], ["skull*", "frog", "eyeball", "slime_purple", "bat", "bat"], ["wisp", "wisp", "wisp", "jelly", "ghost", "eyeball", "frog"]], items: 3 },

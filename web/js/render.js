@@ -429,7 +429,7 @@ export class Renderer {
     const dx = -s.ox * sc + wiggle, dy = -s.oy * sc;
     g.drawImage(s.img, fr * s.w, 0, s.w, s.h, dx, dy, s.w * sc, s.h * sc);
     let ov = null, oa = 0;
-    if (e.flash > 0) (ov = s.white), (oa = 0.85);
+    if (e.flash > 0) (ov = s.white), (oa = e.boss ? 0.35 : 0.85);
     else if (e.freezeT > 0) (ov = s.blue), (oa = 0.6);
     else if (e.st === "boom") (ov = s.red), (oa = 0.5 + 0.5 * Math.sin(this.t * 40));
     else if (e.burnT > 0) (ov = s.red), (oa = 0.3 + 0.25 * Math.sin(this.t * 14));

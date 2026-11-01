@@ -121,12 +121,12 @@ export const app = {
     save();
     const unl = checkUnlocks();
     sfx(win ? "win" : "lose");
-    const rows = [["清理房间", rs.rooms + " / 7"], ["击败敌人", rs.kills], ["精英", rs.elites], ["元素反应", rs.reactions], ["造成伤害", Math.round(rs.dmg)], ["技能卡", Object.keys(this.me.cards).length]];
+    const rows = [["清理房间", rs.rooms + " / 7"], ["击败敌人", rs.kills], ["精英", rs.elites], ["元素反应", rs.reactions], ["造成伤害", Math.round(rs.dmg)], ["承受伤害", rs.hurt || 0], ["技能卡", Object.keys(this.me.cards).length]];
     if (first) rows.push(["首通奖励", "+" + REWARD.firstBoss + "💎"]);
+    if (unl.length) rows.push(["🔓 新角色解锁", unl.map((id) => CHARS[id].short).join("、")]);
     UI.showResult({ title: win ? "通关！幻觉已破除" : "倒下了…", sub: win ? `${CHARS[this.me.cid].name} 击败了幻觉之眼` : "再接再厉，构筑会更强！", rows, tokens },
       this.net ? null : () => this.startSolo(),
       () => this.toLobby());
-    if (unl.length) setTimeout(() => UI.toast(`解锁新角色：${CHARS[unl[0]].short}！`, 2600), 500);
   },
   endPvp() {
     if (this.ended) return;
