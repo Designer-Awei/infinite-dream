@@ -12,5 +12,7 @@ for d, _, fs in os.walk(root):
         files[rel] = {"h": hashlib.sha1(b).hexdigest()[:12], "s": len(b)}
 digest = hashlib.sha1(json.dumps(files, sort_keys=True).encode()).hexdigest()[:6]
 version = time.strftime("%Y%m%d.%H%M", time.gmtime()) + "-" + digest
-json.dump({"version": version, "files": files}, open(os.path.join(root, "update.json"), "w"), separators=(",", ":"))
+rev_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "app", "native_rev.txt")
+native = int(open(rev_file).read().strip()) if os.path.exists(rev_file) else 0
+json.dump({"version": version, "native": native, "files": files}, open(os.path.join(root, "update.json"), "w"), separators=(",", ":"))
 print("update.json", version, len(files), "files")

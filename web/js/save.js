@@ -130,3 +130,33 @@ export function pull(rand = Math.random) {
   }
   return { item, r, dup, refund, lv: m.talents[item.id] || 0 };
 }
+
+// ---------------------------------------------------------------- save export / import (move to a new install / device)
+const SAVE_TAG = "IDSAVE1";
+function crc(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+  return (h >>> 0).toString(36);
+}
+/** the whole save as one copyable line: IDSAVE1.<base64 json>.<checksum> */
+export function exportSave() {
+  const json = JSON.stringify(load());
+  const b = btoa(String.fromCharCode(...new TextEncoder().encode(json)));
+  return `${SAVE_TAG}.${b}.${crc(b)}`;
+}
+/** returns the decoded save or throws a readable error (does not apply it) */
+export function parseSave(code) {
+  const parts = String(code || "").replace(/\s+/g, "").split(".");
+  if (parts.length !== 3 || parts[0] !== SAVE_TAG) throw new Error("这不是无限梦境的存档码");
+  if (crc(parts[1]) !== parts[2]) throw new Error("存档码不完整（复制时可能少了一部分）");
+  const bytes = Uint8Array.from(atob(parts[1]), (c) => c.charCodeAt(0));
+  const s = JSON.parse(new TextDecoder().decode(bytes));
+  if (!s || typeof s !== "object" || !Array.isArray(s.chars)) throw new Error("存档内容无效");
+  return s;
+}
+export function importSave(code) {
+  const s = parseSave(code);
+  localStorage.setItem(KEY, JSON.stringify(s));
+  mem = null;
+  return load();
+}

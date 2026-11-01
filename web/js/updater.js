@@ -19,6 +19,10 @@ const REMOTES = [
 ];
 const native = () => !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 export let localVersion = "";
+/** the installed app shell: { version: "1.<nativeRev>.<build>", rev } (rev 0 = an old APK without the App plugin) */
+export const nativeInfo = { version: "", rev: 0 };
+const APK_URL = "https://github.com/Designer-Awei/infinite-dream/releases/latest/download/infinite-dream.apk";
+const IOS_URL = "https://github.com/Designer-Awei/infinite-dream/releases/tag/ios-latest";
 
 async function sha12(buf) {
   const d = await crypto.subtle.digest("SHA-1", buf);
@@ -90,6 +94,15 @@ export async function initUpdater() {
   } catch {}
   if (!native()) return;
   const P = window.Capacitor.Plugins, FS = P.Filesystem, WV = P.WebView;
+  try {
+    if (P.App && P.App.getInfo) {
+      const info = await P.App.getInfo();
+      nativeInfo.version = info.version || "";
+      nativeInfo.rev = +(String(info.version || "").split(".")[1] || 0) || 0;
+    }
+  } catch {}
+  // the game files need a newer app shell (new icon / plugins / signing): offer the new installer
+  if (man && (man.native || 0) > nativeInfo.rev) setTimeout(() => showNativeUpdate(man.native), 2500);
   if (!FS || !WV) return;
   let current = "";
   try {
@@ -195,6 +208,46 @@ async function checkUpdate(FS, WV) {
     ui.fail(e.message || String(e));
     FS.rmdir({ path: dir, directory: "DATA", recursive: true }).catch(() => {});
   }
+}
+
+/** "a new installer is available" (things a hot update can't change: icon, app name, native plugins) */
+function showNativeUpdate(need) {
+  const k = "nativeAsk" + need;
+  try {
+    const t = +localStorage.getItem(k) || 0;
+    if (Date.now() - t < 20 * 3600 * 1000) return; // asked in the last day
+  } catch {}
+  if (document.querySelector(".nat-modal")) return;
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const firstSigned = nativeInfo.rev < 2 && !ios; // APKs before rev 2 were signed with a throw-away key
+  const md = el("div", "modal nat-modal");
+  md.innerHTML = `<div class="panel save-panel"><h2 class="outline">有新的安装包</h2>
+    <div class="muted o1">${firstSigned
+      ? `这次安装包更换了<b>固定签名</b>（新图标与以后的覆盖安装都靠它）。旧版需要卸载一次才能装上，<b style="color:#ffe36a">请按顺序操作，存档不会丢：</b><br>
+         ① 点「导出存档」并复制保存 → ② 点「下载安装包」→ ③ 卸载旧版，安装新版 → ④ 打开后在「设置 → 导入存档」粘贴。<br>以后的新安装包都可以直接覆盖安装，数据自动保留。`
+      : ios
+        ? `新的 iOS 安装包包含图标/原生功能更新。用 AltStore / Sideloadly 以同一个 Apple ID 覆盖安装即可保留数据。`
+        : `新的安装包包含图标/原生功能更新。下载后直接覆盖安装，<b style="color:#ffe36a">存档会自动保留</b>。`}</div>
+    <div class="row acts"></div></div>`;
+  const acts = md.querySelector(".acts");
+  const later = () => {
+    try {
+      localStorage.setItem(k, Date.now());
+    } catch {}
+    md.remove();
+  };
+  if (firstSigned) acts.appendChild(btnEl("导出存档", "blue", async () => (await import("./lobby.js")).showSaveExport()));
+  acts.appendChild(btnEl(ios ? "打开下载页" : "下载安装包", "", () => {
+    // leaving the app's origin hands the URL to the system browser, which downloads the APK
+    location.href = ios ? IOS_URL : APK_URL;
+  }));
+  acts.appendChild(btnEl("稍后", "gray small", later));
+  document.getElementById("ui").appendChild(md);
+}
+function btnEl(label, cls, fn) {
+  const b = el("button", "btn " + cls, label);
+  b.onclick = fn;
+  return b;
 }
 
 function progressUI(version, n, bytes) {

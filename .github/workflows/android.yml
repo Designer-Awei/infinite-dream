@@ -50,11 +50,22 @@ jobs:
           done
           grep -n "screenOrientation" "$MAN"
           # every build gets a higher versionCode: installing a newer APK resets hot updates to its own files
-          sed -i -E "s/versionCode [0-9]+/versionCode ${{ github.run_number }}/; s/versionName \"[^\"]*\"/versionName \"1.0.${{ github.run_number }}\"/" android/app/build.gradle
+          # versionName 1.<native rev>.<build>: the game reads the native rev to know when a new installer is needed
+          REV=$(cat app/native_rev.txt)
+          sed -i -E "s/versionCode [0-9]+/versionCode ${{ github.run_number }}/; s/versionName \"[^\"]*\"/versionName \"1.$REV.${{ github.run_number }}\"/" android/app/build.gradle
           grep -nE "versionCode|versionName" android/app/build.gradle
 
       - name: Sync web assets
         run: npx cap sync android
+
+      - name: Fixed signing key (so every new APK installs over the old one and keeps the save)
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KS" ]; then echo "::error::secret ANDROID_KEYSTORE_B64 is not set"; exit 1; fi
+          mkdir -p ~/.android
+          echo "$KS" | base64 -d > ~/.android/debug.keystore
+          keytool -list -keystore ~/.android/debug.keystore -storepass android | tail -2
 
       - name: Build APK
         working-directory: android

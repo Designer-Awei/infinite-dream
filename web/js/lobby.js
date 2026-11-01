@@ -1,11 +1,11 @@
 // Lobby (Brawl Stars-style home: hero on a stage in the middle, info on the left, play button bottom-right)
 // and the capsule gacha with a staged pull sequence (crank → capsule → open → card flips → summary).
 import { CHARS, CHAR_ORDER, ELEM, UNLOCKS, GACHA, RARITY, REACTIONS, MAPS, MAP_ORDER, LOADOUT_SLOTS } from "./data.js";
-import { load, save, unlockProgress, pull, checkUnlocks, loadoutOf, setLoadout } from "./save.js";
+import { load, save, unlockProgress, pull, checkUnlocks, loadoutOf, setLoadout, exportSave, parseSave, importSave } from "./save.js";
 import { sfx, setSound, setMusic, playMusic } from "./audio.js";
 import { el } from "./util.js";
 import { iconURL, skillIcon } from "./icons.js";
-import { localVersion } from "./updater.js";
+import { localVersion, nativeInfo } from "./updater.js";
 import { bushSprite, crateSprite, generateRoom, renderGround, wallSprite, wallMask, WALL, BUSH, CRATE, BARREL, LIFT } from "./map.js";
 import { T } from "./data.js";
 import { btn, toast, clear, showNet, showHelp, showUnlock, uiRoot } from "./ui.js";
@@ -338,8 +338,15 @@ export function showLoadout(cid, onClose) {
 const MODE_IDS = [...MAP_ORDER, "endless"];
 let modesAbort = null;
 const modeOpen = (id) => (id === "endless" ? endlessUnlocked() : mapUnlocked(id));
+let modeInit = false;
 function renderModes(s) {
-  const m = load(), pm = playMode();
+  const m = load();
+  if (!modeInit) {
+    modeInit = true;
+    m.playMode = { map: "grass", endless: false };
+    save();
+  }
+  const pm = playMode();
   const box = q(".lb-modes", s), track = q(".lm-track", box), dots = q(".lm-dots", box);
   track.innerHTML = MODE_IDS.map((id) => {
     const ok = modeOpen(id);
@@ -366,24 +373,30 @@ function renderModes(s) {
     sfx("card");
     updatePlay(s);
   };
+  // first card lines up with the left edge of the column, the last with the right edge, others centred
+  const posOf = (k) => {
+    const c = cards[k], max = track.scrollWidth - track.clientWidth;
+    if (k === 0) return 0;
+    if (k === cards.length - 1) return max;
+    return Math.max(0, Math.min(max, c.offsetLeft - track.offsetLeft - (track.clientWidth - c.offsetWidth) / 2));
+  };
+  const nearest = (left) => {
+    let best = 0, bd = 1e9;
+    cards.forEach((_, k) => {
+      const d = Math.abs(posOf(k) - left);
+      if (d < bd) (bd = d), (best = k);
+    });
+    return best;
+  };
   const go = (i, smooth = true) => {
     i = Math.max(0, Math.min(MODE_IDS.length - 1, i));
-    const c = cards[i];
-    track.scrollTo({ left: c.offsetLeft - (track.clientWidth - c.offsetWidth) / 2, behavior: smooth ? "smooth" : "auto" });
+    track.scrollTo({ left: posOf(i), behavior: smooth ? "smooth" : "auto" });
     choose(i);
   };
   let t = 0;
   track.addEventListener("scroll", () => {
     clearTimeout(t);
-    t = setTimeout(() => {
-      const mid = track.scrollLeft + track.clientWidth / 2;
-      let best = 0, bd = 1e9;
-      cards.forEach((c, k) => {
-        const d = Math.abs(c.offsetLeft + c.offsetWidth / 2 - mid);
-        if (d < bd) (bd = d), (best = k);
-      });
-      choose(best);
-    }, 90);
+    t = setTimeout(() => !drag && choose(nearest(track.scrollLeft)), 90);
   });
   // mouse drag on desktop (touch scrolls natively)
   if (modesAbort) modesAbort.abort();
@@ -413,12 +426,7 @@ function renderModes(s) {
     if (moved) {
       // a short flick is enough: past 40px go one card in that direction, otherwise snap to the nearest
       const dx = endL - startL;
-      const mid = endL + track.clientWidth / 2;
-      let best = 0, bd = 1e9;
-      cards.forEach((c, k) => {
-        const d = Math.abs(c.offsetLeft + c.offsetWidth / 2 - mid);
-        if (d < bd) (bd = d), (best = k);
-      });
+      let best = nearest(endL);
       if (best === cur && Math.abs(dx) > 40) best = cur + Math.sign(dx);
       go(best);
     }
@@ -506,8 +514,81 @@ function showSettings() {
       ev.target.closest("button").innerHTML = `${label}：${m[key] ? "开" : "关"}`;
     });
   q(".r1", md).append(tg("音效", "sound", setSound), tg("音乐", "music", setMusic));
-  q(".r2", md).append(btn("关闭", "", () => md.remove()));
-  q(".panel", md).appendChild(el("div", "muted", `版本 ${localVersion || "dev"}${window.Capacitor ? " · 安卓版（启动时自动增量更新）" : ""}`));
+  q(".r2", md).append(btn("导出存档", "blue small", () => showSaveExport()), btn("导入存档", "green small", () => showSaveImport()), btn("关闭", "", () => md.remove()));
+  q(".panel", md).appendChild(el("div", "muted", `版本 ${localVersion || "dev"}${nativeInfo.version ? " · 安装包 " + nativeInfo.version : ""}${window.Capacitor ? " · 启动时自动增量更新" : ""}`));
+  uiRoot().appendChild(md);
+}
+
+// ------------------------------------------------------------------ save export / import
+export function showSaveExport() {
+  const code = exportSave();
+  const md = el("div", "modal save-modal");
+  md.innerHTML = `<div class="panel save-panel"><h2 class="outline">导出存档</h2>
+    <div class="muted o1">下面这段存档码包含你的全部进度（晶石、角色、天赋、装配、纪录）。复制后保存在备忘录或发给自己，重装或换设备后在「设置 → 导入存档」粘贴即可恢复。</div>
+    <textarea class="save-code" readonly></textarea>
+    <div class="row acts"></div></div>`;
+  const ta = q(".save-code", md);
+  ta.value = code;
+  const copy = async () => {
+    ta.focus();
+    ta.select();
+    let ok = false;
+    try {
+      await navigator.clipboard.writeText(code);
+      ok = true;
+    } catch {
+      try {
+        ok = document.execCommand("copy");
+      } catch {}
+    }
+    toast(ok ? "已复制存档码" : "请长按上面的文字手动复制");
+  };
+  q(".acts", md).append(btn("复制存档码", "", copy));
+  if (navigator.share) q(".acts", md).append(btn("分享…", "blue small", () => navigator.share({ title: "无限梦境存档", text: code }).catch(() => {})));
+  q(".acts", md).append(btn("关闭", "gray small", () => md.remove()));
+  uiRoot().appendChild(md);
+  ta.onclick = () => ta.select();
+}
+export function showSaveImport() {
+  const md = el("div", "modal save-modal");
+  md.innerHTML = `<div class="panel save-panel"><h2 class="outline">导入存档</h2>
+    <div class="muted o1">粘贴以 IDSAVE1 开头的存档码。导入会<b style="color:#ff8a9a">覆盖</b>当前设备上的进度。</div>
+    <textarea class="save-code" placeholder="在这里粘贴存档码"></textarea>
+    <div class="save-msg o1"></div>
+    <div class="row acts"></div></div>`;
+  const ta = q(".save-code", md), msg = q(".save-msg", md);
+  const check = () => {
+    if (!ta.value.trim()) return (msg.textContent = ""), null;
+    try {
+      const s = parseSave(ta.value);
+      msg.style.color = "#8cff9a";
+      msg.textContent = `✓ 存档有效：${s.name || "玩家"} · 💎${s.tokens} · 角色 ${s.chars.length} 个 · 通关 ${(s.stats && s.stats.bossKills) || 0} 次`;
+      return s;
+    } catch (e) {
+      msg.style.color = "#ff8a9a";
+      msg.textContent = e.message;
+      return null;
+    }
+  };
+  ta.oninput = check;
+  q(".acts", md).append(
+    btn("从剪贴板粘贴", "blue small", async () => {
+      try {
+        ta.value = await navigator.clipboard.readText();
+        check();
+      } catch {
+        toast("无法读取剪贴板，请长按输入框粘贴");
+      }
+    }),
+    btn("导入", "", () => {
+      if (!check()) return toast(msg.textContent || "请先粘贴存档码");
+      importSave(ta.value);
+      toast("存档已导入");
+      md.remove();
+      setTimeout(() => location.reload(), 400);
+    }),
+    btn("取消", "gray small", () => md.remove()),
+  );
   uiRoot().appendChild(md);
 }
 
