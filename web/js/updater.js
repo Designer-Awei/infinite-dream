@@ -219,7 +219,7 @@ function showNativeUpdate(need) {
   } catch {}
   if (document.querySelector(".nat-modal")) return;
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
-  const firstSigned = nativeInfo.rev < 2 && !ios; // APKs before rev 2 were signed with a throw-away key
+  const firstSigned = nativeInfo.rev < 3 && !ios; // APKs before rev 3 were signed with a throw-away key
   const md = el("div", "modal nat-modal");
   md.innerHTML = `<div class="panel save-panel"><h2 class="outline">有新的安装包</h2>
     <div class="muted o1">${firstSigned
