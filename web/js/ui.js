@@ -64,7 +64,9 @@ export function showHelp() {
   <b style="color:#ffe36a">循环</b>　每局 7 个房间：战斗 → 战斗 → 补给站 → 精英战 → 战斗 → 补给站 → 首领。清场后开箱三选一技能卡，构筑你的流派。护盾受击后几秒自动回复，生命不会。<br><br>
   <b style="color:#ffe36a">技能混搭 · 元素反应</b>　每位角色带一种元素。拿到【融合】【联动】卡后可以借用其他AI娘的弹幕和技能，不同元素先后命中同一敌人触发反应：<br>${reacts}<br><br>
   <b style="color:#ffe36a">地图道具</b>　${Object.values(ITEMS).map((i) => `<span class="chip" style="background:${i.color};color:#1a1020">${i.name}</span>`).join(" ")}　草丛可以隐身；毒雾、泥沼、尖刺、炸药桶会伤人（也会伤敌）。<br><br>
-  <b style="color:#ffe36a">模式与地图</b>　点开始按钮上方的模式栏切换：主线三张地图（${MAP_ORDER.map((k) => MAPS[k].name).join(" → ")}，通关上一张解锁下一张，越往后敌人越硬、奖励越高；泥沼减速、冰面打滑、熔岩灼烧）；无尽回廊一层层往下打，看你能走多远。全部支持离线单机。<br><br>
+  <b style="color:#ffe36a">模式与地图</b>　在大厅「开始冒险」上方左右滑动地图卡切换模式（全部支持离线单机）：<br>
+  ${MAP_ORDER.map((k, i) => { const d = MAPS[k]; return `· <b>主线 ${i + 1}：${d.name}</b>　${d.desc} 敌人血量×${d.hp}，晶石奖励×${d.reward}${d.need ? `，通关【${MAPS[d.need].name}】后解锁` : ""}；首通 +200💎。`; }).join("<br>")}<br>
+  · <b>无尽回廊</b>　一层接一层没有终点：每 5 层补给站、每 10 层首领（打完继续），每 10 层轮换一张地图的地形，敌人越来越多越来越强；倒下时按到达层数结算并记录最佳纪录。完成任意一局后解锁。<br><br>
   <b style="color:#ffe36a">养成</b>　通关获得💎晶石，扭蛋机抽取永久天赋与稀有技能卡。N/R/SR 天赋自动生效；SSR 天赋要在角色介绍卡右上角的「天赋」页装配，每个角色一页、${2} 个槽位，PVE 和 PVP 都生效。达成条件解锁新角色。
   </div><div class="row" style="margin-top:10px"></div></div>`;
   $(".row", md).appendChild(btn("知道了", "", () => md.remove()));

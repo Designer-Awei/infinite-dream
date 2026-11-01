@@ -7,7 +7,7 @@ const b = await chromium.launch();
 const issues = [];
 const audit = async (p, tag) => p.evaluate((tag) => {
   const W = innerWidth, H = innerHeight, bad = [];
-  const scrollAnc = (e) => { for (let a = e.parentElement; a && a.id !== "ui"; a = a.parentElement) { const cs = getComputedStyle(a); if (/(auto|scroll)/.test(cs.overflowY + cs.overflowX) && a.scrollHeight > a.clientHeight + 1) return true; } return false; };
+  const scrollAnc = (e) => { for (let a = e.parentElement; a && a.id !== "ui"; a = a.parentElement) { const cs = getComputedStyle(a); if (/(auto|scroll)/.test(cs.overflowY + cs.overflowX) && (a.scrollHeight > a.clientHeight + 1 || a.scrollWidth > a.clientWidth + 1)) return true; } return false; };
   for (const e of document.querySelectorAll("#ui *")) {
     const cs = getComputedStyle(e); if (cs.display === "none" || cs.visibility === "hidden" || +cs.opacity === 0) continue;
     if (!/^(BUTTON|B|SPAN|SMALL|DIV|IMG|H2|I|EM)$/.test(e.tagName)) continue;
@@ -33,8 +33,10 @@ for (const [W, H] of SIZES) {
   await step("lobby", async () => {});
   await step("kit", () => click(".li-kit"));
   await click(".kit-modal .x-btn"); await p.waitForTimeout(300);
-  await step("modes", () => click(".mode-sel"));
-  await click(".mode-modal .x-btn"); await p.waitForTimeout(800);
+  await step("detail", () => click(".li-more"));
+  await click(".cd-modal .x-btn"); await p.waitForTimeout(300);
+  await step("swipe", () => p.evaluate(() => { const t = document.querySelector(".lm-track"); t.scrollTo({ left: t.scrollWidth }); }), 900);
+  await p.evaluate(() => { const t = document.querySelector(".lm-track"), c = t.children[1]; t.scrollTo({ left: c.offsetLeft - (t.clientWidth - c.offsetWidth) / 2 }); }); await p.waitForTimeout(900);
   await step("gacha", () => click(".t-gacha"), 1200);
   await step("pool", () => click(".gp-poolbtn"));
   await click(".pool-modal .x-btn"); await p.waitForTimeout(300);

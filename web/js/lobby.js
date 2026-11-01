@@ -6,7 +6,8 @@ import { sfx, setSound, setMusic, playMusic } from "./audio.js";
 import { el } from "./util.js";
 import { iconURL, skillIcon } from "./icons.js";
 import { localVersion } from "./updater.js";
-import { bushSprite, crateSprite } from "./map.js";
+import { bushSprite, crateSprite, generateRoom, renderGround, wallSprite, wallMask, WALL, BUSH, CRATE, BARREL, LIFT } from "./map.js";
+import { T } from "./data.js";
 import { btn, toast, clear, showNet, showHelp, showUnlock, uiRoot } from "./ui.js";
 import { app, playMode, mapUnlocked, endlessUnlocked } from "./main.js";
 
@@ -99,7 +100,8 @@ export function showLobby() {
   <div class="lb-center"><div class="lb-rays"></div><div class="lb-motes">${Array.from({ length: 14 }, (_, i) => `<i style="left:${8 + ((i * 37) % 84)}%;animation-delay:${(i * 0.53) % 4}s;animation-duration:${3 + (i % 4) * 0.7}s"></i>`).join("")}</div><div class="lb-island"></div><div class="lb-hero"><img alt=""></div><div class="lb-name outline"></div></div>
   <div class="lb-right">
     <div class="lb-tiles"></div>
-    <div class="lb-goal o1"></div>
+    <div class="lb-goal slim o1"></div>
+    <div class="lb-modes"><div class="lm-track"></div><div class="lm-dots"></div></div>
     <div class="lb-play"></div>
   </div>`;
   root.appendChild(s);
@@ -132,12 +134,6 @@ export function showLobby() {
   tile("👥", "联机对战", "t-net", () => showNet());
   tile("📖", "玩法说明", "t-help", () => showHelp());
   const play = q(".lb-play", s);
-  const pm = playMode(), md = MAPS[pm.map];
-  const modeBtn = el("button", "mode mode-sel o1", pm.endless
-    ? `<span class="chip">无尽</span><span class="mt">最佳 ${m.stats.endlessBest || 0} 层</span><b>切换 ▾</b>`
-    : `<span class="chip">主线</span><span class="mt">${md.name}${md.reward > 1 ? ` ×${md.reward}` : ""}</span><b>切换 ▾</b>`);
-  modeBtn.onclick = () => (sfx("click"), showModes());
-  play.appendChild(modeBtn);
   const pb = btn(`<span class="pt">开始冒险</span>`, "big play-btn", () => {
     // launch: the hero leaps off the island, white wipe, then the run starts
     s.classList.add("launch");
@@ -146,13 +142,15 @@ export function showLobby() {
   });
   play.appendChild(pb);
   play.appendChild(el("div", "lb-stats o1", `击败 ${m.stats.kills} · 反应 ${m.stats.reactions} · 通关 ${m.stats.bossKills} · 最远 ${m.stats.best}/7`));
-  // next goal (like Brawl Stars' trophy road progress)
+  // next goal (like Brawl Stars' trophy road progress): one slim line
   const next = CHAR_ORDER.find((id) => !m.chars.includes(id));
   const goal = q(".lb-goal", s);
   if (next) {
     const u = UNLOCKS[next], pr = unlockProgress(next);
-    goal.innerHTML = `<div class="g-h">下一个目标</div><div class="g-row"><img src="assets/portrait_${next}.png" alt=""><div class="g-tx"><b>解锁 ${CHARS[next].short}</b><span>${u.text}</span><div class="g-bar"><i style="width:${Math.round(pr * 100)}%"></i></div><small>${Math.min(m.stats[u.stat] || 0, u.need)} / ${u.need}</small></div></div>`;
-  } else goal.innerHTML = `<div class="g-h">全部角色已解锁 🎉</div><div class="g-row"><div class="g-tx"><b>挑战更快通关</b><span>最远 ${m.stats.best}/7 · 通关 ${m.stats.bossKills} 次</span></div></div>`;
+    goal.innerHTML = `<img src="assets/portrait_${next}.png" alt=""><div class="g-tx"><b>下一个目标：解锁 ${CHARS[next].short}</b><div class="g-bar"><i style="width:${Math.round(pr * 100)}%"></i></div></div><small>${Math.min(m.stats[u.stat] || 0, u.need)}/${u.need}</small>`;
+    goal.title = u.text;
+  } else goal.innerHTML = `<div class="g-tx"><b>全部角色已解锁 🎉</b><span>最远 ${m.stats.best}/7 · 通关 ${m.stats.bossKills} 次</span></div>`;
+  renderModes(s);
   renderRoster(s);
   renderHero(s, m.sel, false);
   // click the hero: a little hop
@@ -232,7 +230,7 @@ function renderHero(s, id, swap) {
   info.classList.add("refresh");
   info.innerHTML = `
     <div class="li-head"><div class="li-name outline">${c.name}</div><div class="li-title o1"><span>「${c.title}」</span><button class="li-kit" title="天赋装配">${loadoutOf(id).map((t) => `<i class="ks${t ? " on" : ""}">${t ? `<img src="${iconURL(t, 1)}" alt="">` : "+"}</i>`).join("")}<span class="o1">天赋</span></button></div>
-      <div class="li-chips o1"><span class="chip el-chip" style="background:${e.color}"><img src="${iconURL("elem_" + c.elem, 1)}" alt="">${e.name}元素</span><span class="chip">${c.role}</span></div></div>
+      <div class="li-chips o1"><span class="chip el-chip" style="background:${e.color}"><img src="${iconURL("elem_" + c.elem, 1)}" alt="">${e.name}元素</span><span class="chip role">${c.role}</span><button class="li-more">详情</button></div></div>
     <div class="li-bars o1">
       ${bar("生命", c.hp, 7, "linear-gradient(90deg,#ff8a9a,#ff3a5a)")}
       ${bar("护盾", c.shield, 6, "linear-gradient(90deg,#e0ecff,#8aa8ff)")}
@@ -244,17 +242,31 @@ function renderHero(s, id, swap) {
         .map(([k, n, d]) => `<div class="sk"><div class="sk-ic"><img src="${iconURL(skillIcon(id, k === "J" ? "atk" : k === "K" ? "skill" : "ult"), 2)}" alt=""><i>${k}</i></div><div class="sk-tx"><b>${n}</b><span title="${d}">${d}</span></div></div>`)
         .join("")}
     </div>
-    <div class="li-react o1"><div class="lr-h">混搭反应（${e.name}元素参与）</div>${Object.entries(REACTIONS)
-      .filter(([k]) => k === "bubble" || k.split("+").includes(c.elem))
-      .map(([k, r]) => `<span class="chip" title="${r.desc}">${k === "bubble" ? (c.elem === "bubble" ? "泡+任意" : "泡+" + e.name) : k.split("+").map((x) => ELEM[x].name).join("+")} ${r.name}</span>`)
-      .join("")}</div>
-    <div class="li-lore o1">${open ? c.lore : "🔒 解锁条件：" + UNLOCKS[id].text + `（${Math.round(unlockProgress(id) * 100)}%）`}</div>`;
+    `;
+  q(".li-more", info).onclick = () => (sfx("click"), showCharDetail(id));
+  info.querySelector(".li-skills").onclick = () => (sfx("click"), showCharDetail(id));
   q(".li-kit", info).onclick = () => (sfx("click"), showLoadout(id, () => renderHero(s, id, false)));
-  const pb = q(".play-btn", s);
-  if (pb) {
-    pb.disabled = !open;
-    q(".pt", pb).textContent = open ? "开始冒险" : "未解锁";
-  }
+  updatePlay(s, id);
+}
+
+// ------------------------------------------------------------------ character detail (everything that doesn't fit the card)
+function showCharDetail(id) {
+  const m = load(), c = CHARS[id], e = ELEM[c.elem], open = m.chars.includes(id);
+  const reacts = Object.entries(REACTIONS).filter(([k]) => k === "bubble" || k.split("+").includes(c.elem));
+  const md = el("div", "modal cd-modal");
+  md.innerHTML = `<div class="panel cd-panel">
+    <div class="kit-head"><img class="kit-face" src="assets/head_${id}.png" alt=""><div><h2 class="outline">${c.name}</h2><div class="kit-sub o1">「${c.title}」 · ${e.name}元素 · ${c.role}</div></div><button class="btn gray small x-btn">关闭</button></div>
+    <div class="cd-body">
+      <div class="cd-sec">${[["普攻 J", "atk", c.atk.name, c.passive], ["小技能 K", "skill", c.skill.name, c.skill.desc + `（冷却 ${c.skill.cd} 秒）`], ["大招 L", "ult", c.ult.name, c.ult.desc]]
+        .map(([k, slot, n, d]) => `<div class="cd-sk"><img src="${iconURL(skillIcon(id, slot), 2)}" alt=""><div><b class="o1">${n} <small>${k}</small></b><p>${d}</p></div></div>`).join("")}</div>
+      <div class="cd-sec"><div class="cd-h o1">元素反应（${e.name}元素参与）</div>${reacts
+        .map(([k, r]) => `<div class="cd-re"><span class="chip">${k === "bubble" ? (c.elem === "bubble" ? "泡 + 任意元素" : "泡 + " + e.name) : k.split("+").map((x) => ELEM[x].name).join(" + ")}</span><b>${r.name}</b><span>${r.desc}</span></div>`).join("")}
+        <div class="cd-h o1" style="margin-top:8px">设定</div><p class="cd-lore">${c.lore}</p>
+        ${open ? "" : `<div class="cd-h o1" style="margin-top:8px">解锁条件</div><p class="cd-lore">${UNLOCKS[id].text}（进度 ${Math.round(unlockProgress(id) * 100)}%）</p>`}</div>
+    </div></div>`;
+  uiRoot().appendChild(md);
+  q(".x-btn", md).onclick = () => md.remove();
+  md.onclick = (ev) => ev.target === md && md.remove();
 }
 
 // ------------------------------------------------------------------ talent loadout (one page per character)
@@ -267,7 +279,7 @@ export function showLoadout(cid, onClose) {
     const ssr = GACHA.pool.filter((it) => it.eq);
     const passive = GACHA.pool.filter((it) => !it.eq && !it.card && m.talents[it.id]);
     md.innerHTML = `<div class="panel kit-panel">
-      <div class="kit-head"><img class="kit-face" src="assets/portrait_${cid}.png" alt=""><div><h2 class="outline">天赋装配 · ${c.short}</h2><div class="kit-sub o1">每个角色一页 · ${LOADOUT_SLOTS} 个 SSR 槽位 · PVE 与 PVP 都生效</div></div><button class="btn gray small x-btn">完成</button></div>
+      <div class="kit-head"><img class="kit-face" src="assets/head_${cid}.png" alt=""><div><h2 class="outline">天赋装配 · ${c.short}</h2><div class="kit-sub o1">每个角色一页 · ${LOADOUT_SLOTS} 个 SSR 槽位 · PVE 与 PVP 都生效</div></div><button class="btn gray small x-btn">完成</button></div>
       <div class="kit-body">
         <div class="kit-l">
           <div class="kit-slots">${page.map((t, i) => {
@@ -322,34 +334,164 @@ export function showLoadout(cid, onClose) {
   draw();
 }
 
-// ------------------------------------------------------------------ mode / map select
-function showModes() {
+// ------------------------------------------------------------------ mode carousel (swipe left/right on the lobby)
+const MODE_IDS = [...MAP_ORDER, "endless"];
+let modesAbort = null;
+const modeOpen = (id) => (id === "endless" ? endlessUnlocked() : mapUnlocked(id));
+function renderModes(s) {
   const m = load(), pm = playMode();
-  const md = el("div", "modal mode-modal");
-  const mapCard = (id) => {
-    const d = MAPS[id], ok = mapUnlocked(id), clears = (m.maps || {})[id] || 0;
-    return `<button class="mcard th-${id}${ok ? "" : " lock"}${!pm.endless && pm.map === id ? " on" : ""}" data-map="${id}">
-      <span class="mc-art"></span><b class="mc-t">${d.name}</b><small>${d.desc}</small>
-      <span class="mc-foot">${ok ? `血量×${d.hp} · 奖励×${d.reward}${clears ? ` · 通关 ${clears} 次` : " · 首通+200"}` : `🔒 先通关【${MAPS[d.need].name}】`}</span></button>`;
+  const box = q(".lb-modes", s), track = q(".lm-track", box), dots = q(".lm-dots", box);
+  track.innerHTML = MODE_IDS.map((id) => {
+    const ok = modeOpen(id);
+    if (id === "endless")
+      return `<div class="mcard pv${ok ? "" : " lock"}" data-id="endless"><img class="mc-map" src="${mapPreview("endless")}" alt="" draggable="false"><span class="mc-k">无尽</span><div class="mc-info"><b class="mc-t">无尽回廊</b><span class="mc-foot">${ok ? `最佳 ${m.stats.endlessBest || 0} 层` : "🔒 完成任意一局解锁"}</span></div></div>`;
+    const d = MAPS[id], clears = (m.maps || {})[id] || 0;
+    return `<div class="mcard pv${ok ? "" : " lock"}" data-id="${id}"><img class="mc-map" src="${mapPreview(id)}" alt="" draggable="false"><span class="mc-k">主线 ${MAP_ORDER.indexOf(id) + 1}/${MAP_ORDER.length}</span><div class="mc-info"><b class="mc-t">${d.name}</b><span class="mc-foot">${ok ? (d.reward > 1 ? `奖励×${d.reward}` : "入门") + (clears ? ` · 通关${clears}` : "") : `🔒 先通关${MAPS[d.need].name}`}</span></div></div>`;
+  }).join("");
+  dots.innerHTML = MODE_IDS.map(() => "<i></i>").join("");
+  const cards = [...track.children];
+  let cur = Math.max(0, MODE_IDS.indexOf(pm.endless ? "endless" : pm.map));
+  const mark = (i) => {
+    cards.forEach((c, k) => c.classList.toggle("on", k === i));
+    [...dots.children].forEach((d, k) => d.classList.toggle("on", k === i));
   };
-  const eok = endlessUnlocked();
-  md.innerHTML = `<div class="panel mode-panel"><div class="kit-head"><h2 class="outline">选择模式</h2><button class="btn gray small x-btn">关闭</button></div>
-    <div class="mode-sec o1">主线闯关 · 7 个房间（含补给站），击败首领【幻觉之眼】</div>
-    <div class="mode-maps">${MAP_ORDER.map(mapCard).join("")}</div>
-    <div class="mode-sec o1">无尽回廊</div>
-    <button class="mcard wide th-endless${eok ? "" : " lock"}${pm.endless ? " on" : ""}" data-endless="1"><span class="mc-art"></span><b class="mc-t">无尽回廊</b><small>一层接一层永不结束：每 5 层补给站、每 10 层首领，并轮换三张地图的地形；敌人越来越多越来越强。倒下时按到达层数结算。</small><span class="mc-foot">${eok ? `最佳纪录 ${m.stats.endlessBest || 0} 层` : "🔒 完成任意一局后解锁"}</span></button>
-    <div class="mode-sec o1">以上均为单人模式，可离线游玩</div></div>`;
-  uiRoot().appendChild(md);
-  const close = () => (md.remove(), showLobby());
-  q(".x-btn", md).onclick = close;
-  md.onclick = (e) => e.target === md && close();
-  md.querySelectorAll(".mcard").forEach((b) => (b.onclick = () => {
-    if (b.classList.contains("lock")) return toast(b.dataset.endless ? "完成任意一局后解锁无尽回廊" : `先通关【${MAPS[MAPS[b.dataset.map].need].name}】解锁`);
-    m.playMode = b.dataset.endless ? { map: pm.map, endless: true } : { map: b.dataset.map, endless: false };
+  const choose = (i) => {
+    if (i === cur) return;
+    cur = i;
+    mark(i);
+    const id = MODE_IDS[i];
+    // remember the mode even when it is still locked (the play button says so); no lobby re-render
+    m.playMode = id === "endless" ? { map: (m.playMode && m.playMode.map) || "grass", endless: true } : { map: id, endless: false };
     save();
     sfx("card");
-    close();
-  }));
+    updatePlay(s);
+  };
+  const go = (i, smooth = true) => {
+    i = Math.max(0, Math.min(MODE_IDS.length - 1, i));
+    const c = cards[i];
+    track.scrollTo({ left: c.offsetLeft - (track.clientWidth - c.offsetWidth) / 2, behavior: smooth ? "smooth" : "auto" });
+    choose(i);
+  };
+  let t = 0;
+  track.addEventListener("scroll", () => {
+    clearTimeout(t);
+    t = setTimeout(() => {
+      const mid = track.scrollLeft + track.clientWidth / 2;
+      let best = 0, bd = 1e9;
+      cards.forEach((c, k) => {
+        const d = Math.abs(c.offsetLeft + c.offsetWidth / 2 - mid);
+        if (d < bd) (bd = d), (best = k);
+      });
+      choose(best);
+    }, 90);
+  });
+  // mouse drag on desktop (touch scrolls natively)
+  if (modesAbort) modesAbort.abort();
+  modesAbort = new AbortController();
+  const signal = modesAbort.signal;
+  let drag = null, justDragged = false;
+  track.addEventListener("pointerdown", (e) => {
+    if (e.pointerType !== "mouse") return;
+    drag = { x: e.clientX, l: track.scrollLeft, moved: false };
+    track.classList.add("dragging");
+  });
+  addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x;
+    if (Math.abs(dx) > 4) drag.moved = true;
+    track.scrollLeft = drag.l - dx;
+  }, { signal });
+  addEventListener("pointerup", () => {
+    if (!drag) return;
+    const moved = drag.moved, startL = drag.l, endL = track.scrollLeft; // read before snapping comes back on
+    track.classList.remove("dragging");
+    drag = null;
+    if (moved) {
+      justDragged = true;
+      setTimeout(() => (justDragged = false), 60);
+    }
+    if (moved) {
+      // a short flick is enough: past 40px go one card in that direction, otherwise snap to the nearest
+      const dx = endL - startL;
+      const mid = endL + track.clientWidth / 2;
+      let best = 0, bd = 1e9;
+      cards.forEach((c, k) => {
+        const d = Math.abs(c.offsetLeft + c.offsetWidth / 2 - mid);
+        if (d < bd) (bd = d), (best = k);
+      });
+      if (best === cur && Math.abs(dx) > 40) best = cur + Math.sign(dx);
+      go(best);
+    }
+  }, { signal });
+  cards.forEach((c, k) => (c.onclick = () => k !== cur && !justDragged && go(k)));
+  dots.onclick = (e) => {
+    const k = [...dots.children].indexOf(e.target);
+    if (k >= 0) go(k);
+  };
+  mark(cur);
+  requestAnimationFrame(() => go(cur, false));
+}
+/** a thumbnail of a real in-game arena of that map (ground, water, walls, bushes, crates); endless = the 3 maps side by side */
+const previews = {};
+function mapPreview(id) {
+  if (previews[id]) return previews[id];
+  const W = 360, H = 170, c = document.createElement("canvas");
+  c.width = W;
+  c.height = H;
+  const g = c.getContext("2d");
+  g.imageSmoothingEnabled = false;
+  const draw = (mid, dx, dw, seed) => {
+    const md = MAPS[mid];
+    // pick the busiest of a few arenas (most walls / bushes / water / hazard in the middle band the card shows)
+    let map = null, best = -1;
+    for (let k = 0; k < 10; k++) {
+      const mm = generateRoom("combat", seed + k * 131, md.theme, { hazard: md.hazard });
+      let n = 0;
+      for (let y = Math.floor(mm.H * 0.3); y < Math.ceil(mm.H * 0.7); y++)
+        for (let x = 1; x < mm.W - 1; x++) n += mm.t[y * mm.W + x] !== 0 ? 1 : mm.mud[y * mm.W + x] ? 0.6 : 0;
+      if (n > best) (best = n), (map = mm);
+    }
+    const ground = renderGround(map);
+    const full = document.createElement("canvas");
+    full.width = map.pxW;
+    full.height = map.pxH;
+    const f = full.getContext("2d");
+    f.drawImage(ground, 0, 0);
+    for (let y = 0; y < map.H; y++)
+      for (let x = 0; x < map.W; x++) {
+        const t = map.t[y * map.W + x];
+        if (t === WALL) f.drawImage(wallSprite(map.theme, wallMask(map, x, y)), x * T, y * T - LIFT);
+        else if (t === BUSH) f.drawImage(bushSprite(map.theme, (x * 7 + y * 13) % 5), x * T - 4, y * T - 12);
+        else if (t === CRATE || t === BARREL) f.drawImage(crateSprite(t === CRATE ? "crate" : "barrel", 0), x * T, y * T - 8);
+      }
+    // a window around the middle of the arena, scaled to fill the slot
+    // the whole arena width (inside the outer wall), cropped to the slot's aspect around the middle
+    const sw = Math.min(map.pxW - T, ((map.pxH - T) * dw) / H), sh = (sw * H) / dw;
+    g.drawImage(full, (map.pxW - sw) / 2, (map.pxH - sh) / 2 - LIFT / 2, sw, sh, dx, 0, dw, H);
+  };
+  try {
+    if (id === "endless") {
+      const w3 = W / 3;
+      MAP_ORDER.forEach((mid, i) => draw(mid, Math.round(i * w3), Math.ceil(w3), 777 + i * 31));
+      g.fillStyle = "rgba(40,10,90,.35)";
+      g.fillRect(0, 0, W, H);
+      g.fillStyle = "#1a1020";
+      for (let i = 1; i < 3; i++) g.fillRect(Math.round(i * w3) - 1, 0, 3, H);
+    } else draw(id, 0, W, 4242 + MAP_ORDER.indexOf(id) * 97);
+  } catch (e) {
+    console.warn("preview", e);
+  }
+  return (previews[id] = c.toDataURL());
+}
+/** the play button reflects both the selected girl and the selected mode */
+function updatePlay(s, cid) {
+  const m = load(), pb = q(".play-btn", s);
+  if (!pb) return;
+  if (cid) s.dataset.cid = cid;
+  const pm = m.playMode || {}, id = pm.endless ? "endless" : pm.map || "grass";
+  const charOk = m.chars.includes(s.dataset.cid || m.sel), mOk = modeOpen(id);
+  pb.disabled = !charOk || !mOk;
+  q(".pt", pb).textContent = !charOk ? "未解锁" : !mOk ? "模式未解锁" : "开始冒险";
 }
 
 function showSettings() {

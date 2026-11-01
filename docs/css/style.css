@@ -913,3 +913,83 @@ body.touchmode .c-key { display: none; }
 .lb-tile .tl { white-space: nowrap; font-size: clamp(10px, 1.6vw, 15px); }
 /* roster cards: portraits only (the name is shown in the middle of the lobby) */
 .lb .rcard img:not(.el-ico) { height: 104%; bottom: -2%; }
+
+/* ---- lobby right column: slim goal strip + swipeable mode carousel */
+.lb .lb-right { gap: 8px; }
+.lb-goal.slim { display: flex; align-items: center; gap: 8px; padding: 5px 8px; flex: none; }
+.lb-goal.slim img { width: 30px; height: 30px; border-width: 2px; border-radius: 8px; }
+.lb-goal.slim .g-tx { flex: 1; min-width: 0; gap: 3px; }
+.lb-goal.slim .g-tx b { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lb-goal.slim .g-tx span { font-size: 11px; color: #c8c0e8; }
+.lb-goal.slim .g-bar { height: 8px; }
+.lb-goal.slim small { font-size: 11px; color: #c8c0e8; flex: none; }
+.lb-modes { position: relative; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.lm-track { flex: 1; min-height: 0; display: flex; gap: 8px; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; scrollbar-width: none; padding: 2px 9% 4px; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; touch-action: pan-x; cursor: grab; }
+.lm-track::-webkit-scrollbar { display: none; }
+.lm-track.dragging { scroll-snap-type: none; cursor: grabbing; }
+.lm-track .mcard { flex: 0 0 82%; scroll-snap-align: center; min-height: 0; height: 100%; transition: transform .2s, filter .2s, opacity .2s; transform: scale(.92); opacity: .7; user-select: none; -webkit-user-select: none; cursor: inherit; }
+.lm-track .mcard.on { transform: none; opacity: 1; outline: 3px solid #fff6c0; outline-offset: 1px; }
+.lm-track .mcard.lock.on { outline-color: #8a7ac8; }
+.lm-track .mcard .mc-k { font-size: 10.5px; color: #fff6c0; text-shadow: 0 1px 0 #1a1020, 1px 0 0 #1a1020, -1px 0 0 #1a1020; }
+.th-ice .mc-k { color: #14284a !important; text-shadow: none !important; }
+.lm-track .mcard small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.lm-arrow { position: absolute; top: calc(50% - 18px); width: 26px; height: 26px; border-radius: 50%; border: 3px solid var(--ink); background: #fff6c0; color: #3a2400; font: 12px/1 sans-serif; cursor: pointer; z-index: 2; box-shadow: 0 2px 0 var(--ink); display: flex; align-items: center; justify-content: center; padding: 0; }
+.lm-arrow.l { left: -4px; } .lm-arrow.r { right: -4px; }
+.lm-arrow:disabled { opacity: 0; pointer-events: none; }
+.lm-dots { display: flex; justify-content: center; gap: 6px; padding-top: 4px; flex: none; }
+.lm-dots i { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,.3); cursor: pointer; transition: all .2s; }
+.lm-dots i.on { width: 18px; border-radius: 4px; background: #ffe36a; }
+@media (max-height: 420px) {
+  .lb-goal.slim { padding: 3px 6px; } .lb-goal.slim img { width: 22px; height: 22px; } .lb-goal.slim .g-tx b { font-size: 10.5px; } .lb-goal.slim .g-bar { height: 6px; }
+  .lm-track .mcard { padding: 4px 8px; } .lm-track .mcard .mc-t { font-size: 14px; } .lm-track .mcard small { font-size: 9.5px; -webkit-line-clamp: 2; } .lm-track .mcard .mc-foot { font-size: 9.5px; } .lm-track .mcard .mc-k { font-size: 9px; }
+  .lm-dots { padding-top: 2px; } .lm-dots i { width: 5px; height: 5px; } .lm-dots i.on { width: 12px; }
+  .lm-arrow { width: 20px; height: 20px; font-size: 9px; border-width: 2px; }
+}
+.ld-icon { width: 96px; height: 96px; border-radius: 22px; border: 4px solid #1a1020; box-shadow: 0 6px 0 #1a1020, 0 0 30px rgba(120,200,255,.5); animation: icoFloat 2.4s ease-in-out infinite; }
+@media (max-height: 420px) { .ld-icon { width: 64px; height: 64px; border-radius: 16px; } }
+.kit-face { object-fit: cover; object-position: center; background: linear-gradient(180deg, #8fd0ff, #3a4ac0); }
+
+/* info card: core info only, the rest in 角色详情 */
+.lb .li-skills { cursor: pointer; }
+.lb .sk-tx span { -webkit-line-clamp: 1 !important; }
+.li-more { margin-top: auto; font: inherit; font-size: 11.5px; color: #fff6c0; background: rgba(255,255,255,.08); border: 2px dashed rgba(255,246,192,.45); border-radius: 8px; padding: 3px 8px; cursor: pointer; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: none; }
+.li-more:active { transform: translateY(1px); }
+@media (max-height: 420px) { .li-more { font-size: 10px; padding: 1px 6px; } }
+.cd-panel { width: min(820px, 96vw); max-height: 94vh; max-height: 94dvh; display: flex; flex-direction: column; gap: 8px; padding: 10px 14px; animation: popIn .3s cubic-bezier(.2,1.4,.4,1); }
+.cd-panel .kit-head h2 { text-align: left; }
+.cd-body { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; overflow: auto; }
+.cd-sec { display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+.cd-sk { display: flex; gap: 8px; align-items: flex-start; background: rgba(10,6,30,.38); border: 2px solid rgba(255,255,255,.08); border-radius: 10px; padding: 6px 8px; }
+.cd-sk img { width: 36px; height: 36px; image-rendering: pixelated; flex: none; }
+.cd-sk b { font-weight: normal; color: var(--y1); font-size: 14px; } .cd-sk b small { color: #c8c0e8; font-size: 11px; margin-left: 4px; }
+.cd-sk p, .cd-lore { margin: 2px 0 0; font-size: 12px; line-height: 1.5; color: #e8e4ff; }
+.cd-h { font-size: 13px; color: var(--y1); }
+.cd-re { display: grid; grid-template-columns: auto auto 1fr; gap: 6px; align-items: center; font-size: 12px; }
+.cd-re .chip { font-size: 11px; background: rgba(255,255,255,.14); white-space: nowrap; }
+.cd-re b { font-weight: normal; color: #fff; white-space: nowrap; } .cd-re > span:last-child { color: #c8c0e8; }
+@media (max-width: 560px) { .cd-body { grid-template-columns: 1fr; } }
+@media (max-height: 420px) { .cd-sk { padding: 4px 6px; } .cd-sk img { width: 28px; height: 28px; } .cd-sk p, .cd-lore { font-size: 11px; } }
+/* 详情 button sits at the end of the chips row */
+.lb .li-chips { align-items: center; }
+.lb .li-chips .role { flex: 0 1 auto; }
+.li-more { margin: 0 0 0 auto; padding: 1px 8px; border: 2px solid var(--ink); border-style: solid; border-radius: 8px; background: #3a2a6a; color: #fff6c0; font-size: 12px; box-shadow: 0 2px 0 var(--ink); }
+@media (max-height: 420px) { .li-more { font-size: 10px; padding: 0 6px; } }
+/* mode carousel: fixed, compact card height */
+.lb-modes { flex: none; }
+.lm-track { flex: none; height: clamp(78px, 24vh, 132px); }
+.lm-track .mcard { gap: 1px; justify-content: flex-start; }
+.lm-track .mcard small { -webkit-line-clamp: 2; }
+.lm-track .mcard .mc-foot { margin-top: auto; }
+.lb .lb-right .lb-play { margin-top: auto; }
+@media (max-height: 420px) { .lm-track .mcard small { -webkit-line-clamp: 1; } .lm-track .mcard { padding: 3px 8px; } .lm-track .mcard .mc-t { font-size: 13px; line-height: 1.15; } }
+@media (min-height: 600px) { .lb .sk-tx span { -webkit-line-clamp: 2 !important; } .lb .sk-tx { font-size: 12.5px; } .lb .sk-tx b { font-size: 14px; } }
+/* mode cards = real map previews with a small info bar */
+.lm-track .mcard.pv { padding: 0; background: #1a1020; }
+.mcard.pv .mc-map { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; pointer-events: none; -webkit-user-drag: none; }
+.mcard.pv .mc-k { position: absolute; top: 4px; left: 4px; z-index: 1; font-size: 10px; padding: 0 6px; border-radius: 6px; background: rgba(20,12,50,.85); color: #fff6c0 !important; border: 2px solid var(--ink); text-shadow: none !important; }
+.mcard.pv .mc-info { position: absolute; left: 0; right: 0; bottom: 0; z-index: 1; display: flex; align-items: baseline; gap: 6px; padding: 14px 8px 4px; background: linear-gradient(180deg, transparent, rgba(16,8,40,.92) 55%); }
+.mcard.pv .mc-t { font-size: 15px; color: #fff; text-shadow: 0 2px 0 #1a1020; flex: none; }
+.mcard.pv .mc-foot { margin: 0 0 0 auto; font-size: 11px; color: #fff6c0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: none; }
+.mcard.pv.lock .mc-map { filter: grayscale(.85) brightness(.55); }
+.mcard.pv.lock { filter: none; }
+@media (max-height: 420px) { .mcard.pv .mc-t { font-size: 12.5px; } .mcard.pv .mc-foot { font-size: 9.5px; } .mcard.pv .mc-info { padding: 10px 6px 2px; } .mcard.pv .mc-k { font-size: 8.5px; padding: 0 4px; } }
