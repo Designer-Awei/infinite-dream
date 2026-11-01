@@ -1133,7 +1133,7 @@ export class Game {
       }
       if (!best) continue;
       if (q.kind === "coin") {
-        const mag = (best.cards.coin_up ? 90 : 56) + (q.magnet ? 2000 : 0);
+        const mag = (best.cards.coin_up ? 110 : 76) + (q.magnet ? 2000 : 0);
         if (bd < mag && q.t > 0.4) {
           const a = angTo(q.x, q.y, best.x, best.y - 10);
           q.x += Math.cos(a) * 320 * dt;

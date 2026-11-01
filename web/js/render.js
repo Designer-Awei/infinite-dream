@@ -27,8 +27,9 @@ export class Renderer {
     if (!game.map) return;
     let tx = p ? p.x : game.map.pxW / 2, ty = p ? p.y - 24 : game.map.pxH / 2;
     if (p && p.target && !p.dead) {
-      tx += (p.target.x - p.x) * 0.18;
-      ty += (p.target.y - p.y) * 0.18;
+      const k = p.target.boss ? 0.4 : 0.18;
+      tx += (p.target.x - p.x) * k;
+      ty += (p.target.y - 30 - p.y) * k;
     }
     tx -= VIEW_W / 2;
     ty -= VIEW_H / 2;
