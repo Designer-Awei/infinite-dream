@@ -35,6 +35,11 @@ export function initInput(root) {
   addEventListener("keydown", (e) => {
     if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
     if (!keys.has(e.code)) {
+      const w = { KeyJ: ".s-atk", KeyK: ".s-skill", KeyL: ".s-ult", Space: ".s-dash", ShiftLeft: ".s-dash" }[e.code];
+      if (w) {
+        const n = document.querySelector(w);
+        if (n) n.classList.add("down"), ripple(n);
+      }
       if (e.code === "KeyK") (input.pressed.skill = true), (input.castAim.skill = null);
       if (e.code === "KeyL") (input.pressed.ult = true), (input.castAim.ult = null);
       if (e.code === "Space" || e.code === "ShiftLeft") input.pressed.dash = true;
@@ -48,6 +53,8 @@ export function initInput(root) {
   });
   addEventListener("keyup", (e) => {
     keys.delete(e.code);
+    const w = { KeyJ: ".s-atk", KeyK: ".s-skill", KeyL: ".s-ult", Space: ".s-dash", ShiftLeft: ".s-dash" }[e.code];
+    if (w) document.querySelector(w)?.classList.remove("down");
     updKeys();
   });
   addEventListener("blur", () => {
@@ -70,10 +77,10 @@ function buildTouch(root) {
   pad.innerHTML = `
     <div class="joyzone"></div>
     <div class="joy"><div class="joyknob"></div></div>
-    <div class="tbtn b-atk" data-b="atk"><span>攻击</span></div>
-    <div class="tbtn b-skill" data-b="skill"><i class="cd"></i><span>技能</span></div>
-    <div class="tbtn b-ult" data-b="ult"><i class="cd"></i><span>大招</span></div>
-    <div class="tbtn b-dash" data-b="dash"><i class="cd"></i><span>闪避</span></div>
+    <div class="tbtn b-atk" data-b="atk"><i class="bface"></i><img class="ico" alt=""><span class="lb">攻击</span></div>
+    <div class="tbtn b-skill" data-b="skill"><i class="ring"></i><i class="bface"></i><img class="ico" alt=""><i class="cd"></i><b class="cdt"></b><span class="lb">技能</span></div>
+    <div class="tbtn b-ult" data-b="ult"><i class="ring"></i><i class="bface"></i><img class="ico" alt=""><i class="cd"></i><b class="cdt"></b><span class="lb">大招</span></div>
+    <div class="tbtn b-dash" data-b="dash"><i class="bface"></i><img class="ico" alt=""><i class="cd"></i><b class="cdt"></b><span class="lb">闪避</span></div>
     <div class="tbtn b-pause" data-b="pause"><span>Ⅱ</span></div>`;
   root.appendChild(pad);
   joyEl = pad.querySelector(".joy");
@@ -131,6 +138,7 @@ function buildTouch(root) {
       aimed = false;
       ang = null;
       b.classList.add("down");
+      ripple(b);
       if (name === "atk") (btnState.atk = true), (input.atk = true), (input.aim = null);
       if (name === "dash") input.pressed.dash = true;
       if (name === "pause") input.pressed.pause = true;
@@ -160,6 +168,14 @@ function buildTouch(root) {
     b.addEventListener("touchend", end);
     b.addEventListener("touchcancel", end);
   }
+}
+/** a quick expanding ring on press */
+export function ripple(b) {
+  if (!b) return;
+  const r = document.createElement("i");
+  r.className = "ripple";
+  b.appendChild(r);
+  setTimeout(() => r.remove(), 450);
 }
 function markTouch() {
   input.touch = true;

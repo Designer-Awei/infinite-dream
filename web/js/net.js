@@ -39,6 +39,7 @@ class LocalT {
 }
 let peerLib = null;
 const PEER_CDNS = [
+  "vendor/peerjs.min.js", // bundled copy (APK / Pages build)
   "https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js",
   "https://fastly.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js",
   "https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js",

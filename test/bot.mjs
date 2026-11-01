@@ -19,7 +19,7 @@ if (cidArg) {
   await page.reload(); await page.waitForTimeout(2200);
 }
 await page.click("text=开始冒险");
-await page.waitForTimeout(500);
+await page.waitForTimeout(1100);
 if (await page.locator("button:has-text('出发！')").count()) { await page.screenshot({ path: out + "/tutorial.png" }); await page.click("button:has-text('出发！')"); }
 await page.waitForTimeout(800);
 await page.evaluate((god) => {
@@ -33,7 +33,7 @@ await page.evaluate((god) => {
     const g = app.game, me = app.me;
     if (!g || !me || !g.map) return;
     // cards modal
-    const card = document.querySelector(".cards-modal .card");
+    const card = document.querySelector(".cards-modal .card2");
     if (card) { card.click(); window.__bot.log.push("card@" + g.roomIdx); return; }
     if (g.roomIdx !== window.__bot.room) { window.__bot.room = g.roomIdx; window.__bot.log.push("room " + g.roomIdx + " " + g.room.kind + " t=" + g.time.toFixed(1)); }
     let target = null, keep = 0;

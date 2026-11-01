@@ -4,6 +4,7 @@ import { load, save, unlockProgress, pull, checkUnlocks } from "./save.js";
 import { A } from "./assets.js";
 import { sfx, setSound, setMusic, playMusic } from "./audio.js";
 import { el } from "./util.js";
+import { iconURL, skillIcon } from "./icons.js";
 
 let root, app;
 export const $ = (s, r = root) => r.querySelector(s);
@@ -121,7 +122,8 @@ export function showRoom(info) {
   if (info.isHost) acts.appendChild(btn(info.pvp ? "开战！" : "出发！", "big", () => app.startNet()));
   else acts.appendChild(el("div", "muted", "等待房主开始…"));
   acts.appendChild(btn("复制邀请链接", "blue small", async () => {
-    const url = location.origin + location.pathname + location.search + "#join-" + info.code;
+    const base = window.Capacitor ? "https://designer-awei.github.io/infinite-dream/" : location.origin + location.pathname + location.search;
+    const url = base + "#join-" + info.code;
     try {
       await navigator.clipboard.writeText(url);
       toast("已复制：发给朋友打开即可加入");
@@ -149,10 +151,25 @@ export function showHud(game, me) {
    <div class="tr"><div class="buffs"></div><button class="btn small gray pausebtn">Ⅱ</button></div>
    <div class="banner-slot"></div>
    <div class="keys o1">WASD 移动 · J 攻击(自动锁敌) · K 技能 · L 大招 · 空格 闪避</div>
-   <div class="pcskills o1"><div class="pcs s-dash"><i class="cdm"></i><span class="k">␣</span>闪避</div><div class="pcs s-skill"><i class="cdm"></i><span class="k">K</span>技能</div><div class="pcs ult s-ult"><i class="cdm"></i><span class="k">L</span>大招</div></div>
+   <div class="pcskills o1">
+     <div class="pcs s-dash"><i class="bface"></i><img class="ico" alt=""><i class="cdm"></i><b class="cdt"></b><span class="k">空格</span></div>
+     <div class="pcs s-skill"><i class="ring"></i><i class="bface"></i><img class="ico" alt=""><i class="cdm"></i><b class="cdt"></b><span class="k">K</span></div>
+     <div class="pcs ult s-ult"><i class="ring"></i><i class="bface"></i><img class="ico" alt=""><i class="cdm"></i><b class="cdt"></b><span class="k">L</span></div>
+     <div class="pcs big s-atk"><i class="bface"></i><img class="ico" alt=""><span class="k">J</span></div>
+   </div>
    <div class="tipline o1" style="display:none"></div>`;
   root.appendChild(hud);
   hud.querySelector(".pausebtn").onclick = () => app.pause();
+  // skill icons for this girl on both the PC widgets and the touch buttons
+  const ec = ELEM[CHARS[me.cid].elem];
+  document.body.style.setProperty("--ec", ec.color);
+  document.body.style.setProperty("--eg", ec.glow);
+  for (const [slot, sel] of [["atk", "atk"], ["skill", "skill"], ["ult", "ult"], ["dash", "dash"]]) {
+    const url = iconURL(skillIcon(me.cid, slot), 4);
+    document.querySelectorAll(`.b-${sel} .ico, .s-${sel} .ico`).forEach((im) => (im.src = url));
+  }
+  const tips = { skill: CHARS[me.cid].skill.name, ult: CHARS[me.cid].ult.name, atk: CHARS[me.cid].atk.name };
+  for (const k in tips) document.querySelectorAll(`.b-${k} .lb`).forEach((n) => (n.textContent = tips[k]));
   const pips = hud.querySelector(".pips");
   if (!game.pvp) RUN.forEach((r, i) => pips.appendChild(el("div", "pip o1", r.kind === "shop" ? "🛒" : r.kind === "boss" ? "👑" : "⚔")));
   hudCache = {};
@@ -204,24 +221,32 @@ export function updateHud(game, me) {
   const dk = me.dashCdFrac ?? Math.max(0, me.dashCd) / 1.6;
   const uk = Math.min(1, me.ult);
   const q = (x) => Math.round(x * 50) / 50;
-  set("cds", q(sk) + "," + q(dk) + "," + q(uk), () => {
-    const upd = (sel, frac, ready, label) => {
-      const n = hud.querySelector(sel);
-      if (n) {
-        n.querySelector(".cdm").style.setProperty("--p", Math.round(frac * 100) + "%");
-        n.classList.toggle("ready", ready);
-      }
-      const t = document.querySelector(".b-" + sel.split("-")[1]);
-      if (t) {
-        const cd = t.querySelector(".cd");
+  set("cds", q(sk) + "," + q(dk) + "," + q(uk) + "," + (me.input.atk ? 1 : 0), () => {
+    const skCd = sk * c.skill.cd * me.st.cd, dkCd = dk * 1.6;
+    const upd = (key, frac, ready, secs, ring) => {
+      const nodes = [hud.querySelector(".s-" + key), document.querySelector(".b-" + key)];
+      for (const n of nodes) {
+        if (!n) continue;
+        const cd = n.querySelector(".cd, .cdm");
         if (cd) cd.style.setProperty("--p", Math.round(frac * 100) + "%");
-        t.classList.toggle("ready", ready);
-        if (label) t.querySelector("span").textContent = label;
+        const was = n.classList.contains("ready");
+        n.classList.toggle("ready", ready);
+        if (ready && !was && hudCache.started) {
+          n.classList.remove("ping");
+          void n.offsetWidth;
+          n.classList.add("ping");
+        }
+        const t = n.querySelector(".cdt");
+        if (t) t.textContent = secs;
+        if (ring != null) n.style.setProperty("--chg", Math.round(ring * 100) + "%");
       }
     };
-    upd(".s-skill", sk, sk <= 0);
-    upd(".s-dash", dk, dk <= 0);
-    upd(".s-ult", 1 - uk, uk >= 1, uk >= 1 ? "大招" : Math.floor(uk * 100) + "%");
+    upd("skill", sk, sk <= 0, sk > 0 ? (skCd >= 1 ? Math.ceil(skCd) : skCd.toFixed(1)) : "");
+    upd("dash", dk, dk <= 0, dk > 0 ? dkCd.toFixed(1) : "");
+    upd("ult", 0, uk >= 1, uk < 1 ? Math.floor(uk * 100) + "%" : "", uk);
+    const firing = !!me.input.atk;
+    for (const n of [hud.querySelector(".s-atk"), document.querySelector(".b-atk")]) n && n.classList.toggle("firing", firing);
+    hudCache.started = true;
   });
   // tip line
   let tip = "";
@@ -243,39 +268,53 @@ export function updateHud(game, me) {
 // ------------------------------------------------------------------ cards
 export function showCards(game, me, ids, onPick) {
   closeCards();
+  document.body.classList.add("cards-open");
   const md = el("div", "modal cards-modal");
-  md.innerHTML = `<div style="text-align:center"><h2 class="outline" style="font-weight:normal;margin:0 0 18px;font-size:24px">选择一张技能卡</h2><div class="cards"></div><div class="build o1"></div><div class="muted" style="margin-top:6px">${"ontouchstart" in window ? "点击卡牌选择" : "点击或按 1 / 2 / 3 选择"}</div></div>`;
+  md.innerHTML = `<div class="cm-wrap"><div class="cm-title outline">选择一张技能卡</div><div class="cm-sub o1">清场奖励 · 构筑你的混搭流派</div><div class="cards"></div><div class="build o1"></div><div class="muted cm-hint">${document.body.classList.contains("touchmode") ? "点击卡牌选择" : "点击或按 1 / 2 / 3 选择"}</div></div>`;
   const wrap = $(".cards", md);
+  const els = [];
   ids.forEach((id, i) => {
     const c = cardById(id, me.cid);
     if (!c) return;
-    const d = el("div", "card " + c.r);
-    let ill = "";
-    if (c.fuse) ill = `<div class="ill" style="background:${ELEM[CHARS[c.fuse].elem].color}"><img src="assets/portrait_${c.fuse}.png"></div>`;
-    else ill = `<div class="ill" style="background:${RARITY[c.r].color}">${{ 提示词: "✎", 机制: "⚙", 反应: "⚛" }[c.tag] || "★"}</div>`;
     const lv = me.cards[id] || 0;
-    d.innerHTML = `<div class="rar o1" style="background:${RARITY[c.r].color}">${c.r}</div>${ill}<div class="cn">${c.name}</div><span class="chip tag o1" style="color:#fff">${c.tag}</span><div class="cd2">${c.desc}</div><div class="lv">${c.max > 1 ? `Lv ${lv} → ${lv + 1}` : ""}</div>`;
-    d.onclick = () => pick(id);
+    const d = el("div", "card2 " + c.r);
+    d.style.setProperty("--rc", RARITY[c.r].color);
+    d.style.animationDelay = i * 0.09 + "s";
+    let art;
+    if (c.fuse) {
+      const fe = ELEM[CHARS[c.fuse].elem];
+      art = `<div class="c-art fuse" style="--ac:${fe.color}"><img class="c-por" src="assets/portrait_${c.fuse}.png" alt=""><img class="c-badge" src="${iconURL(c.kind === "atk" ? c.fuse + "_atk" : skillIcon(c.fuse, "skill"), 3)}" alt=""></div>`;
+    } else art = `<div class="c-art" style="--ac:${RARITY[c.r].color}"><i class="c-rays"></i><img class="c-ico" src="${iconURL(id, 4)}" alt=""></div>`;
+    const pips = c.max > 1 ? `<div class="c-pips">${Array.from({ length: c.max }, (_, k) => `<i class="${k < lv ? "on" : k === lv ? "new" : ""}"></i>`).join("")}</div>` : `<div class="c-pips one">${lv ? "已拥有" : "唯一"}</div>`;
+    d.innerHTML = `<i class="c-frame"></i><div class="c-rar o1">${c.r}</div>${art}<div class="c-body"><div class="c-name">${c.name}</div><span class="c-tag o1">${c.tag}</span><div class="c-desc">${c.desc}</div>${pips}</div><div class="c-key">${i + 1}</div>`;
+    d.onclick = () => pick(id, d);
     wrap.appendChild(d);
+    els.push(d);
   });
   const owned = Object.entries(me.cards);
   const b = $(".build", md);
-  if (owned.length) b.innerHTML = "当前构筑：" + owned.map(([id, n]) => `<span>${cardById(id, me.cid)?.name || id}${n > 1 ? "×" + n : ""}</span>`).join("");
+  if (owned.length) b.innerHTML = owned.map(([id, n]) => `<span><img src="${iconURL(id.startsWith("f") ? id.slice(3) + (id[1] === "a" ? "_atk" : "_skill") : id, 2)}" alt="">${cardById(id, me.cid)?.name || id}${n > 1 ? "×" + n : ""}</span>`).join("");
   let done = false;
-  function pick(id) {
+  function pick(id, d) {
     if (done) return;
     done = true;
     removeEventListener("keydown", key);
-    md.remove();
-    onPick(id);
+    sfx("card");
+    md.classList.add("picking");
+    for (const o of els) o.classList.add(o === d ? "picked" : "dropped");
+    setTimeout(() => {
+      md.remove();
+      document.body.classList.remove("cards-open");
+      onPick(id);
+    }, 520);
   }
   function key(e) {
     if (e.repeat) return;
     const k = { Digit1: 0, Digit2: 1, Digit3: 2, KeyJ: 0, KeyK: 1, KeyL: 2 }[e.code];
-    if (k != null && ids[k]) pick(ids[k]);
+    if (k != null && ids[k]) pick(ids[k], els[k]);
   }
   setTimeout(() => addEventListener("keydown", key), 350);
-  md._cleanup = () => removeEventListener("keydown", key);
+  md._cleanup = () => (removeEventListener("keydown", key), document.body.classList.remove("cards-open"));
   root.appendChild(md);
   sfx("card");
 }

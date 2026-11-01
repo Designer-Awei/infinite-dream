@@ -4,6 +4,7 @@ import { CHARS, CHAR_ORDER, ELEM, UNLOCKS, GACHA, RARITY, REACTIONS } from "./da
 import { load, save, unlockProgress, pull, checkUnlocks } from "./save.js";
 import { sfx, setSound, setMusic, playMusic } from "./audio.js";
 import { el } from "./util.js";
+import { iconURL } from "./icons.js";
 import { bushSprite, crateSprite } from "./map.js";
 import { btn, toast, clear, showNet, showHelp, showUnlock, uiRoot } from "./ui.js";
 import { app } from "./main.js";
@@ -90,6 +91,7 @@ export function showLobby() {
     <div class="spacer"></div>
     <div class="pill o1"><span>👤</span><span class="pname"></span></div>
     <div class="pill o1"><div class="gem"></div><span class="tok">${m.tokens}</span></div>
+    <button class="btn gray small fs-btn" title="全屏">⛶</button>
     <button class="btn gray small set-btn" title="设置">⚙</button>
   </div>
   <div class="lb-left"><div class="lb-info"></div><div class="lb-roster"></div></div>
@@ -102,6 +104,22 @@ export function showLobby() {
   root.appendChild(s);
   q(".pname", s).textContent = m.name;
   q(".set-btn", s).onclick = () => (sfx("click"), showSettings());
+  const fs = q(".fs-btn", s);
+  if (window.Capacitor || !document.documentElement.requestFullscreen) fs.remove();
+  else fs.onclick = async () => {
+    sfx("click");
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else {
+        await document.documentElement.requestFullscreen({ navigationUI: "hide" });
+        try {
+          await screen.orientation.lock("landscape");
+        } catch {}
+      }
+    } catch {
+      toast("当前浏览器不支持全屏，可添加到主屏幕或安装 APK");
+    }
+  };
   // side tiles (Brawl Stars keeps shop / brawlers / social as square tiles)
   const tiles = q(".lb-tiles", s);
   const tile = (icon, label, cls, fn, badge) => {
@@ -243,7 +261,7 @@ function showSettings() {
 
 // ------------------------------------------------------------------ gacha
 const FEATURED = ["t_revive", "t_startcard", "u_links"];
-const ICON = (it) => (it.card ? "🃏" : { t_dmg: "⚔", t_hp: "❤", t_shield: "🛡", t_speed: "👟", t_coin: "🪙", t_start_coin: "💰", t_crit: "✴", t_ult: "⚡", t_revive: "♻", t_startcard: "📜" }[it.id] || "✦");
+const ICON = (it, s = 3) => `<img class="pxi" src="${iconURL(it.id, s)}" alt="">`;
 const CAP_COLORS = ["#ffd84a", "#5fb4ff", "#c27bff", "#5dff7a", "#ff7cc8", "#ff8a5a"];
 
 export function showGacha() {
@@ -318,7 +336,7 @@ function renderOwned(s) {
   o.innerHTML = "";
   for (const it of GACHA.pool) {
     const lv = m.talents[it.id] || 0;
-    const d = el("div", "own " + it.r + (lv ? "" : " no"), `<span class="oi">${ICON(it)}</span><span class="on">${it.name}</span><span class="ol">${lv ? (it.max > 1 ? "Lv" + lv : "✔") : "—"}</span>`);
+    const d = el("div", "own " + it.r + (lv ? "" : " no"), `<span class="oi">${ICON(it, 1)}</span><span class="on">${it.name}</span><span class="ol">${lv ? (it.max > 1 ? "Lv" + lv : "✔") : "—"}</span>`);
     d.title = it.desc;
     d.onclick = () => toast(`${it.name}：${it.desc}${lv ? `（${it.max > 1 ? "Lv" + lv + "/" + it.max : "已拥有"}）` : "（未拥有）"}`, 2200);
     o.appendChild(d);
@@ -448,7 +466,7 @@ function pullSequence(screen, res) {
       const d = el("div", "rc " + r.r);
       d.style.setProperty("--c", RCOL[r.r]);
       d.style.setProperty("--i", i);
-      d.innerHTML = `<div class="rc-in"><div class="rc-back"><span>?</span></div><div class="rc-front"><div class="rr o1">${r.r}</div><div class="ri">${ICON(it)}</div><div class="rn">${it.name}</div><div class="rd">${it.desc}</div><div class="rl">${r.dup ? "已满级 · 返还 " + r.refund + "💎" : it.max > 1 ? "Lv " + r.lv + " / " + it.max : "新获得！"}</div></div></div>`;
+      d.innerHTML = `<div class="rc-in"><div class="rc-back"><span>?</span></div><div class="rc-front"><div class="rr o1">${r.r}</div><div class="ri">${ICON(it, 4)}</div><div class="rn">${it.name}</div><div class="rd">${it.desc}</div><div class="rl">${r.dup ? "已满级 · 返还 " + r.refund + "💎" : it.max > 1 ? "Lv " + r.lv + " / " + it.max : "新获得！"}</div></div></div>`;
       wrap.appendChild(d);
       return d;
     });

@@ -1,0 +1,10 @@
+{
+  "name": "AI娘·幻觉地牢",
+  "short_name": "AI娘地牢",
+  "start_url": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#120c1e",
+  "theme_color": "#1b1430",
+  "icons": [{ "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+}

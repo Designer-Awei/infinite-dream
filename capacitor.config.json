@@ -1,0 +1,9 @@
+{
+  "appId": "com.designerawei.infinitedream",
+  "appName": "AI娘幻觉地牢",
+  "webDir": "docs",
+  "android": {
+    "backgroundColor": "#120c1e",
+    "allowMixedContent": false
+  }
+}
