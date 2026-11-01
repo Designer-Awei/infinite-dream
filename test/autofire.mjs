@@ -1,0 +1,14 @@
+import { createRequire } from "module"; const require = createRequire(import.meta.url); const { chromium } = require("playwright");
+const browser = await chromium.launch(); const ctx = await browser.newContext({ viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true });
+const p = await ctx.newPage(); p.on("pageerror", (e) => console.log("PAGEERROR", e.message));
+await p.goto("http://localhost:8765/index.html"); await p.waitForTimeout(300);
+await p.evaluate(() => localStorage.setItem("ai-girls-dungeon-v1", JSON.stringify({ tutorialSeen: true })));
+await p.reload(); await p.waitForTimeout(1800);
+await p.evaluate(() => __app.startSolo()); await p.waitForTimeout(5000);
+const shots1 = await p.evaluate(() => __app.me.atkCount || 0);
+await p.tap(".pausebtn"); await p.waitForTimeout(300);
+const label = await p.locator("button:has-text('自动攻击')").textContent();
+await p.tap("button:has-text('自动攻击')"); await p.tap("button:has-text('继续')"); await p.waitForTimeout(5000);
+const shots2 = await p.evaluate(() => __app.me.atkCount || 0);
+console.log("shots with default:", shots1, "| pause label:", label.trim(), "| shots after enabling:", shots2);
+await browser.close();

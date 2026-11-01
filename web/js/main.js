@@ -247,7 +247,7 @@ function frame(now) {
     const inp = me.input;
     inp.mx = input.mx;
     inp.my = input.my;
-    const auto = load().autoFire ?? input.touch;
+    const auto = !!load().autoFire; // off by default; can be switched on in the pause menu
     inp.atk = (input.atk || (auto && !!me.target && !me.downed)) && !app.cardOpen;
     inp.aim = input.aim;
     if (consume("skill")) (inp.skill = true), (inp.castAim = { ...inp.castAim, skill: input.castAim.skill });
