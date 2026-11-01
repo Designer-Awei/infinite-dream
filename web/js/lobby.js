@@ -4,7 +4,7 @@ import { CHARS, CHAR_ORDER, ELEM, UNLOCKS, GACHA, RARITY, REACTIONS } from "./da
 import { load, save, unlockProgress, pull, checkUnlocks } from "./save.js";
 import { sfx, setSound, setMusic, playMusic } from "./audio.js";
 import { el } from "./util.js";
-import { iconURL } from "./icons.js";
+import { iconURL, skillIcon } from "./icons.js";
 import { bushSprite, crateSprite } from "./map.js";
 import { btn, toast, clear, showNet, showHelp, showUnlock, uiRoot } from "./ui.js";
 import { app } from "./main.js";
@@ -169,7 +169,7 @@ function renderRoster(s) {
     const d = el("div", "rcard" + (m.sel === id ? " sel" : "") + (open ? "" : " locked"));
     d.style.background = `linear-gradient(180deg, ${c.color}, #2a2470)`;
     d.style.animationDelay = 0.55 + i * 0.06 + "s";
-    d.innerHTML = `<img src="assets/portrait_${id}.png" alt=""><div class="el o1" style="background:${ELEM[c.elem].color}">${ELEM[c.elem].name}</div><div class="nm o1">${c.short}</div>`;
+    d.innerHTML = `<img src="assets/portrait_${id}.png" alt=""><img class="el-ico" src="${iconURL("elem_" + c.elem, 2)}" alt="${ELEM[c.elem].name}"><div class="nm o1">${c.short}</div>`;
     if (!open) {
       const u = UNLOCKS[id], pr = unlockProgress(id);
       d.insertAdjacentHTML("beforeend", `<div class="lock o1"><div class="ic">🔒</div><div class="bar"><i style="width:${Math.round(pr * 100)}%"></i></div></div>`);
@@ -219,7 +219,7 @@ function renderHero(s, id, swap) {
   info.classList.add("refresh");
   info.innerHTML = `
     <div class="li-head"><div class="li-name outline">${c.name}</div><div class="li-title o1">「${c.title}」</div>
-      <div class="li-chips o1"><span class="chip" style="background:${e.color}">${e.name}元素</span><span class="chip">${c.role}</span></div></div>
+      <div class="li-chips o1"><span class="chip el-chip" style="background:${e.color}"><img src="${iconURL("elem_" + c.elem, 1)}" alt="">${e.name}元素</span><span class="chip">${c.role}</span></div></div>
     <div class="li-bars o1">
       ${bar("生命", c.hp, 7, "linear-gradient(90deg,#ff8a9a,#ff3a5a)")}
       ${bar("护盾", c.shield, 6, "linear-gradient(90deg,#e0ecff,#8aa8ff)")}
@@ -228,7 +228,7 @@ function renderHero(s, id, swap) {
     </div>
     <div class="li-skills o1">
       ${[["J", c.atk.name, c.passive], ["K", c.skill.name, c.skill.desc + `（冷却${c.skill.cd}秒）`], ["L", c.ult.name, c.ult.desc]]
-        .map(([k, n, d]) => `<div class="sk"><div class="sk-ic" style="background:${e.color}">${k}</div><div class="sk-tx"><b>${n}</b><span>${d}</span></div></div>`)
+        .map(([k, n, d]) => `<div class="sk"><div class="sk-ic"><img src="${iconURL(skillIcon(id, k === "J" ? "atk" : k === "K" ? "skill" : "ult"), 2)}" alt=""><i>${k}</i></div><div class="sk-tx"><b>${n}</b><span title="${d}">${d}</span></div></div>`)
         .join("")}
     </div>
     <div class="li-react o1"><div class="lr-h">混搭反应（${e.name}元素参与）</div>${Object.entries(REACTIONS)

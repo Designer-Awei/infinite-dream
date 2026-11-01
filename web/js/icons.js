@@ -330,6 +330,18 @@ const DRAW = {
     p.rect(0, 18, 3, 2, GOLD.base);
     p.set(0, 18, GOLD.hi);
   },
+  // ---- element badges
+  elem_water(p) { DRAW.deepseek_atk(p); },
+  elem_dragon(p) { flame(p, { light: "#c9a8ff", base: "#9b6cf0", dark: "#5a2aa0", hi: "#f4ecff" }); },
+  elem_thunder(p) { bolt(p, pal("thunder"), 1, 0, 0); },
+  elem_sun(p) { DRAW.claude_ult(p); },
+  elem_bubble(p) { DRAW.doubao_atk(p); },
+  elem_ink(p) {
+    const c = pal("ink");
+    p.poly([[10, 1.5], [4.5, 11], [15.5, 11]], (x) => (x < 10 ? c.base : c.dark));
+    p.disc(10, 12.5, 6, PX.shade(6, c.dark, c.base, c.deep, c.light));
+    p.rect(7, 10, 2, 2, c.hi);
+  },
   // ---- cards & talents
   sword(p) {
     p.line(5, 15, 16, 4, STEEL.light, 2);

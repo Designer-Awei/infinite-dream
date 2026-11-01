@@ -593,3 +593,31 @@ body.touchmode .c-key { display: none; }
 .lb-rays { display: none; }
 /* gacha pull: same slow, steady rotation as the lobby background */
 .pv-rays { animation: spinC 60s linear infinite; opacity: .8; }
+/* ---- lobby left column: fixed split so switching girls never changes the info card height */
+.lb .lb-left { display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 10px; bottom: 3%; }
+.lb .lb-info { flex: none; height: 100%; max-height: none; min-height: 0; overflow: hidden; }
+.lb .lb-roster { max-height: none; min-height: 0; height: min(34vh, 300px); flex: none; }
+.lb .li-skills { gap: 4px; }
+.lb .sk-tx span { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.lb .sk-ic { width: 30px; height: 30px; background: rgba(255,255,255,.12) !important; position: relative; padding: 0; }
+.lb .sk-ic img { width: 22px; height: 22px; image-rendering: pixelated; }
+.lb .sk-ic i { position: absolute; right: -6px; bottom: -6px; font-style: normal; font-size: 9px; background: #fff; color: var(--ink); border: 2px solid var(--ink); border-radius: 4px; padding: 0 2px; line-height: 11px; }
+.lb .li-react { flex-wrap: nowrap; overflow: hidden; }
+.lb .li-react .lr-h { display: none; }
+.lb .li-react .chip { white-space: nowrap; }
+.lb .li-lore { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: auto; }
+.el-chip { display: inline-flex; align-items: center; gap: 3px; }
+.el-chip img { width: 14px; height: 14px; image-rendering: pixelated; }
+.rcard .el-ico { position: absolute; top: 3px; left: 3px; width: 26px; height: 26px; image-rendering: pixelated; z-index: 2; filter: drop-shadow(0 2px 0 rgba(0,0,0,.4)); }
+.rcard.locked .el-ico { filter: grayscale(.4) brightness(.8); }
+@media (max-height: 420px) {
+  .lb .lb-roster { height: 64px; } .rcard .el-ico { width: 16px; height: 16px; }
+  .lb .sk-ic { width: 22px; height: 22px; } .lb .sk-ic img { width: 16px; height: 16px; } .lb .sk-ic i { display: none; }
+}
+/* touch: icons only, no text labels under the buttons */
+.tbtn .lb { display: none; }
+.rcard img.el-ico { left: 4px; top: 4px; bottom: auto; width: 26px; height: 26px; transform: none; }
+.lb .lb-roster { height: min(40vh, 360px); }
+.lb .sk-tx span { -webkit-line-clamp: 2; }
+.lb .lb-info { gap: 10px; }
+@media (max-height: 420px) { .lb .lb-roster { height: 64px; } .lb .sk-tx span { -webkit-line-clamp: 1; } .rcard img.el-ico { width: 15px; height: 15px; left: 2px; top: 2px; } .lb .lb-info { gap: 5px; } }

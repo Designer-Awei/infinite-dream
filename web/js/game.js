@@ -968,11 +968,18 @@ export class Game {
     if (ml > 1) (mx /= ml), (my /= ml);
     p.moving = ml > 0.1;
     if ((p.buff.speed > 0 || (p.buff.ultOn > 0 && p.cid === "grok")) && p.moving && Math.random() < 0.35) p.trail = (p.trail || []).concat([{ x: p.x, y: p.y, t: 0.22 }]).slice(-5);
-    if (p.dashT > 0) {
+    // online: remote players' positions come from their own client (client-authoritative movement).
+    // The host only counts their dash timer down (invulnerability) and never moves them itself,
+    // otherwise the dash is applied twice and the client gets yanked back.
+    const remote = this.mode === "host" && !p.local;
+    if (remote) {
+      if (p.dashT > 0) p.dashT -= dt;
+    } else if (p.dashT > 0) {
       p.dashT -= dt;
       moveCircle(this.map, p, p.dashDx * BAL.dashSpeed * dt, p.dashDy * BAL.dashSpeed * dt);
       if (Math.random() < 0.6) p.trail = (p.trail || []).concat([{ x: p.x, y: p.y, t: 0.25 }]).slice(-6);
     } else moveCircle(this.map, p, mx * spd * dt, my * spd * dt);
+    if (remote) p.moving = ml > 0.1;
     if (p.trail) for (const q of p.trail) q.t -= dt;
     if (!this.host && !p.local) return;
     if (!this.host) return; // clients only predict movement

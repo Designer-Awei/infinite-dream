@@ -346,7 +346,22 @@ export class Net {
     const g = this.app.game, me = this.app.me;
     if (!g || !me) return;
     const i = me.input;
-    if (i.skill) (this.edges.sk = true), (this.edges.cs = i.castAim.skill), (i.skill = false);
+    if (i.skill) {
+      this.edges.sk = true;
+      this.edges.cs = i.castAim.skill;
+      i.skill = false;
+      // Grok's skill is a dash: predict it locally so the client moves exactly once
+      if (me.cid === "grok" && (me.skillCdFrac ?? 0) <= 0 && !(me.skillLocal > 0)) {
+        let dx = i.mx, dy = i.my;
+        if (Math.hypot(dx, dy) < 0.1) (dx = Math.cos(me.face)), (dy = Math.sin(me.face));
+        const l = Math.hypot(dx, dy) || 1;
+        me.dashDx = dx / l;
+        me.dashDy = dy / l;
+        me.dashT = 0.2;
+        me.skillLocal = 1;
+      }
+    }
+    me.skillLocal = (me.skillLocal || 0) - dt;
     if (i.ult) (this.edges.ul = true), (this.edges.cu = i.castAim.ult), (i.ult = false);
     if (i.dash) {
       this.edges.da = true;
@@ -359,6 +374,7 @@ export class Net {
         me.dashDy = dy / l;
         me.dashT = 0.17;
         me.dashCdLocal = 1.6;
+        me.lastDash = g.time;
         sfx("dash");
       }
       i.dash = false;
@@ -429,7 +445,9 @@ function applySnapshot(app, s) {
     if ((fl & 8) && !(p.hurtT > 0)) p.hurtT = 0.3;
     p.targetId = tid;
     if (p === me) {
-      if (p.downed || Math.hypot(p.x - x, p.y - y) > 90 || wasDowned !== p.downed) (p.x = x), (p.y = y);
+      // own position is client-authoritative; only accept the host's on respawn/teleport, never mid-dash
+      const far = Math.hypot(p.x - x, p.y - y) > 200 && !(p.dashT > 0) && !(p.lastDash > g.time - 0.6);
+      if (p.downed || wasDowned !== p.downed || far) (p.x = x), (p.y = y);
       if (fl & 16) p.face = face;
       if (rec > 1) p.recoil = rec;
     } else {
