@@ -782,3 +782,20 @@ body.touchmode .c-key { display: none; }
 .pvm-r { background: linear-gradient(180deg, rgba(60,30,120,.95), rgba(30,14,70,.95)); border: 4px solid var(--ink); border-radius: 18px; padding: 10px 12px 8px; box-shadow: 0 6px 0 var(--ink), 0 0 30px rgba(160,100,255,.35); }
 .sc-link .sk { left: auto; right: -6%; top: 6%; margin: 0; }
 .sc-link .sc-who.b .sk { right: auto; left: -6%; }
+
+/* lobby v3: content starts below the top bar; stat bars in two columns so the ult description fits */
+.lb { --tbH: 50px; }
+.lb .lb-left, .lb .lb-right { top: calc(max(8px, env(safe-area-inset-top)) + var(--tbH) + 8px); }
+.lb .li-bars { display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; row-gap: 4px; }
+.lb .li-bars .sb { gap: 4px; min-width: 0; }
+.lb .li-bars .sb .sl { flex: none; }
+.lb .li-bars .sb .sv { flex: none; min-width: 2.2em; text-align: right; }
+@media (max-height: 420px) { .lb { --tbH: 42px; } }
+/* revive preview: title above the hp bar, hero below both */
+.sc-revive .sc-pop { top: 3%; }
+.sc-revive .sc-hp { top: 21%; }
+.sc-revive .sc-hero { height: 54%; bottom: 15%; }
+.sc-revive .sc-ring { bottom: 17%; }
+.lb .li-chips { flex-wrap: nowrap; min-width: 0; }
+.lb .li-chips .chip { white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; }
+.lb .li-chips .el-chip { flex: none; }
