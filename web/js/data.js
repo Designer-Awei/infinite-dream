@@ -140,6 +140,20 @@ export const ENEMIES = {
   wisp: { name: "游离进程", hp: 10, spd: 70, r: 8, ai: "kamikaze", sprite: "wisp", coin: [0, 1], fly: true },
   snake: { name: "死循环蛇", hp: 22, spd: 72, r: 10, ai: "snake", sprite: "snake", coin: [1, 2], touch: 1 },
   boss_eye: { name: "幻觉之眼", hp: 3000, spd: 40, r: 16, ai: "boss_eye", sprite: "eyeball", coin: [30, 30], fly: true, boss: true, scale: 2 },
+  // map residents (recoloured critters) — 数据草原
+  snake_vine: { name: "藤蔓蛇", hp: 26, spd: 70, r: 10, ai: "snake", sprite: "snake_vine", coin: [1, 2], touch: 1, chill: true },
+  frog_big: { name: "巨型跳转蛙", hp: 80, spd: 44, r: 16, ai: "leap", sprite: "frog_big", coin: [3, 5], touch: 1, scale: 1.5 },
+  // 显存冰原
+  bat_ice: { name: "霜冻爬虫", hp: 14, spd: 100, r: 9, ai: "flit", sprite: "bat_ice", coin: [0, 1], touch: 1, fly: true, chill: true },
+  eye_ice: { name: "冰晶眼球", hp: 28, spd: 42, r: 11, ai: "shooter", sprite: "eye_ice", coin: [1, 2], fly: true, shot: { cd: 1.6, spd: 150, n: 1, slow: true } },
+  slime_frost: { name: "冰晶史莱姆", hp: 70, spd: 44, r: 15, ai: "hop", sprite: "slime_frost", coin: [3, 4], touch: 1, scale: 1.35, chill: true, split: "slime_blue" },
+  // 算力熔炉
+  slime_lava: { name: "熔岩史莱姆", hp: 30, spd: 44, r: 12, ai: "hop", sprite: "slime_lava", coin: [1, 2], touch: 1, lavaPuddle: true },
+  bat_fire: { name: "炎蝠", hp: 14, spd: 108, r: 9, ai: "flit", sprite: "bat_fire", coin: [0, 1], touch: 1, fly: true, burnTouch: true },
+  skull_core: { name: "熔核骷髅", hp: 80, spd: 30, r: 14, ai: "caster", sprite: "skull_core", coin: [3, 5], fly: true, scale: 1.3, shot: { cd: 2.1, spd: 140, n: 14, ring: true, burn: true } },
+  // bosses of the other two maps
+  boss_frost: { name: "冰封史莱姆王", hp: 3300, spd: 50, r: 22, ai: "boss_frost", sprite: "slime_frost", coin: [30, 30], boss: true, scale: 3 },
+  boss_core: { name: "过热核心", hp: 3600, spd: 36, r: 18, ai: "boss_core", sprite: "skull_core", coin: [30, 30], fly: true, boss: true, scale: 2.4 },
 };
 
 // rooms of one run: the core loop
@@ -158,11 +172,12 @@ export const ROOM_NAMES = { combat: "战斗", shop: "补给站", boss: "首领" 
 // theme: index into map.js THEMES. hazard: what the scattered floor patches do (mud slows / ice slides / lava burns)
 // swap: some enemies of the base run are replaced by the map's residents [type, chance]
 export const MAPS = {
-  grass: { name: "数据草原", theme: 0, hazard: "mud", hazardText: "泥沼会减速 · 清除所有敌人", hp: 1, reward: 1, desc: "入门地图：泥沼减速，敌人中规中矩。", need: null },
-  ice: { name: "显存冰原", theme: 2, hazard: "ice", hazardText: "冰面会打滑 · 清除所有敌人", hp: 1.3, reward: 1.35, desc: "冰面上会打滑停不住；冷却史莱姆和过期缓存更多。", need: "grass",
-    swap: { slime: ["slime_blue", 0.8], frog: ["ghost", 0.5], bat: ["wisp", 0.35] } },
-  lava: { name: "算力熔炉", theme: 3, hazard: "lava", hazardText: "熔岩会灼烧 · 清除所有敌人", hp: 1.6, reward: 1.7, desc: "熔岩地块持续灼烧（敌人也会）；过热骷髅和死循环蛇横行。", need: "ice",
-    swap: { slime: ["slime_purple", 0.7], eyeball: ["skull", 0.3], bat: ["snake", 0.5], jelly: ["skull", 0.4] } },
+  grass: { name: "数据草原", theme: 0, hazard: "mud", hazardText: "泥沼会减速 · 清除所有敌人", hp: 1, reward: 1, desc: "入门地图：泥沼减速，藤蔓蛇碰到会减速，首领是幻觉之眼。", need: null,
+    swap: { snake: ["snake_vine", 0.7], bat: ["snake_vine", 0.15] }, elites: ["frog_big"], boss: "boss_eye" },
+  ice: { name: "显存冰原", theme: 2, hazard: "ice", hazardText: "冰面会打滑 · 清除所有敌人", hp: 1.3, reward: 1.35, desc: "冰面会打滑；霜冻爬虫、冰晶眼球会让你减速，首领是冰封史莱姆王。", need: "grass",
+    swap: { slime: ["slime_blue", 0.8], frog: ["ghost", 0.5], bat: ["bat_ice", 0.7], eyeball: ["eye_ice", 0.6], snake: ["bat_ice", 0.5] }, elites: ["slime_frost"], boss: "boss_frost" },
+  lava: { name: "算力熔炉", theme: 3, hazard: "lava", hazardText: "熔岩会灼烧 · 清除所有敌人", hp: 1.6, reward: 1.7, desc: "熔岩地块持续灼烧（敌人也会）；熔岩史莱姆死后留下火池，炎蝠碰到会着火，首领是过热核心。", need: "ice",
+    swap: { slime: ["slime_lava", 0.75], slime_purple: ["slime_lava", 0.6], eyeball: ["skull", 0.3], bat: ["bat_fire", 0.7], jelly: ["skull", 0.4], frog: ["slime_lava", 0.4] }, elites: ["skull_core"], boss: "boss_core" },
 };
 export const MAP_ORDER = ["grass", "ice", "lava"];
 export const PVP_MODES = {
@@ -197,7 +212,7 @@ export function endlessRoom(i, seed) {
 
 // ---------------------------------------------------------------- map items and hazards
 export const ITEMS = {
-  cube: { name: "算力方块", desc: "本局伤害+6%，生命上限+0.5", color: "#7dffb0", icon: "◆" },
+  cube: { name: "算力方块", desc: "本局伤害 +6%，每 2 个生命上限 +1", color: "#7dffb0", icon: "◆" },
   speed: { name: "极速饮料", desc: "6秒内移速+40%", color: "#4ae0ff", icon: "»", dur: 6 },
   rage: { name: "狂暴芯片", desc: "6秒内攻速+60%", color: "#ff5a4a", icon: "!", dur: 6 },
   shield: { name: "护盾泡", desc: "护盾立即回满", color: "#a8c8ff", icon: "◎" },
@@ -291,12 +306,12 @@ export const GACHA = {
     { id: "t_firewall", r: "SSR", name: "零信任防火墙", desc: "护盾被打破时释放冲击波：伤害并击退周围敌人（8秒冷却）", max: 1, eq: 1 },
     { id: "t_ensemble", r: "SSR", name: "模型集成", desc: "每第 4 次普攻额外射出 3 发散射弹（每发 40% 伤害）", max: 1, eq: 1 },
     { id: "u_kill_boom", r: "SR", name: "卡牌·连锁崩溃", desc: "解锁技能卡【连锁崩溃】", max: 1, card: "kill_boom" },
-    { id: "u_reaction_amp", r: "SR", name: "卡牌·跨模态融合", desc: "解锁技能卡【跨模态融合】", max: 1, card: "reaction_amp" },
+    { id: "u_reaction_amp", r: "SR", name: "卡牌·模态融合", desc: "解锁技能卡【跨模态融合】", max: 1, card: "reaction_amp" },
     { id: "u_element_spread", r: "SR", name: "卡牌·知识蒸馏", desc: "解锁技能卡【知识蒸馏】", max: 1, card: "element_spread" },
     { id: "u_shield_nova", r: "SR", name: "卡牌·防御反制", desc: "解锁技能卡【防御反制】", max: 1, card: "shield_nova" },
     { id: "u_echo", r: "SSR", name: "卡牌·自洽回声", desc: "解锁技能卡【自洽回声】；装配后开局自带（小技能 35% 再释放一次）", max: 1, card: "echo", eq: 1 },
     { id: "u_second_ult", r: "SSR", name: "卡牌·持续学习", desc: "解锁技能卡【持续学习】；装配后开局自带（放大招返还 40% 充能）", max: 1, card: "second_ult", eq: 1 },
-    { id: "u_links", r: "SSR", name: "卡牌包·技能联动", desc: "解锁全部【联动】技能卡；装配后开局随机自带 1 张联动卡", max: 1, card: "links", eq: 1 },
+    { id: "u_links", r: "SSR", name: "卡牌·技能联动", desc: "解锁全部【联动】技能卡；装配后开局随机自带 1 张联动卡", max: 1, card: "links", eq: 1 },
   ],
 };
 
@@ -306,3 +321,13 @@ export const LOADOUT_SLOTS = 2;
 // tokens earned per run
 export const REWARD = { room: 15, kill: 1, elite: 6, boss: 120, firstBoss: 200 };
 export const START_TOKENS = 300;
+
+/** 梦核 (from 梦境工坊): each girl's ult gets stronger in its own way */
+export const CORE_FX = {
+  deepseek: "大招持续 8 秒、范围更大",
+  gpt: "大招持续 9 秒、冲击更广",
+  grok: "大招散射收束、副弹更痛",
+  claude: "大招领域自动追向敌人",
+  doubao: "补给站射速与回血更快",
+  glm: "大招持续 5 秒、牵引更强",
+};

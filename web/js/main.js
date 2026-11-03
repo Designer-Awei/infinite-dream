@@ -6,7 +6,11 @@ import { Renderer } from "./render.js";
 import { Game } from "./game.js";
 import { input, initInput, consume } from "./input.js";
 import { initAudio, playMusic, sfx, setSound, setMusic } from "./audio.js";
-import { load, save, checkUnlocks, makeKit } from "./save.js";
+import { load, save, checkUnlocks, makeKit, mineState } from "./save.js";
+import { Dive } from "./mine.js";
+import { progressQuests, questText } from "./minequests.js";
+import * as MUI from "./mineui.js";
+import { SHOVELS } from "./minedata.js";
 import * as UI from "./ui.js";
 import { showLobby, showGacha } from "./lobby.js";
 import { Net } from "./net.js";
@@ -30,6 +34,7 @@ function resize() {
       renderer.cam = old.cam;
     }
     if (app.game) app.game.fx = fx;
+    if (app.dive) app.dive.fx = fx;
   }
   const s = Math.min(W / vw, H / VIEW_H);
   // prefer integer scaling when it costs little space
@@ -71,27 +76,39 @@ export const app = {
     const pm = playMode();
     this.beginLoading({ mode: "solo", pvp: false, seed: (Math.random() * 1e9) | 0, players: [{ id: 1, cid: m.sel, name: m.name, kit: makeKit(m.sel) }], myId: 1, opt: pm });
   },
-  /** show a loading screen, build the run behind it, then fade it out */
-  beginLoading(cfg) {
-    const ov = document.createElement("div");
-    ov.className = "enter-ld";
+  /** two sliding doors shut over the screen (if they aren't shut already); resolves once closed */
+  closeDoors() {
+    let d = uiRoot.querySelector(".doors");
+    if (d) return Promise.resolve(d);
+    d = document.createElement("div");
+    d.className = "doors";
+    d.innerHTML = `<div class="dr l"><i class="dr-bolt"></i><i class="dr-bolt b"></i><i class="dr-half"></i></div><div class="dr r"><i class="dr-bolt"></i><i class="dr-bolt b"></i><i class="dr-half"></i></div><div class="dr-plate"><div class="el-t outline"></div><div class="el-s o1"></div><div class="ld-bar"><i></i></div><div class="el-tip o1"></div></div>`;
+    uiRoot.appendChild(d);
+    sfx("portal");
+    requestAnimationFrame(() => requestAnimationFrame(() => d.classList.add("shut")));
+    return new Promise((r) => setTimeout(() => (sfx("hit", 0.3), r(d)), 430));
+  },
+  /** shut the doors, build the run behind them, then slide them open */
+  async beginLoading(cfg) {
     const c = CHARS[cfg.players.find((p) => p.id === cfg.myId)?.cid || "deepseek"];
     const o = cfg.opt || {};
     const where = cfg.pvp ? "竞技场 · " + (PVP_MODES[o.pvpMode] || PVP_MODES.brawl).name : o.endless ? "无尽回廊" : (MAPS[o.map] || MAPS.grass).name;
-    ov.innerHTML = `<div class="el-box"><div class="el-t outline">${where}</div><div class="el-s o1">${c.short} · ${c.title}</div><div class="ld-bar"><i></i></div><div class="el-tip o1">${TIPS[(Math.random() * TIPS.length) | 0]}</div></div>`;
-    uiRoot.appendChild(ov);
-    const bar = ov.querySelector(".ld-bar i");
+    const d = await this.closeDoors();
+    d.querySelector(".el-t").textContent = where;
+    d.querySelector(".el-s").textContent = `${c.short} · ${c.title}`;
+    d.querySelector(".el-tip").textContent = TIPS[(Math.random() * TIPS.length) | 0];
+    d.classList.add("info");
+    const bar = d.querySelector(".ld-bar i");
     requestAnimationFrame(() => (bar.style.width = "45%"));
-    setTimeout(() => {
-      try {
-        this.begin(cfg);
-      } finally {
-        uiRoot.appendChild(ov); // keep it on top of the freshly built HUD
-        bar.style.width = "100%";
-        setTimeout(() => ov.classList.add("out"), 450);
-        setTimeout(() => ov.remove(), 900);
-      }
-    }, 80);
+    await new Promise((r) => setTimeout(r, 120));
+    try {
+      this.begin(cfg);
+    } finally {
+      uiRoot.appendChild(d); // keep the doors on top of the freshly built HUD
+      bar.style.width = "100%";
+      setTimeout(() => (d.classList.remove("info"), d.classList.remove("shut"), d.classList.add("open"), sfx("portal")), 520);
+      setTimeout(() => d.remove(), 1200);
+    }
   },
   /** start a run (solo, host or client). cfg: {mode, pvp, seed, players:[{id,cid,name}], myId} */
   begin(cfg) {
@@ -132,6 +149,7 @@ export const app = {
     else if (kind === "win") this.endRun(true);
     else if (kind === "pvpwin") this.endPvp();
     else if (kind === "transition") fade();
+    else if (kind === "rift") this.offerRift();
     else if (kind === "cardsClosed") {
       UI.closeCards();
       this.cardOpen = false;
@@ -162,6 +180,12 @@ export const app = {
     if (rs.boss) m.stats.bossKills++;
     save();
     const unl = checkUnlocks();
+    // 梦境矿场 shovels: a boss always drops one; a decent run sometimes gives a copper one
+    const drop = rs.shovel || rollShovel(rs);
+    if (drop) {
+      mineState().shovels[drop]++;
+      save();
+    }
     sfx(win ? "win" : "lose");
     const rows = [[endless ? "到达层数" : "清理房间", endless ? rs.rooms + "" : rs.rooms + " / 7"], ["击败敌人", rs.kills], ["精英", rs.elites], ["元素反应", rs.reactions], ["造成伤害", Math.round(rs.dmg)], ["承受伤害", rs.hurt || 0], ["技能卡", Object.keys(this.me.cards).length]];
     const extras = [];
@@ -173,6 +197,12 @@ export const app = {
     if (endless && rs.rooms > prevBest) extras.push(["无尽新纪录", rs.rooms + " 层"]);
     if (!endless && mul > 1) extras.push(["地图加成", "×" + mul]);
     if (unl.length) extras.push(["🔓 新角色解锁", unl.map((id) => CHARS[id].short).join("、")]);
+    if (drop) extras.push(["⛏ 梦境矿场", "获得" + SHOVELS[drop].name]);
+    if (this.riftLoot) {
+      const r = this.riftLoot;
+      extras.push(["梦境裂隙", `💎${r.value} · 矿石${r.mats}${r.stars ? " · 星砂" + r.stars : ""}`]);
+      this.riftLoot = null;
+    }
     const title = endless ? `无尽回廊 · 第 ${rs.rooms} 层` : win ? "通关！幻觉已破除" : "倒下了…";
     const sub = endless ? (rs.rooms > prevBest ? "刷新了最佳纪录！" : `最佳纪录 ${Math.max(prevBest, rs.rooms)} 层`) : win ? `${CHARS[this.me.cid].name} 击败了${md.name}的幻觉之眼` : "再接再厉，构筑会更强！";
     UI.showResult({ title, sub, rows, extras, tokens, win: win || (endless && rs.rooms > prevBest), cid: this.me.cid },
@@ -192,6 +222,80 @@ export const app = {
     const unit = g.pvpRule.koScore ? " 击倒" : " 分";
     UI.showResult({ title: mine ? "胜利！" : `${w ? w.name : "对手"} 获胜`, sub: "竞技场 · " + g.pvpRule.name, rows: g.players.map((p) => [p.name + "（" + CHARS[p.cid].short + "）", (g.pvpScore[p.id] || 0) + unit]), tokens, win: mine, cid: (w || this.me).cid }, null, () => this.toLobby());
   },
+  // ---------------------------------------------------------- 梦境矿场
+  startDive({ shovel }) {
+    const m = load(), ms = mineState();
+    if (!ms.shovels[shovel]) return;
+    ms.shovels[shovel]--;
+    ms.dives++;
+    save();
+    fx.clearAll();
+    const d = new Dive({ cid: m.chars.includes(m.sel) ? m.sel : "deepseek", shovel, up: { ...ms.up }, fx, talents: m.talents });
+    d.onEnd = (res) => setTimeout(() => this.endDive(d, res), res.how === "dead" ? 1100 : 500);
+    this.dive = d;
+    this.diveShovel = shovel;
+    this.paused = false;
+    MUI.showMineHud(d);
+    playMusic("battle");
+  },
+  /** boss rift: a timed 60-second dig with no shovel; the haul joins this run's rewards */
+  offerRift() {
+    const g = this.game;
+    if (!g || this.net) return;
+    this.paused = true;
+    UI.showMsg("梦境裂隙", "首领倒下时撕开了一道裂隙：<br>进入后有 <b>90 秒</b>限时挖宝：电量无限、不消耗铲子、矿物更密集，时间到自动带出全部收获。", "进入裂隙", () => this.startRift());
+    const md = document.querySelector("#ui .modal:last-child .row");
+    if (md) md.classList.add("eq-btns");
+    if (md) md.appendChild(UI.btn("不了，直接结算", "gray", () => {
+      document.querySelector("#ui .modal:last-child")?.remove();
+      this.paused = false;
+      if (!g.endless) g.victory();
+    }));
+  },
+  startRift() {
+    const m = load(), ms = mineState();
+    fx.clearAll();
+    const d = new Dive({ cid: this.me ? this.me.cid : m.sel, shovel: "cu", up: { ...ms.up }, fx, talents: m.talents, lite: { rows: 34, time: 90, rich: true, power: true } });
+    d.onEnd = (res) => setTimeout(() => this.endRift(d, res), 600);
+    this.dive = d;
+    this.paused = false;
+    MUI.showMineHud(d);
+  },
+  endRift(d, res) {
+    if (this.dive !== d) return;
+    const m = load(), ms = mineState(), g = this.game;
+    m.tokens += res.value;
+    ms.mats += res.mats;
+    ms.stars += res.stars;
+    save();
+    this.dive = null;
+    MUI.hideMineHud();
+    this.riftLoot = res;
+    if (!g) return MUI.showMineHub();
+    if (g.endless) {
+      // back to the corridor: the haul also feeds this run (coins and a power cube)
+      if (this.me) (this.me.coins += res.value), (this.me.cubes += 1);
+      UI.showHud(g, this.me);
+      UI.toast(`裂隙收获：💎${res.value} · 矿石 ${res.mats}${res.stars ? " · 星砂 " + res.stars : ""}`, 2600);
+      return;
+    }
+    g.victory();
+  },
+  endDive(d, res) {
+    if (this.dive !== d) return;
+    const m = load(), ms = mineState();
+    m.tokens += res.value;
+    ms.mats += res.mats;
+    ms.stars += res.stars;
+    res.record = res.depth > ms.best;
+    ms.best = Math.max(ms.best, res.depth);
+    save();
+    res.questsDone = progressQuests(res).map(questText);
+    this.dive = null;
+    MUI.hideMineHud();
+    const sh = this.diveShovel, again = ms.shovels[sh] ? () => this.startDive({ shovel: sh }) : null;
+    MUI.showMineResult(res, again, () => MUI.showMineHub());
+  },
   toLobby() {
     this.game = null;
     this.me = null;
@@ -199,6 +303,19 @@ export const app = {
     showLobby();
   },
   pause() {
+    if (this.dive && !this.pauseMd) {
+      this.paused = true;
+      this.pauseMd = UI.showPause(null, {
+        resume: () => ((this.paused = false), (this.pauseMd = null)),
+        quit: () => {
+          this.paused = false;
+          this.pauseMd = null;
+          this.dive && this.dive.finish("dead");
+        },
+        quitLabel: "放弃下潜（只带回 30%）",
+      });
+      return;
+    }
     if (!this.game || this.pauseMd) return;
     if (!this.net) this.paused = true;
     this.pauseMd = UI.showPause(this.game, {
@@ -266,6 +383,7 @@ function frame(now) {
   requestAnimationFrame(frame);
   let dt = Math.min(0.05, (now - last) / 1000);
   last = now;
+  if (app.dive) return diveFrame(dt);
   const g = app.game;
   if (!g) {
     renderer.g.setTransform(RS, 0, 0, RS, 0, 0);
@@ -317,6 +435,50 @@ function frame(now) {
     app.hudT = 0.06;
     UI.updateHud(g, me);
   }
+}
+
+function diveFrame(dt) {
+  const d = app.dive;
+  if (consume("pause")) app.pauseMd ? null : app.pause();
+  const bomb = consume("skill");
+  let beacon = consume("ult");
+  // the beacon ends the dive, so ask first (only when there is one to use and it isn't already counting down)
+  if (beacon && d.p.beacons > 0 && !d.p.beaconT && !app.beaconAsk) {
+    beacon = false;
+    app.beaconAsk = true;
+    app.paused = true;
+    MUI.confirmBeacon(d, () => ((app.beaconAsk = false), (app.paused = false), (app.beaconGo = true)), () => ((app.beaconAsk = false), (app.paused = false)));
+  }
+  if (app.beaconGo) (beacon = true), (app.beaconGo = false);
+  consume("dash");
+  if (d.shop && !app.shopOpen) {
+    app.shopOpen = true;
+    MUI.showMerchant(d, () => (app.shopOpen = false));
+  }
+  if (d.choice && !app.relicOpen) {
+    app.relicOpen = true;
+    MUI.showRelicPick(d, (id) => {
+      app.relicOpen = false;
+      if (app.dive === d) d.takeRelic(id);
+    });
+  }
+  if (!app.paused) {
+    d.update(dt, { mx: input.mx, my: input.my, atk: input.atk, bomb, beacon });
+    fx.update(dt);
+  }
+  d.draw(renderer.g, RS);
+  app.hudT -= dt;
+  if (app.hudT <= 0) {
+    app.hudT = 0.08;
+    MUI.updateMineHud(d);
+  }
+}
+/** shovel drop at the end of a run */
+function rollShovel(rs) {
+  const r = Math.random();
+  if (rs.boss) return r < 0.1 ? "au" : r < 0.45 ? "ag" : "cu"; // normally already dropped in the boss room (rs.shovel)
+  if (rs.rooms >= 3 && r < 0.4) return "cu";
+  return null;
 }
 
 // ------------------------------------------------------------ boot

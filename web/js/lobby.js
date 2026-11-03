@@ -1,7 +1,8 @@
 // Lobby (Brawl Stars-style home: hero on a stage in the middle, info on the left, play button bottom-right)
 // and the capsule gacha with a staged pull sequence (crank → capsule → open → card flips → summary).
-import { CHARS, CHAR_ORDER, ELEM, UNLOCKS, GACHA, RARITY, REACTIONS, MAPS, MAP_ORDER, LOADOUT_SLOTS } from "./data.js";
-import { load, save, unlockProgress, pull, checkUnlocks, loadoutOf, setLoadout, exportSave, parseSave, importSave } from "./save.js";
+import { CHARS, CHAR_ORDER, ELEM, UNLOCKS, GACHA, RARITY, REACTIONS, MAPS, MAP_ORDER, LOADOUT_SLOTS, CORE_FX } from "./data.js";
+import { claimable } from "./minequests.js";
+import { load, save, unlockProgress, pull, checkUnlocks, ssrDone, gachaDone, loadoutOf, setLoadout, exportSave, parseSave, importSave, mineState } from "./save.js";
 import { sfx, setSound, setMusic, playMusic } from "./audio.js";
 import { el } from "./util.js";
 import { iconURL, skillIcon } from "./icons.js";
@@ -93,6 +94,7 @@ export function showLobby() {
     <div class="spacer"></div>
     <div class="pill o1"><span>👤</span><span class="pname"></span></div>
     <div class="pill o1"><div class="gem"></div><span class="tok">${m.tokens}</span></div>
+    <button class="btn small tb-ico help-btn t-help" title="玩法说明"><span>📖</span></button>
     <button class="btn gray small fs-btn" title="全屏">⛶</button>
     <button class="btn gray small set-btn" title="设置">⚙</button>
   </div>
@@ -125,20 +127,22 @@ export function showLobby() {
   };
   // side tiles (Brawl Stars keeps shop / brawlers / social as square tiles)
   const tiles = q(".lb-tiles", s);
-  const tile = (icon, label, cls, fn, badge) => {
-    const t = el("button", "lb-tile " + cls, `<span class="ti">${icon}</span><span class="tl outline">${label}</span>${badge ? `<i class="badge o1">${badge}</i>` : ""}`);
+  const tile = (icon, label, cls, fn, badge, sub = "") => {
+    const t = el("button", "lb-tile " + cls, `<span class="ti">${icon}</span><span class="tt"><span class="tl outline">${label}</span>${sub ? `<small class="o1">${sub}</small>` : ""}</span>${badge ? `<i class="badge o1">${badge}</i>` : ""}`);
     t.onclick = () => (sfx("click"), fn());
     tiles.appendChild(t);
   };
-  tile("🎰", "扭蛋机", "t-gacha", () => showGacha(), pulls > 0 ? Math.min(99, pulls) : "");
-  tile("👥", "联机对战", "t-net", () => showNet());
-  tile("📖", "玩法说明", "t-help", () => showHelp());
+  tile("🎰", "扭蛋机", "t-gacha", () => showGacha(), pulls > 0 && !gachaDone() ? Math.min(99, pulls) : "", "抽天赋卡");
+  const msh = mineState(), shovels = msh.shovels.cu + msh.shovels.ag + msh.shovels.au + (msh.freePend || 0);
+  tile("⛏", "梦境矿场", "t-mine", () => import("./mineui.js").then((M) => M.showMineHub()), shovels || "", "搜 · 打 · 撤");
+  if (claimable()) q(".t-mine", s).insertAdjacentHTML("beforeend", `<i class="rdot" title="有可领取的每日委托"></i>`);
+  tile("👥", "联机模式", "t-net", () => showNet());
+  q(".help-btn", s).onclick = () => (sfx("click"), showHelp());
   const play = q(".lb-play", s);
   const pb = btn(`<span class="pt">开始冒险</span>`, "big play-btn", () => {
-    // launch: the hero leaps off the island, white wipe, then the run starts
+    // launch: the hero leaps off the island while two doors slide shut, then the run starts behind them
     s.classList.add("launch");
-    sfx("portal");
-    setTimeout(() => app.startSolo(), 520);
+    app.closeDoors().then(() => app.startSolo());
   });
   play.appendChild(pb);
   play.appendChild(el("div", "lb-stats o1", `击败 ${m.stats.kills} · 反应 ${m.stats.reactions} · 通关 ${m.stats.bossKills} · 最远 ${m.stats.best}/7`));
@@ -230,7 +234,7 @@ function renderHero(s, id, swap) {
   info.classList.add("refresh");
   info.innerHTML = `
     <div class="li-head"><div class="li-name outline">${c.name}</div><div class="li-title o1"><span>「${c.title}」</span><button class="li-kit" title="天赋装配">${loadoutOf(id).map((t) => `<i class="ks${t ? " on" : ""}">${t ? `<img src="${iconURL(t, 1)}" alt="">` : "+"}</i>`).join("")}<span class="o1">天赋</span></button></div>
-      <div class="li-chips o1"><span class="chip el-chip" style="background:${e.color}"><img src="${iconURL("elem_" + c.elem, 1)}" alt="">${e.name}元素</span><span class="chip role">${c.role}</span><button class="li-more">详情</button></div></div>
+      <div class="li-chips o1"><span class="chip el-chip" style="background:${e.color}"><img src="${iconURL("elem_" + c.elem, 1)}" alt="">${e.name}元素</span><span class="chip role">${c.role}</span>${(load().cores || {})[id] ? `<span class="chip core-chip">梦核</span>` : ""}<button class="li-more">详情</button></div></div>
     <div class="li-bars o1">
       ${bar("生命", c.hp, 7, "linear-gradient(90deg,#ff8a9a,#ff3a5a)")}
       ${bar("护盾", c.shield, 6, "linear-gradient(90deg,#e0ecff,#8aa8ff)")}
@@ -266,6 +270,7 @@ function showCharDetail(id) {
     </div></div>`;
   uiRoot().appendChild(md);
   q(".x-btn", md).onclick = () => md.remove();
+  md.addEventListener("click", (e) => e.target === md && md.remove());
   md.onclick = (ev) => ev.target === md && md.remove();
 }
 
@@ -278,7 +283,7 @@ export function showLoadout(cid, onClose) {
   const passive = GACHA.pool.filter((it) => !it.eq && !it.card && m.talents[it.id]);
   // built once; taps only update the slots and the card states in place (no re-render, no flicker)
   md.innerHTML = `<div class="panel kit-panel">
-    <div class="kit-head"><img class="kit-face" src="assets/head_${cid}.png" alt=""><div><h2 class="outline">天赋装配 · ${c.short}</h2><div class="kit-sub o1">每个角色一页 · ${LOADOUT_SLOTS} 个 SSR 槽位 · PVE 与 PVP 都生效</div></div><button class="btn gray small x-btn">完成</button></div>
+    <div class="kit-head"><img class="kit-face" src="assets/head_${cid}.png" alt=""><div><h2 class="outline">天赋装配 · ${c.short}</h2><div class="kit-sub o1">每个角色一页 · ${page.length} 个 SSR 槽位 · PVE 与 PVP 都生效${(load().cores || {})[cid] ? " · 梦核：" + CORE_FX[cid] : ""}</div></div><button class="btn gray small x-btn">完成</button></div>
     <div class="kit-body">
       <div class="kit-l">
         <div class="kit-slots">${page.map((_, i) => `<button class="kslot" data-i="${i}"><span class="kn o1">槽位 ${i + 1}</span><span class="ks-in"></span></button>`).join("")}</div>
@@ -515,17 +520,18 @@ function updatePlay(s, cid) {
 function showSettings() {
   const m = load();
   const md = el("div", "modal");
-  md.innerHTML = `<div class="panel" style="min-width:300px;text-align:center"><h2 class="outline">设置</h2><div class="row r1"></div><div class="row r2" style="margin-top:10px"></div></div>`;
+  // two even columns: toggles, save tools, then a full-width close; the version line sits clear below the buttons
+  md.innerHTML = `<div class="panel set-p"><h2 class="outline">设置</h2><div class="set-g"></div><div class="muted set-v"></div></div>`;
   const tg = (label, key, fn) =>
-    btn(`${label}：${m[key] ? "开" : "关"}`, "gray small", (ev) => {
+    btn(`${label}：${m[key] ? "开" : "关"}`, "gray", (ev) => {
       m[key] = !m[key];
       fn && fn(m[key]);
       save();
       ev.target.closest("button").innerHTML = `${label}：${m[key] ? "开" : "关"}`;
     });
-  q(".r1", md).append(tg("音效", "sound", setSound), tg("音乐", "music", setMusic));
-  q(".r2", md).append(btn("导出存档", "blue small", () => showSaveExport()), btn("导入存档", "green small", () => showSaveImport()), btn("关闭", "", () => md.remove()));
-  q(".panel", md).appendChild(el("div", "muted", `版本 ${localVersion || "dev"}${nativeInfo.version ? " · 安装包 " + nativeInfo.version : ""}${window.Capacitor ? " · 启动时自动增量更新" : ""}`));
+  q(".set-g", md).append(tg("音效", "sound", setSound), tg("音乐", "music", setMusic), btn("导出存档", "blue", () => showSaveExport()), btn("导入存档", "green", () => showSaveImport()));
+  q(".set-v", md).textContent = `版本 ${localVersion || "dev"}${nativeInfo.version ? " · 安装包 " + nativeInfo.version : ""}${window.Capacitor ? " · 启动时自动增量更新" : ""}`;
+  md.onclick = (e) => e.target === md && md.remove();
   uiRoot().appendChild(md);
 }
 
@@ -556,6 +562,7 @@ export function showSaveExport() {
   q(".acts", md).append(btn("复制存档码", "", copy));
   if (navigator.share) q(".acts", md).append(btn("分享…", "blue small", () => navigator.share({ title: "无限梦境存档", text: code }).catch(() => {})));
   q(".acts", md).append(btn("关闭", "gray small", () => md.remove()));
+  md.addEventListener("click", (e) => e.target === md && md.remove());
   uiRoot().appendChild(md);
   ta.onclick = () => ta.select();
 }
@@ -649,6 +656,21 @@ export function showGacha() {
     feat.appendChild(fc);
   }
   q(".gp-poolbtn", s).onclick = () => (sfx("click"), showPool());
+  // 兑换卡 from 梦境工坊: pick any SSR that isn't maxed
+  const exc = mineState().cards;
+  if (exc) {
+    const eb = el("button", "gp-poolbtn gp-exbtn o1", `<img src="${iconURL("cardgold", 2)}" alt=""><span>兑换卡 ×${exc}</span>`);
+    eb.onclick = () => (sfx("click"), import("./mineui.js").then((M) => M.showExchange(() => showGacha())));
+    q(".gp-head", s).appendChild(eb);
+  }
+  // 积攒条: once every SSR is maxed, SSR pulls fill this (ticks at 10 / 20 / 50; past 50 only the number grows)
+  if (ssrDone()) {
+    const n = m.stash || 0, f = n <= 10 ? (n / 10) * 0.3 : n <= 20 ? 0.3 + ((n - 10) / 10) * 0.25 : Math.min(1, 0.55 + ((n - 20) / 30) * 0.45);
+    const sb = el("button", "stashbar", `<div class="sb-h outline">积攒</div><div class="sb-tube"><i class="sb-fill" style="height:${f * 100}%"></i>
+      <b class="sb-t ur" style="bottom:30%"><em>10</em></b><b class="sb-t hur" style="bottom:55%"><em>20</em></b><b class="sb-t" style="bottom:100%"><em>50</em></b></div><div class="sb-n outline">${n}<small>/∞</small></div>`);
+    sb.onclick = () => (sfx("click"), showStash());
+    s.appendChild(sb);
+  }
   const pity = q(".gp-pity", s);
   pity.innerHTML = `<div class="pb"><span>SSR 保底</span><div class="st"><i style="width:${(m.pity / GACHA.pity) * 100}%;background:linear-gradient(90deg,#ffe36a,#ff9a2e)"></i></div><span>${m.pity}/${GACHA.pity}</span></div>
     <div class="pb"><span>SR 保底</span><div class="st"><i style="width:${Math.min(10, m.pity10) * 10}%;background:linear-gradient(90deg,#e0b0ff,#a060ff)"></i></div><span>${Math.min(10, m.pity10)}/10</span></div>
@@ -848,7 +870,7 @@ function pullSequence(screen, res) {
       const d = el("div", "rc " + r.r);
       d.style.setProperty("--c", RCOL[r.r]);
       d.style.setProperty("--i", i);
-      d.innerHTML = `<div class="rc-in"><div class="rc-back"><span>?</span></div><div class="rc-front"><div class="rr o1">${r.r}</div><div class="ri">${ICON(it, 4)}</div><div class="rn">${it.name}</div><div class="rd">${it.desc}</div><div class="rl">${r.dup ? "已满级 · 返还 " + r.refund + "💎" : it.max > 1 ? "Lv " + r.lv + " / " + it.max : "新获得！"}</div></div></div>`;
+      d.innerHTML = `<div class="rc-in"><div class="rc-back"><span>?</span></div><div class="rc-front"><div class="rr o1">${r.r}</div><div class="ri">${ICON(it, 4)}</div><div class="rn">${it.name}</div><div class="rd">${it.desc}</div><div class="rl">${r.stash ? "积攒 " + r.lv + " / ∞" : r.dup ? "已满级 · 返还 " + r.refund + "💎" : it.max > 1 ? "Lv " + r.lv + " / " + it.max : "新获得！"}</div></div></div>`;
       wrap.appendChild(d);
       return d;
     });
@@ -892,4 +914,19 @@ function pullSequence(screen, res) {
       }, 60);
     }
   });
+}
+
+/** 积攒点 exchange: UR (red) for 10 points, HUR (rainbow) for 20 — the items themselves are still to be decided */
+function showStash() {
+  const m = load(), n = m.stash || 0;
+  const md = el("div", "modal stash-md");
+  md.innerHTML = `<div class="panel stash-p"><h2 class="outline">积攒兑换</h2>
+    <div class="st-sub o1">SSR 全部收齐后，每抽到 1 张 SSR 积攒 1 点（当前 ${n} 点）。点数可兑换更稀有的天赋或限时活动道具。</div>
+    <div class="st-list">
+      <div class="st-it ur"><div class="st-r o1">UR</div><div class="st-tx"><b class="outline">UR 天赋 / 活动道具</b><span>敬请期待</span></div><button class="btn small gray" disabled><span>兑换</span><small>积攒 10</small></button></div>
+      <div class="st-it hur"><div class="st-r o1">HUR</div><div class="st-tx"><b class="outline">HUR 天赋 / 活动道具</b><span>敬请期待</span></div><button class="btn small gray" disabled><span>兑换</span><small>积攒 20</small></button></div>
+    </div><div class="row st-acts"></div></div>`;
+
+  md.onclick = (e) => e.target === md && md.remove();
+  uiRoot().appendChild(md);
 }
