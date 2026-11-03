@@ -1074,3 +1074,22 @@ body.touchmode .c-key { display: none; }
 }
 .pv-cap.open .beam { left: 0; width: 100%; box-sizing: border-box; border: 6px solid var(--ink); height: 24%;
   background: radial-gradient(ellipse at 50% 50%, #fff 0%, #fff 35%, color-mix(in srgb, var(--c) 70%, #fff) 70%, var(--c) 100%); }
+/* capsule v6: the open lid sits clear above the bottom half's glowing rim */
+@keyframes lidDome {
+  0% { transform: translateY(0) scaleY(1); }
+  50% { transform: translateY(-62%) scaleY(.92); }
+  100% { transform: translateY(-112%) scaleY(.71); }
+}
+@keyframes lidIn {
+  0% { transform: translateY(0) scaleY(0); }
+  50% { transform: translateY(-31%) scaleY(.38); }
+  100% { transform: translateY(-56%) scaleY(.71); }
+}
+/* card faces: solid rarity colour, no spinning rays (the background already has rays); rarity as a header band, content spread evenly */
+.rc-front::before { display: none; }
+.rc-front { justify-content: space-evenly; padding: 0 1vmin 1vmin; }
+.rc.N .rc-front, .rc-front { background: #f4f0ff; }
+.rc.R .rc-front { background: #b8dcff; }
+.rc.SR .rc-front { background: #d6b4ff; }
+.rc.SSR .rc-front { background: #ffd24a; }
+.rc-front .rr { align-self: stretch; margin: 0 -1vmin; border-radius: 0; padding: .5vmin 0; border-bottom: 3px solid var(--ink); background: var(--c); }
