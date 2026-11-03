@@ -1098,3 +1098,4 @@ body.touchmode .c-key { display: none; }
 .pv-cards:not(.ten) .rc-front .rr { font-size: 4.4vmin; }
 .pv-cards.ten .rc-front .rr { font-size: 2.8vmin; padding: .1vmin 1.6vmin; }
 .pvm-card .rc-front .rr { font-size: 4.4vmin; }
+.rc-front .rr { box-shadow: none; border: 0; }
