@@ -105,7 +105,7 @@ export const CHARS = {
     lore: "亲切活泼，善于发现队友的需要，是队伍中的日常补给担当。",
   },
   glm: {
-    name: "吉拉", short: "吉拉", title: "玄墨学者", role: "阵法师 / 控制法师", elem: "ink", color: "#7b6cff",
+    name: "吉拉姆", short: "吉拉姆", title: "玄墨学者", role: "阵法师 / 控制法师", elem: "ink", color: "#7b6cff",
     hp: 5, shield: 5, speed: 108,
     atk: { name: "玄墨飞符", dmg: 4.2, rate: 3, spd: 290, range: 220, size: 4, pierce: 2 },
     skill: { name: "墨阵推演", cd: 7, desc: "在目标处布下墨阵：持续伤害、减速并标记敌人，自身短暂加速" },
@@ -341,4 +341,13 @@ export const CORE_FX = {
   claude: "大招领域自动追向敌人",
   doubao: "补给站射速与回血更快",
   glm: "大招持续 5 秒、牵引更强",
+};
+/** the same, with the numbers (character detail) */
+export const CORE_DETAIL = {
+  deepseek: "鲸落潮域持续 5 → 8 秒，范围半径 72 → 90。",
+  gpt: "白龙觉醒持续 6 → 9 秒，击退冲击半径 90 → 130。",
+  grok: "大招期间两侧副弹从大角度散射收拢到准星附近，伤害 50% → 80%。",
+  claude: "日光领域不再固定在原地，会自动追向 400 范围内最近的敌人（每秒移动 70）。",
+  doubao: "补给站射击间隔 0.5 → 0.35 秒，回血间隔 1.4 → 1 秒。",
+  glm: "大招持续 3.5 → 5 秒，牵引力提高 50%。",
 };

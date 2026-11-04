@@ -1010,7 +1010,7 @@ body.touchmode .c-key { display: none; }
 .kslot .ks-in { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; width: 100%; padding: 14px 6px 4px; }
 .kslot.full .ks-in b { color: #3a2200; text-shadow: none; font-size: 14px; line-height: 1.2; text-align: center; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; max-width: 100%; }
 .kslot.full .ks-in small { color: #6a4a10; }
-.kit-list { padding-top: 10px; }
+.kit-list { padding: 10px 5px 4px 5px; } /* room for the equipped card's outline (it was clipped on the left) */
 @media (max-height: 420px) { .kslot.full .ks-in b { font-size: 12px; } .kslot .ks-in { padding-top: 12px; } }
 .kit-head h2 { text-align: left; }
 
@@ -1702,3 +1702,50 @@ body.mining .hud .keys.gone { opacity: 0; pointer-events: none; }
 .hp-orow .cur.gem { width: .9em; height: .9em; margin: 0 1px; }
 /* Cubic's glyphs sit ~2px above the centre of their line box: nudge the text so it centres on the icon */
 .hp-orow > b, .hp-orow > em, .hp-orow > span { position: relative; top: 2px; }
+
+/* 梦核 owners: the name shimmers in flowing colours (the text-shadow outline would paint over a clipped gradient,
+   so the outline comes from drop-shadows instead) */
+.core-name { background: linear-gradient(90deg, #ffe36a, #ff8ad8, #8ad8ff, #8affc0, #ffe36a) 0 0 / 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent !important; text-shadow: none !important;
+  filter: drop-shadow(2px 0 0 var(--ink)) drop-shadow(-2px 0 0 var(--ink)) drop-shadow(0 2px 0 var(--ink)) drop-shadow(0 -2px 0 var(--ink)); animation: coreflow 3s linear infinite; }
+.lb-name .core-name { display: inline-block; }
+.cd-h .core-name { font-size: .85em; filter: none; }
+@keyframes coreflow { to { background-position: -200% 0; } }
+
+/* lobby card: the 天赋 button sits in the name row (right side), clear of the chips below */
+.lb .li-nrow { display: flex; align-items: center; gap: 8px; }
+.lb .li-nrow .li-name { flex: 0 1 auto; min-width: 0; white-space: nowrap; }
+.lb .li-nrow .li-kit { position: static; margin: 0 0 0 auto; flex: none; padding: 3px 8px 3px 4px; border-width: 3px; gap: 4px; }
+.lb .li-nrow .li-kit .ks { width: 24px; height: 24px; } .lb .li-nrow .li-kit .ks img { width: 19px; height: 19px; }
+.lb .li-nrow .li-kit span { font-size: 14px; }
+@media (max-height: 420px) { .lb .li-nrow .li-kit { padding: 2px 6px 2px 3px; border-width: 2px; } .lb .li-nrow .li-kit .ks { width: 21px; height: 21px; } .lb .li-nrow .li-kit .ks img { width: 16px; height: 16px; } .lb .li-nrow .li-kit span { font-size: 13px; } }
+/* modals dim the screen by fading the backdrop colour rather than the whole layer's opacity: fading a
+   full-screen layer over the animated lobby made some phones flash for a frame */
+.modal { animation: dimIn .2s; }
+@keyframes dimIn { from { background-color: rgba(8,4,20,0); } }
+/* character detail: everything on one screen (no scrolling) on phones in landscape */
+@media (max-height: 420px) {
+  .cd-panel { gap: 4px; padding: 8px 12px; }
+  .cd-body { gap: 10px; }
+  .cd-sec { gap: 4px; }
+  .cd-sk { padding: 3px 6px; gap: 6px; }
+  .cd-sk b { font-size: 13px; }
+  .cd-sk p, .cd-lore { line-height: 1.4; }
+  .cd-re { font-size: 11px; } .cd-re .chip { padding-top: 1px; padding-bottom: 1px; }
+  .cd-panel .kit-head h2 { font-size: 20px; margin-bottom: 0; }
+}
+
+/* lobby card: 详情 matches the role chip beside it (same height, border, type size) */
+.lb .li-chips .li-more { font-size: 12px; line-height: inherit; padding: 2px 8px; border: 2px solid var(--ink); border-radius: 6px; box-shadow: none; background: #3a2a6a; }
+/* character detail: the reactions spread to the height of the left column so both columns end together */
+.cd-res { display: flex; flex-direction: column; justify-content: space-between; gap: 6px; flex: 1 1 auto; padding-bottom: 4px; }
+/* loadout: slot cards start level with the first talent card (the list keeps 10px above for its tags); passive
+   talents as an aligned two-column list: icon, name, level */
+.kit-l { padding-top: 10px; }
+.kit-pass { display: block; }
+.kp-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; row-gap: 3px; margin-top: 4px; }
+.kp-it { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 5px; font-size: 12px; white-space: nowrap; min-width: 0; }
+.kp-it img { width: 16px; height: 16px; image-rendering: pixelated; }
+.kp-it b { font-weight: normal; overflow: hidden; text-overflow: ellipsis; }
+.kp-it em { font-style: normal; color: var(--y1); }
+/* no one-character last lines in the detail texts */
+.cd-lore, .cd-sk p { text-wrap: pretty; }
