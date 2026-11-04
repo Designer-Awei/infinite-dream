@@ -6,6 +6,7 @@ import { load, save, unlockProgress, pull, checkUnlocks, ssrDone, gachaDone, loa
 import { sfx, setSound, setMusic, playMusic } from "./audio.js";
 import { el } from "./util.js";
 import { iconURL, skillIcon } from "./icons.js";
+import { mountItemDemo, hasLiveDemo, demoCaption } from "./itemdemo.js";
 import { localVersion, nativeInfo } from "./updater.js";
 import { bushSprite, crateSprite, generateRoom, renderGround, wallSprite, wallMask, WALL, BUSH, CRATE, BARREL, LIFT } from "./map.js";
 import { T } from "./data.js";
@@ -93,7 +94,7 @@ export function showLobby() {
     <div class="logo outline">无限梦境<span>INFINITE DREAM</span></div>
     <div class="spacer"></div>
     <div class="pill o1"><span>👤</span><span class="pname"></span></div>
-    <div class="pill o1"><div class="gem"></div><span class="tok">${m.tokens}</span></div>
+    <button class="pill o1 curpill" data-cur="gem"><i class="cur gem"></i><span class="tok">${m.tokens}</span></button>
     <button class="btn small tb-ico help-btn t-help" title="玩法说明"><span>📖</span></button>
     <button class="btn gray small fs-btn" title="全屏">⛶</button>
     <button class="btn gray small set-btn" title="设置">⚙</button>
@@ -109,6 +110,7 @@ export function showLobby() {
   root.appendChild(s);
   q(".pname", s).textContent = m.name;
   q(".set-btn", s).onclick = () => (sfx("click"), showSettings());
+  wireCurrency(s);
   const fs = q(".fs-btn", s);
   if (window.Capacitor || !document.documentElement.requestFullscreen) fs.remove();
   else fs.onclick = async () => {
@@ -598,7 +600,7 @@ export function showSaveImport() {
     try {
       const s = parseSave(ta.value);
       msg.style.color = "#8cff9a";
-      msg.textContent = `✓ 存档有效：${s.name || "玩家"} · 💎${s.tokens} · 角色 ${s.chars.length} 个 · 通关 ${(s.stats && s.stats.bossKills) || 0} 次`;
+      msg.textContent = `✓ 存档有效：${s.name || "玩家"} · 晶石 ${s.tokens} · 角色 ${s.chars.length} 个 · 通关 ${(s.stats && s.stats.bossKills) || 0} 次`;
       return s;
     } catch (e) {
       msg.style.color = "#ff8a9a";
@@ -629,7 +631,17 @@ export function showSaveImport() {
 }
 
 // ------------------------------------------------------------------ gacha
-const FEATURED = ["t_revive", "t_startcard", "u_links"];
+/** tap any currency pill → what it is and where it comes from (same card as in the mine) */
+export function wireCurrency(root) {
+  root.querySelectorAll("[data-cur]").forEach((b) => (b.onclick = () => import("./mineui.js").then((M) => M.showCurInfo(b.dataset.cur))));
+}
+const FEATURED = ["t_chain", "t_rag", "t_moe", "t_revive", "u_links"]; // the three new SSRs first
+const shortName = (n) => n.replace(/^卡牌·/, "");
+const lvText = (it, lv) => (lv ? (it.max > 1 ? `Lv${lv}/${it.max}` : "已拥有") : "未拥有");
+/** vertical mini card (banner, pool preview, exchange list): rarity tag, icon, short name, one status line */
+function vcard(it, o = {}) {
+  return `<div class="vc ${it.r}${o.dim ? " no" : ""}${o.cls ? " " + o.cls : ""}" data-id="${it.id}"><span class="vc-r">${it.r}</span>${o.tag ? `<i class="vc-tag">${o.tag}</i>` : ""}<span class="vc-i">${ICON(it, 2)}</span><b class="vc-n${shortName(it.name).length >= 6 ? " ln" : ""}">${shortName(it.name)}</b>${o.sub ? `<small class="vc-s">${o.sub}</small>` : ""}${o.rate ? `<em class="vc-p">${o.rate}</em>` : ""}</div>`;
+}
 const ICON = (it, s = 3) => `<img class="pxi" src="${iconURL(it.id, s)}" alt="">`;
 const CAP_COLORS = ["#ffd84a", "#5fb4ff", "#c27bff", "#5dff7a", "#ff7cc8", "#ff8a5a"];
 
@@ -640,63 +652,81 @@ export function showGacha() {
   const m = load();
   const s = el("div", "screen gacha2");
   s.innerHTML = `<div class="sparkles"></div>
-  <div class="topbar"><button class="btn gray small back-btn">◀ 返回</button><div class="logo outline">扭蛋机<span>算力抽卡</span></div><div class="spacer"></div><div class="pill o1"><div class="gem"></div><span class="tok">${m.tokens}</span></div></div>
+  <div class="topbar"><button class="btn gray small back-btn">◀ 返回</button><div class="logo outline">扭蛋机<span>算力抽卡</span></div><div class="spacer"></div><button class="pill o1 curpill" data-cur="gem"><i class="cur gem"></i><span class="tok">${m.tokens}</span></button></div>
   <div class="gm">
     <div class="gm-dome"><div class="gm-shine"></div></div>
     <div class="gm-neck"></div>
     <div class="gm-base"><div class="gm-label outline">算力扭蛋</div><div class="gm-slot"></div><div class="gm-crank"><i></i></div><div class="gm-chute"></div></div>
   </div>
   <div class="gp">
-    <div class="gp-banner"><div class="gp-head"><div class="gp-title outline">常驻扭蛋 · 永久天赋与稀有技能卡</div><button class="gp-poolbtn o1"><img src="${iconURL("pool", 2)}" alt=""><span>卡池预览</span></button></div><div class="gp-feat"></div><div class="gp-tip o1">点击卡片预览效果</div></div>
+    <div class="gp-banner"><div class="gp-head"><div class="gp-title outline">常驻扭蛋</div><button class="gp-poolbtn o1"><img src="${iconURL("pool", 2)}" alt=""><span>卡池预览</span></button></div><div class="gp-feat"></div><div class="gp-tip o1">点击卡片预览效果</div></div>
     <div class="gp-pity o1"></div>
     <div class="gp-btns"></div>
   </div>`;
   root.appendChild(s);
   q(".back-btn", s).onclick = () => (sfx("click"), showLobby());
-  // capsules inside the dome
+  wireCurrency(s);
+  // capsules inside the dome: a little physics loop (gravity, ball-ball and ball-dome collisions, air puffs from below)
   const dome = q(".gm-dome", s);
-  for (let i = 0; i < 18; i++) {
-    const c = el("div", "capsule");
-    c.style.setProperty("--c", CAP_COLORS[i % CAP_COLORS.length]);
-    const row = Math.floor(i / 6), col = i % 6;
-    c.style.left = 8 + col * 14 + (row % 2) * 6 + "%";
-    c.style.top = 50 + row * 13 - Math.abs(col - 2.5) * 2 + "%";
-    c.style.transform = `rotate(${(i * 47) % 360}deg)`;
-    c.style.animationDelay = (i % 5) * 0.13 + "s";
-    dome.appendChild(c);
-  }
+  dome.classList.add("phys");
+  capsulePhysics(dome, q(".gm", s));
+  // glass highlights on top of the capsules: a tapered crescent along the upper-left rim with a short dash after it,
+  // a thin inner reflection and a faint rim light on the lower right (cartoon glass, no blurry blob)
+  const cres = (r, a0, a1, w) => {
+    const out = [], inn = [];
+    for (let i = 0; i <= 24; i++) {
+      const t = i / 24, a = ((a0 + (a1 - a0) * t) * Math.PI) / 180, h = (w / 2) * Math.sin(Math.PI * t) ** 0.6;
+      out.push([50 + (r + h) * Math.cos(a), 50 + (r + h) * Math.sin(a)]);
+      inn.unshift([50 + (r - h) * Math.cos(a), 50 + (r - h) * Math.sin(a)]);
+    }
+    return "M" + [...out, ...inn].map(([x, y]) => x.toFixed(2) + " " + y.toFixed(2)).join(" L") + " Z";
+  };
+  // feathered: every highlight is blurred so its edges melt into the glass (no hard cut-out shapes)
+  dome.insertAdjacentHTML("beforeend", `<svg class="gm-gloss" viewBox="0 0 100 100" aria-hidden="true">
+    <defs>
+      <filter id="glsB" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="1.6"/></filter>
+      <filter id="glsS" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="0.7"/></filter>
+      <radialGradient id="glsG" cx="30%" cy="26%" r="34%"><stop offset="0" stop-color="#fff" stop-opacity=".26"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+    </defs>
+    <circle cx="50" cy="50" r="49" fill="url(#glsG)"/>
+    <path d="${cres(40, 190, 258, 9)}" fill="#fff" fill-opacity=".55" filter="url(#glsB)"/>
+    <path d="${cres(40.5, 198, 250, 4.2)}" fill="#fff" fill-opacity=".6" filter="url(#glsS)"/>
+    <path d="${cres(40.5, 262, 274, 4)}" fill="#fff" fill-opacity=".55" filter="url(#glsS)"/>
+    <path d="${cres(33.5, 204, 238, 3)}" fill="#fff" fill-opacity=".28" filter="url(#glsB)"/>
+    <path d="${cres(44, 14, 66, 3.2)}" fill="#fff" fill-opacity=".3" filter="url(#glsB)"/>
+  </svg>`);
   // featured SSR items
   const feat = q(".gp-feat", s);
   for (const id of FEATURED) {
     const it = GACHA.pool.find((p) => p.id === id);
     const lv = m.talents[id] || 0;
-    const fc = el("div", "fcard " + it.r, `<div class="fr o1">${it.r}</div><div class="fi">${ICON(it)}</div><div class="fn">${it.name}</div><div class="fd">${it.desc}</div>${lv ? `<div class="fo">已拥有</div>` : ""}<div class="feye"></div>`);
-    fc.onclick = () => (sfx("card"), showItemPreview(it));
-    feat.appendChild(fc);
+    feat.insertAdjacentHTML("beforeend", vcard(it, { sub: lvText(it, lv), cls: "feat" }));
+    feat.lastElementChild.onclick = () => (sfx("card"), showItemPreview(it));
   }
   q(".gp-poolbtn", s).onclick = () => (sfx("click"), showPool());
   // 兑换卡 from 梦境工坊: pick any SSR that isn't maxed
   const exc = mineState().cards;
   if (exc) {
-    const eb = el("button", "gp-poolbtn gp-exbtn o1", `<img src="${iconURL("cardgold", 2)}" alt=""><span>兑换卡 ×${exc}</span>`);
-    eb.onclick = () => (sfx("click"), import("./mineui.js").then((M) => M.showExchange(() => showGacha())));
-    q(".gp-head", s).appendChild(eb);
+    const eb = el("button", "gp-poolbtn gp-exbtn o1", `<img src="${iconURL("cardgold", 2)}" alt=""><span><i class="lbl">兑换卡 </i>×${exc}</span>`);
+    eb.onclick = () => (sfx("click"), showExchange(() => showGacha()));
+    q(".gp-head", s).insertBefore(eb, q(".gp-poolbtn", s));
   }
-  // 积攒条: once every SSR is maxed, SSR pulls fill this (ticks at 10 / 20 / 50; past 50 only the number grows)
-  if (ssrDone()) {
+  // 积攒条: always shown; once every SSR is maxed, SSR pulls fill it (ticks at 10 / 20 / 50; past 50 only the number grows)
+  {
     const n = m.stash || 0, f = n <= 10 ? (n / 10) * 0.3 : n <= 20 ? 0.3 + ((n - 10) / 10) * 0.25 : Math.min(1, 0.55 + ((n - 20) / 30) * 0.45);
     const sb = el("button", "stashbar", `<div class="sb-h outline">积攒</div><div class="sb-tube"><i class="sb-fill" style="height:${f * 100}%"></i>
       <b class="sb-t ur" style="bottom:30%"><em>10</em></b><b class="sb-t hur" style="bottom:55%"><em>20</em></b><b class="sb-t" style="bottom:100%"><em>50</em></b></div><div class="sb-n outline">${n}<small>/∞</small></div>`);
     sb.onclick = () => (sfx("click"), showStash());
     s.appendChild(sb);
+    s.classList.add("has-stash");
   }
   const pity = q(".gp-pity", s);
   pity.innerHTML = `<div class="pb"><span>SSR 保底</span><div class="st"><i style="width:${(m.pity / GACHA.pity) * 100}%;background:linear-gradient(90deg,#ffe36a,#ff9a2e)"></i></div><span>${m.pity}/${GACHA.pity}</span></div>
     <div class="pb"><span>SR 保底</span><div class="st"><i style="width:${Math.min(10, m.pity10) * 10}%;background:linear-gradient(90deg,#e0b0ff,#a060ff)"></i></div><span>${Math.min(10, m.pity10)}/10</span></div>
-    <div class="rates">概率 <b style="color:#ffd84a">SSR 3%</b> · <b style="color:#d6a8ff">SR 14%</b> · <b style="color:#8ac8ff">R 33%</b> · N 50% ｜ 满级的重复天赋返还晶石</div>`;
+    <div class="rates">概率 <b style="color:#ffd84a">SSR 3%</b> · <b style="color:#d6a8ff">SR 14%</b> · <b style="color:#8ac8ff">R 33%</b> · N 50%<span class="rf"> ｜ 满级的重复天赋返还晶石</span></div>`;
   const b = q(".gp-btns", s);
-  const b1 = btn(`<span>单抽</span><small>${GACHA.cost1} 💎</small>`, "blue pull-btn", () => doPull(1));
-  const b10 = btn(`<span>十连</span><small>${GACHA.cost10} 💎 · 必出SR</small>`, "pink pull-btn", () => doPull(10));
+  const b1 = btn(`<span>单抽</span><small>${GACHA.cost1}<i class="cur gem"></i></small>`, "blue pull-btn", () => doPull(1));
+  const b10 = btn(`<span>十连</span><small>${GACHA.cost10}<i class="cur gem"></i> · 必出SR</small>`, "pink pull-btn", () => doPull(10));
   if (m.tokens < GACHA.cost1) b1.classList.add("poor");
   if (m.tokens < GACHA.cost10) b10.classList.add("poor");
   b.append(b1, b10);
@@ -729,16 +759,47 @@ function showPool() {
   const groups = ["SSR", "SR", "R", "N"].map((r) => {
     const items = GACHA.pool.filter((p) => p.r === r);
     return `<div class="pl-g"><div class="pl-gh o1"><span class="pl-r ${r}">${r}</span>品质总概率 <b>${pct(GACHA.rates[r])}</b><small>· 每张 ${pct(GACHA.rates[r] / items.length)}</small></div>
-      ${items.map((it) => { const lv = m.talents[it.id] || 0; return `<div class="pl-it ${r}${lv ? "" : " no"}" data-id="${it.id}"><span class="pl-ic">${ICON(it, 2)}</span><span class="pl-tx"><b>${it.name}</b><small>${it.desc}</small></span><span class="pl-lv">${lv ? (it.max > 1 ? `Lv${lv}/${it.max}` : "已拥有") : it.max > 1 ? `上限 Lv${it.max}` : "未拥有"}</span><span class="pl-p">${pct(itemRate(it))}</span></div>`; }).join("")}</div>`;
+      <div class="vgrid">${items.map((it) => { const lv = m.talents[it.id] || 0; return vcard(it, { dim: !lv, sub: lv ? lvText(it, lv) : it.max > 1 ? `上限 Lv${it.max}` : "未拥有", rate: pct(itemRate(it)) }); }).join("")}</div></div>`;
   }).join("");
   md.innerHTML = `<div class="panel pool-panel"><div class="pl-head"><h2 class="outline">卡池预览</h2><button class="btn gray small x-btn">×</button></div>
-    <div class="pl-rule o1">单抽 ${GACHA.cost1}💎 · 十连 ${GACHA.cost10}💎 必出 SR 及以上 · ${GACHA.pity} 抽内必出 SSR · 满级重复返还晶石（N ${GACHA.refund.N} / R ${GACHA.refund.R} / SR ${GACHA.refund.SR} / SSR ${GACHA.refund.SSR}）</div>
+    <div class="pl-rule o1">单抽 ${GACHA.cost1}<i class="cur gem"></i> · 十连 ${GACHA.cost10}<i class="cur gem"></i> 必出 SR 及以上 · ${GACHA.pity} 抽内必出 SSR · 满级重复返还晶石（N ${GACHA.refund.N} / R ${GACHA.refund.R} / SR ${GACHA.refund.SR} / SSR ${GACHA.refund.SSR}）</div>
     <div class="pl-list">${groups}</div></div>`;
   uiRoot().appendChild(md);
   const close = () => md.remove();
   q(".x-btn", md).onclick = close;
   md.onclick = (e) => e.target === md && close();
-  md.querySelectorAll(".pl-it").forEach((d) => (d.onclick = () => (sfx("card"), showItemPreview(GACHA.pool.find((p) => p.id === d.dataset.id)))));
+  md.querySelectorAll(".vc").forEach((d) => (d.onclick = () => (sfx("card"), showItemPreview(GACHA.pool.find((p) => p.id === d.dataset.id)))));
+}
+
+/** SSR 兑换卡 (bought in 梦境工坊 with 星砂): same card grid as the pool; tap → effect preview with the 兑换 button */
+export function showExchange(after) {
+  const m = load(), ms = mineState();
+  const list = GACHA.pool.filter((it) => it.r === "SSR");
+  const md = el("div", "modal pool-modal ex-modal");
+  const draw = () => {
+    md.innerHTML = `<div class="panel pool-panel"><div class="pl-head"><img class="ex-face" src="${iconURL("cardgold", 3)}" alt=""><h2 class="outline">兑换卡 ×${ms.cards}</h2><button class="btn gray small x-btn">×</button></div>
+      <div class="pl-rule o1">每张兑换卡可直接换 1 级任意未满级的 SSR · 点卡片查看效果并兑换 · 兑换卡在梦境工坊用星砂换</div>
+      <div class="pl-list"><div class="vgrid">${list.map((it) => { const lv = m.talents[it.id] || 0, full = lv >= it.max; return vcard(it, { dim: full, tag: full ? "已满级" : "", sub: lv ? `Lv${lv}/${it.max}` : "未拥有" }); }).join("")}</div></div></div>`;
+    q(".x-btn", md).onclick = close;
+    md.querySelectorAll(".vc").forEach((d) => (d.onclick = () => {
+      const it = GACHA.pool.find((p) => p.id === d.dataset.id), lv = m.talents[it.id] || 0, full = lv >= it.max;
+      sfx("card");
+      showItemPreview(it, { label: full ? "已满级" : ms.cards ? `兑换${it.max > 1 ? " → Lv" + (lv + 1) : ""}（兑换卡 ×${ms.cards}）` : "没有兑换卡", off: full || !ms.cards, fn: () => {
+        ms.cards--;
+        m.talents[it.id] = lv + 1;
+        if (it.card && !m.cards.includes(it.card)) m.cards.push(it.card);
+        save();
+        sfx("ssr");
+        toast(`兑换成功：${it.name}${it.max > 1 ? " Lv" + (lv + 1) : ""}`, 2400);
+        if (ms.cards) draw();
+        else close();
+      } });
+    }));
+  };
+  const close = () => (md.remove(), after && after());
+  md.addEventListener("click", (e) => e.target === md && close());
+  draw();
+  uiRoot().appendChild(md);
 }
 
 /** a little looping stage that demonstrates what the item does */
@@ -764,13 +825,28 @@ function previewScene(it) {
   }
 }
 
-function showItemPreview(it) {
+function showItemPreview(it, act) {
   const m = load(), lv = m.talents[it.id] || 0;
   const md = el("div", "modal pv-modal");
   md.innerHTML = `<div class="pvm ${it.r}"><div class="pvm-card rc ${it.r}" style="--c:${RCOL[it.r]}"><div class="rc-front"><div class="rr o1">${it.r}</div><div class="ri">${ICON(it, 4)}</div><div class="rn">${it.name}</div><div class="rd">${it.desc}</div><div class="rl">${lv ? (it.max > 1 ? `已拥有 Lv${lv}/${it.max}` : "已拥有") : "未拥有"}</div></div></div>
-    <div class="pvm-r"><div class="pvm-h outline">效果预览</div>${previewScene(it)}<div class="pvm-odds o1">单抽获得概率 <b>${pct(itemRate(it))}</b>${it.r === "SSR" ? ` · ${GACHA.pity} 抽保底必出 SSR` : ""}</div><div class="pvm-close o1">点击任意处关闭</div></div></div>`;
+    <div class="pvm-r"><div class="pvm-h outline">效果预览</div>${hasLiveDemo(it) ? `<div class="sc sc-live"><canvas class="sc-cv"></canvas><div class="sc-cap o1">${demoCaption(it)}</div></div>` : previewScene(it)}<div class="pvm-odds o1">单抽获得概率 <b>${pct(itemRate(it))}</b>${it.r === "SSR" ? ` · ${GACHA.pity} 抽保底必出 SSR` : ""}</div>${act ? `<button class="btn ${act.off ? "gray" : ""} pvm-act"><span>${act.label}</span></button>` : ""}<div class="pvm-close o1">点击其他地方关闭</div></div></div>`;
   uiRoot().appendChild(md);
-  md.onclick = () => md.remove();
+  // live demo: the selected girl actually using the item in a small real fight
+  const cv = md.querySelector(".sc-cv");
+  if (cv) {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = Math.round(cv.clientWidth * dpr);
+    cv.height = Math.round(cv.clientHeight * dpr);
+    mountItemDemo(cv, it, CHARS[m.sel] ? m.sel : "deepseek");
+  }
+  md.onclick = (e) => {
+    if (act && e.target.closest(".pvm-act")) {
+      if (act.off) return sfx("click");
+      md.remove();
+      return act.fn();
+    }
+    md.remove();
+  };
 }
 
 const ORDER = ["N", "R", "SR", "SSR"];
@@ -827,6 +903,111 @@ function particles(canvas) {
       cancelAnimationFrame(raf);
     },
   };
+}
+
+/**
+ * Capsules floating inside the dome, computed live every frame (no loop, no gravity). Units: the dome's inner width = 1,
+ * origin at its centre. Each capsule drifts slowly in a straight line; capsule-capsule and capsule-glass collisions are
+ * elastic reflections. Every capsule turns at a steady 10°/s; a collision decides which way, from the sliding direction
+ * at the contact (two touching disks rub each other the same way round, the glass rolls them). A soft speed regulator keeps every capsule drifting
+ * at a calm pace so the motion neither dies out nor builds up. Turning the crank (.gm.crank) briefly speeds them up.
+ */
+function capsulePhysics(dome, machine) {
+  const N = 18, r = 0.078, R = 0.5 - 0.012, m2 = 4 * r * r, lim = R - r;
+  const CRUISE = 0.075, SPIN = (10 * Math.PI) / 180;
+  // all capsules are drawn on one canvas: moving 18 DOM elements cost a style recalculation every frame
+  const cv = el("canvas", "gm-caps");
+  dome.appendChild(cv);
+  const g = cv.getContext("2d");
+  const balls = [];
+  for (let i = 0; i < N; i++) {
+    const col = CAP_COLORS[i % CAP_COLORS.length];
+    // a free spot that overlaps nothing
+    let x = 0, y = 0;
+    for (let k = 0; k < 200; k++) {
+      const a = Math.random() * Math.PI * 2, d = Math.sqrt(Math.random()) * lim;
+      x = Math.cos(a) * d, y = Math.sin(a) * d;
+      if (balls.every((o) => (o.x - x) ** 2 + (o.y - y) ** 2 > m2 * 1.05)) break;
+    }
+    const dir = Math.random() * Math.PI * 2, sp = CRUISE * (0.7 + Math.random() * 0.6);
+    balls.push({ col, x, y, vx: Math.cos(dir) * sp, vy: Math.sin(dir) * sp, cruise: sp, a: Math.random() * Math.PI * 2, w: Math.random() < 0.5 ? SPIN : -SPIN });
+  }
+  dome.__balls = balls;
+  let boost = 1, last = performance.now();
+  const turn = (slide, w) => (Math.abs(slide) < 0.03 ? w : slide > 0 ? SPIN : -SPIN); // glancing touches keep the current direction
+  const step = (dt) => {
+    // cranking: everything speeds up for a moment, then eases back to the cruise speed
+    boost += ((machine.classList.contains("crank") ? 4 : 1) - boost) * Math.min(1, dt * 3);
+    for (const b of balls) {
+      const sp = Math.hypot(b.vx, b.vy) || 1e-6, want = b.cruise * boost, k = 1 + ((want - sp) / sp) * Math.min(1, dt * 0.8);
+      b.vx *= k;
+      b.vy *= k;
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+      b.a += b.w * dt;
+    }
+    for (let i = 0; i < N; i++) for (let j = i + 1; j < N; j++) {
+      const a = balls[i], b = balls[j], dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy;
+      if (d2 >= m2 || d2 < 1e-12) continue;
+      const d = Math.sqrt(d2), nx = dx / d, ny = dy / d, o = (2 * r - d) / 2;
+      a.x -= nx * o, a.y -= ny * o, b.x += nx * o, b.y += ny * o;
+      const vn = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
+      if (vn >= 0) continue;
+      // equal masses, elastic: swap the normal components
+      a.vx += vn * nx, a.vy += vn * ny, b.vx -= vn * nx, b.vy -= vn * ny;
+      // sliding speed at the contact point (tangent), including the spins → equal and opposite spin kick
+      const tx = -ny, ty = nx, slide = (b.vx - a.vx) * tx + (b.vy - a.vy) * ty;
+      a.w = turn(slide, a.w);
+      b.w = turn(slide, b.w);
+    }
+    for (const b of balls) {
+      const d = Math.hypot(b.x, b.y);
+      if (d <= lim) continue;
+      const nx = b.x / d, ny = b.y / d;
+      b.x = nx * lim, b.y = ny * lim;
+      const vn = b.vx * nx + b.vy * ny;
+      if (vn <= 0) continue;
+      b.vx -= 2 * vn * nx, b.vy -= 2 * vn * ny; // mirror off the glass
+      b.w = turn(b.vx * -ny + b.vy * nx, b.w); // rolls along the glass the way it is moving
+    }
+  };
+  const ink = getComputedStyle(document.documentElement).getPropertyValue("--ink").trim() || "#1a1020";
+  const draw = () => {
+    const W = dome.clientWidth, dpr = Math.min(3, window.devicePixelRatio || 1), px = Math.round(W * dpr);
+    if (cv.width !== px) (cv.width = cv.height = px), (cv.style.width = cv.style.height = W + "px");
+    const s = W * dpr, lw = 3 * dpr, rad = r * s;
+    g.clearRect(0, 0, px, px);
+    for (const b of balls) {
+      g.save();
+      g.translate((b.x + 0.5) * s, (b.y + 0.5) * s);
+      g.rotate(b.a);
+      g.beginPath();
+      g.arc(0, 0, rad - lw / 2, 0, Math.PI * 2);
+      g.fillStyle = "#fff";
+      g.fill();
+      g.beginPath();
+      g.arc(0, 0, rad - lw / 2, Math.PI, Math.PI * 2);
+      g.closePath();
+      g.fillStyle = b.col;
+      g.fill();
+      g.beginPath();
+      g.arc(0, 0, rad - lw / 2, 0, Math.PI * 2);
+      g.lineWidth = lw;
+      g.strokeStyle = ink;
+      g.stroke();
+      g.restore();
+    }
+  };
+  const frame = (now) => {
+    if (!dome.isConnected) return;
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    step(dt / 2);
+    step(dt / 2);
+    draw();
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
 }
 
 /** crank → capsule drops and rolls to center → tap to open → cards fly out and flip → summary */
@@ -889,7 +1070,7 @@ function pullSequence(screen, res) {
       const d = el("div", "rc " + r.r);
       d.style.setProperty("--c", RCOL[r.r]);
       d.style.setProperty("--i", i);
-      d.innerHTML = `<div class="rc-in"><div class="rc-back"><span>?</span></div><div class="rc-front"><div class="rr o1">${r.r}</div><div class="ri">${ICON(it, 4)}</div><div class="rn">${it.name}</div><div class="rd">${it.desc}</div><div class="rl">${r.stash ? "积攒 " + r.lv + " / ∞" : r.dup ? "已满级 · 返还 " + r.refund + "💎" : it.max > 1 ? "Lv " + r.lv + " / " + it.max : "新获得！"}</div></div></div>`;
+      d.innerHTML = `<div class="rc-in"><div class="rc-back"><span>?</span></div><div class="rc-front"><div class="rr o1">${r.r}</div><div class="ri">${ICON(it, 4)}</div><div class="rn">${it.name}</div><div class="rd">${it.desc}</div><div class="rl">${r.stash ? "积攒 " + r.lv + " / ∞" : r.dup ? "已满级 · 返还 " + r.refund + '<i class="cur gem"></i>' : it.max > 1 ? "Lv " + r.lv + " / " + it.max : "新获得！"}</div></div></div>`;
       wrap.appendChild(d);
       return d;
     });
@@ -917,8 +1098,8 @@ function pullSequence(screen, res) {
     const foot = q(".pv-foot", ov);
     const m = load();
     const refund = res.reduce((a, r) => a + r.refund, 0);
-    foot.innerHTML = `<div class="o1 pv-sum">${res.length} 抽 · 最高 <b style="color:${RCOL[best]}">${best}</b>${refund ? ` · 返还 ${refund}💎` : ""} · 剩余 ${m.tokens}💎</div>`;
-    const again = btn(res.length > 1 ? `再来十连 ${GACHA.cost10}💎` : `再来一抽 ${GACHA.cost1}💎`, "pink", () => finish(res.length));
+    foot.innerHTML = `<div class="o1 pv-sum">${res.length} 抽 · 最高 <b style="color:${RCOL[best]}">${best}</b>${refund ? ` · 返还 ${refund}<i class="cur gem"></i>` : ""} · 剩余 ${m.tokens}<i class="cur gem"></i></div>`;
+    const again = btn(res.length > 1 ? `再来十连 ${GACHA.cost10}<i class="cur gem"></i>` : `再来一抽 ${GACHA.cost1}<i class="cur gem"></i>`, "pink", () => finish(res.length));
     const ok = btn("收下", "", () => finish(0));
     foot.append(ok, again);
     q(".pv-skip", ov).remove();
@@ -936,11 +1117,15 @@ function pullSequence(screen, res) {
 }
 
 /** 积攒点 exchange: UR (red) for 10 points, HUR (rainbow) for 20 — the items themselves are still to be decided */
+const ssrOwned = () => {
+  const m = load(), list = GACHA.pool.filter((it) => it.r === "SSR");
+  return `${list.filter((it) => (m.talents[it.id] || 0) >= it.max).length} / ${list.length}`;
+};
 function showStash() {
   const m = load(), n = m.stash || 0;
   const md = el("div", "modal stash-md");
   md.innerHTML = `<div class="panel stash-p"><h2 class="outline">积攒兑换</h2>
-    <div class="st-sub o1">SSR 全部收齐后，每抽到 1 张 SSR 积攒 1 点（当前 ${n} 点）。点数可兑换更稀有的天赋或限时活动道具。</div>
+    <div class="st-sub o1">SSR 全部收齐后，每抽到 1 张 SSR 积攒 1 点（当前 ${n} 点）。点数可兑换更稀有的天赋或限时活动道具。${ssrDone() ? "" : `<br><b class="st-prog">SSR 收集进度 ${ssrOwned()}，收齐后开始积攒</b>`}</div>
     <div class="st-list">
       <div class="st-it ur"><div class="st-r o1">UR</div><div class="st-tx"><b class="outline">UR 天赋 / 活动道具</b><span>敬请期待</span></div><button class="btn small gray" disabled><span>兑换</span><small>积攒 10</small></button></div>
       <div class="st-it hur"><div class="st-r o1">HUR</div><div class="st-tx"><b class="outline">HUR 天赋 / 活动道具</b><span>敬请期待</span></div><button class="btn small gray" disabled><span>兑换</span><small>积攒 20</small></button></div>

@@ -3,7 +3,7 @@ import { createRequire } from "module"; const require = createRequire(import.met
 const W = +(process.argv[2] || 804), H = +(process.argv[3] || 360), touch = W < 1000;
 const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: W, height: H }, deviceScaleFactor: 2, isMobile: touch, hasTouch: touch });
 const p = await ctx.newPage(); const errs = []; p.on("pageerror", (e) => errs.push(e.message + " " + (e.stack || "").split("\n")[1])); p.on("console", (m) => m.type() === "error" && !/404/.test(m.text()) && errs.push(m.text()));
-const dir = "/home/claude/game/tmp/r", shot = (n) => p.screenshot({ path: `${dir}/${n}_${W}.png` });
+const dir = "/home/claude/infinite-dream-preview/tmp/r", shot = (n) => p.screenshot({ path: `${dir}/${n}_${W}.png` });
 await p.goto("http://localhost:8765/index.html"); await p.waitForTimeout(200);
 // every SSR maxed (so pulls become 积攒点), every N/R/SR maxed too (lobby shows no pull count)
 await p.evaluate(async () => {
