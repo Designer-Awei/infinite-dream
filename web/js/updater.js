@@ -22,7 +22,6 @@ export let localVersion = "";
 /** the installed app shell: { version: "1.<nativeRev>.<build>", rev } (rev 0 = an old APK without the App plugin) */
 export const nativeInfo = { version: "", rev: 0 };
 const APK_URL = "https://github.com/Designer-Awei/infinite-dream/releases/latest/download/infinite-dream.apk";
-const IOS_URL = "https://github.com/Designer-Awei/infinite-dream/releases/tag/ios-latest";
 
 async function sha12(buf) {
   const d = await crypto.subtle.digest("SHA-1", buf);
@@ -218,16 +217,15 @@ function showNativeUpdate(need) {
     if (Date.now() - t < 20 * 3600 * 1000) return; // asked in the last day
   } catch {}
   if (document.querySelector(".nat-modal")) return;
-  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
-  const firstSigned = nativeInfo.rev < 3 && !ios; // APKs before rev 3 were signed with a throw-away key
+  // iOS installers are no longer built: iOS keeps getting hot updates, but there is no new package to point at
+  if (/iPhone|iPad|iPod/.test(navigator.userAgent)) return;
+  const firstSigned = nativeInfo.rev < 3; // APKs before rev 3 were signed with a throw-away key
   const md = el("div", "modal nat-modal");
   md.innerHTML = `<div class="panel save-panel"><h2 class="outline">有新的安装包</h2>
     <div class="muted o1">${firstSigned
       ? `这次安装包更换了<b>固定签名</b>（新图标与以后的覆盖安装都靠它）。旧版需要卸载一次才能装上，<b style="color:#ffe36a">请按顺序操作，存档不会丢：</b><br>
          ① 点「导出存档」并复制保存 → ② 点「下载安装包」→ ③ 卸载旧版，安装新版 → ④ 打开后在「设置 → 导入存档」粘贴。<br>以后的新安装包都可以直接覆盖安装，数据自动保留。`
-      : ios
-        ? `新的 iOS 安装包包含图标/原生功能更新。用 AltStore / Sideloadly 以同一个 Apple ID 覆盖安装即可保留数据。`
-        : `新的安装包包含图标/原生功能更新。下载后直接覆盖安装，<b style="color:#ffe36a">存档会自动保留</b>。`}</div>
+      : `新的安装包包含图标/原生功能更新。下载后直接覆盖安装，<b style="color:#ffe36a">存档会自动保留</b>。`}</div>
     <div class="row acts"></div></div>`;
   const acts = md.querySelector(".acts");
   const later = () => {
@@ -237,9 +235,9 @@ function showNativeUpdate(need) {
     md.remove();
   };
   if (firstSigned) acts.appendChild(btnEl("导出存档", "blue", async () => (await import("./lobby.js")).showSaveExport()));
-  acts.appendChild(btnEl(ios ? "打开下载页" : "下载安装包", "", () => {
+  acts.appendChild(btnEl("下载安装包", "", () => {
     // leaving the app's origin hands the URL to the system browser, which downloads the APK
-    location.href = ios ? IOS_URL : APK_URL;
+    location.href = APK_URL;
   }));
   acts.appendChild(btnEl("稍后", "gray small", later));
   document.getElementById("ui").appendChild(md);

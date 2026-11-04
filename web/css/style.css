@@ -1624,3 +1624,81 @@ body.mining .hud .keys.gone { opacity: 0; pointer-events: none; }
 .gacha2.has-stash .gp { left: calc(6% + var(--gw) * .92 + var(--sg) * 2 + 58px); }
 @media (max-width: 760px) { .gacha2 { --sg: calc(12px + var(--gw) * .04); } .gacha2.has-stash .gp { left: calc(6% + var(--gw) * .92 + var(--sg) * 2 + 46px); } }
 .sc-live .sc-cap { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; left: 6px; right: 6px; }
+/* live item demo = a scaled-down copy of the real in-run screen (canvas + HUD + touch controls) */
+.sc-live { height: auto !important; aspect-ratio: var(--va, 2.1); background: #1c2a1a; }
+.demo-scr { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; pointer-events: none; }
+.demo-scr .demo-cv { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; }
+.demo-scr .touchpad { display: block !important; }
+.demo-scr .hud, .demo-scr .touchpad { z-index: 1; }
+/* in the small preview the top-left HUD is enlarged to read as clearly as the touch buttons */
+.demo-scr .hud .tl { transform: scale(1.7); transform-origin: 0 0; }
+.demo-scr .hud .tr { transform: scale(1.4); transform-origin: 100% 0; }
+/* N / R / SR: no demo, just the effect in words next to the card */
+.pvm-r.plain { width: min(320px, 44vw); }
+.pvm-desc { font-size: 15px; line-height: 1.5; text-align: center; padding: 6px 4px; }
+.pvm-desc small { font-size: 12px; color: #c8c0e8; }
+/* --- 11/04: lobby hero summon entrance / swap (the body motion itself comes from the PixelLab sheet) --- */
+.lb:not(.quick) .lb-hero:not(.ready) { animation: preHide 10s backwards; }
+.lb .lb-hero.ready { animation: none; }
+.lb.quick .lb-hero { animation: none; }
+@keyframes preHide { from, to { opacity: 0; } }
+.lb .lb-hero.summon { animation: summon 1.3s cubic-bezier(.3,.9,.4,1) both; }
+.lb .lb-hero.summonq { animation: summon .7s cubic-bezier(.3,.9,.4,1) both; }
+@keyframes summon {
+  0% { clip-path: inset(100% -20% -5% -20%); filter: brightness(6) saturate(0); transform: translateX(-50%) translateY(3%); }
+  45% { clip-path: inset(-10% -20% -5% -20%); filter: brightness(3.5) saturate(.4); transform: translateX(-50%) translateY(-2%); }
+  70% { filter: brightness(1.5); transform: translateX(-50%) scale(1.05, .96); }
+  85% { filter: brightness(1); transform: translateX(-50%) scale(.98, 1.02); }
+  100% { clip-path: inset(-10% -20% -5% -20%); filter: none; transform: translateX(-50%); }
+}
+.lb .lb-hero.swap { animation: dissolve .2s ease-in both; }
+@keyframes dissolve { to { clip-path: inset(-10% -20% 100% -20%); filter: brightness(4) saturate(0); transform: translateX(-50%) translateY(-6%); opacity: .4; } }
+/* effect layers on the stage (never catch taps) */
+.lb-center > .lb-circle, .lb-center > .lb-pillar, .lb-center > .lb-wave, .lb-center > .lbp { position: absolute; pointer-events: none; z-index: 3; }
+.lb-circle { left: 50%; bottom: 12.5%; width: min(62%, 40vh); aspect-ratio: 3.2; transform: translateX(-50%); border-radius: 50%; border: 3px solid var(--eg); box-shadow: 0 0 14px var(--eg), inset 0 0 14px var(--eg); background: radial-gradient(closest-side, color-mix(in srgb, var(--eg) 35%, transparent), transparent); animation: circleIn 1.5s ease-out both; z-index: 1 !important; }
+.lb-circle::before { content: ""; position: absolute; inset: 14%; border-radius: 50%; border: 2px dashed #fff; opacity: .8; animation: spin 2s linear infinite; }
+.lb-circle.q { animation-duration: .9s; }
+@keyframes circleIn { 0% { transform: translateX(-50%) scale(0); opacity: 0; } 25% { transform: translateX(-50%) scale(1.1); opacity: 1; } 70% { opacity: 1; } 100% { transform: translateX(-50%) scale(1); opacity: 0; } }
+.lb-pillar { left: 50%; bottom: 14%; width: min(40%, 26vh); height: 92%; transform: translateX(-50%); background: linear-gradient(0deg, #fff 0%, color-mix(in srgb, var(--eg) 80%, #fff) 30%, transparent 100%); filter: blur(2px); mix-blend-mode: screen; animation: pillar 1.3s ease-out both; transform-origin: 50% 100%; }
+.lb-pillar.q { animation-duration: .7s; }
+@keyframes pillar { 0% { transform: translateX(-50%) scaleX(0); opacity: 0; } 20% { transform: translateX(-50%) scaleX(1); opacity: .95; } 55% { transform: translateX(-50%) scaleX(.7); opacity: .7; } 100% { transform: translateX(-50%) scaleX(0); opacity: 0; } }
+.lb-wave { left: 50%; top: 48%; width: 30%; aspect-ratio: 1; transform: translate(-50%, -50%); border-radius: 50%; border: 5px solid var(--eg); box-shadow: 0 0 20px var(--eg), inset 0 0 20px var(--eg); animation: wave .8s ease-out both; }
+@keyframes wave { from { transform: translate(-50%, -50%) scale(.2); opacity: 1; } to { transform: translate(-50%, -50%) scale(3.2); opacity: 0; } }
+.lbp { width: 7px; height: 7px; margin: -3px; animation: lbp 1s ease-out both; }
+.lbp.mote { background: var(--eg); box-shadow: 0 0 6px var(--eg); border-radius: 50%; }
+.lbp.spark { background: #fff; box-shadow: 0 0 8px var(--eg); width: 5px; height: 5px; }
+.lbp.dust { background: #e8dcc0; border-radius: 50%; animation-duration: .6s; }
+@keyframes lbp { from { transform: translate(0, 0) scale(1); opacity: 1; } to { transform: translate(var(--dx), var(--dy)) scale(.3); opacity: 0; } }
+/* lobby hero drawn frames (PixelLab sheet): the static art stays underneath for layout / until the sheet loads */
+.lb-hero { position: absolute; }
+.lb-hero canvas.lb-anim { position: absolute; left: 50%; bottom: -2.4%; height: 104.9%; aspect-ratio: 1; transform: translateX(-50%); image-rendering: pixelated; display: none; pointer-events: none; filter: drop-shadow(0 0 2px #1a1020) drop-shadow(0 8px 10px rgba(0,0,0,.35)); }
+.lb-hero.anim canvas.lb-anim { display: block; }
+.lb-hero.anim img { visibility: hidden; }
+.lb-hero.dark canvas.lb-anim { filter: brightness(0) opacity(.55) drop-shadow(0 0 2px #fff4); }
+/* the hero box no longer follows the picture's width (it changed with every girl and while a new picture was
+   still loading, which shifted her off the island centre for a moment): a fixed square, art centred inside */
+.lb-hero { aspect-ratio: 1; }
+.lb-hero > img { position: absolute; bottom: 0; left: 0; right: 0; margin: 0 auto; height: 100%; width: auto; }
+/* a maxed / claimed row keeps a button-sized slot (transparent, green text) so every row has the same height */
+.btn.mu-done, .btn.mu-done:active { background: none !important; box-shadow: none !important; border-color: transparent !important; transform: none !important; cursor: default; }
+.btn.mu-done span { color: #7dffb0; }
+.btn.mu-done small { visibility: hidden; }
+/* help: mine ores and chests as tiles */
+.hp-ores { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 5px; margin: 4px 0 8px; }
+.hp-ore { display: grid; grid-template-columns: 26px 1fr; column-gap: 6px; align-items: center; padding: 4px 6px; border: 2px solid var(--ink); border-radius: 8px; background: rgba(255,255,255,.08); }
+.hp-ore.wide { grid-column: 1 / -1; }
+.hp-ore img { grid-row: 1 / 4; width: 24px; height: 24px; image-rendering: pixelated; }
+.hp-ore b { font-weight: normal; color: #ffe36a; font-size: 13px; }
+.hp-ore span { font-size: 12px; white-space: nowrap; } .hp-ore.wide span { white-space: normal; } .hp-ore img.cur { grid-row: auto; width: 1em; height: 1em; vertical-align: -0.15em; margin: 0 1px 0 3px; } .hp-ore small { font-size: 10.5px; color: #c8c0e8; }
+.hp-ore .cur.gem { width: .9em; height: .9em; margin: 0 1px; }
+
+/* mine help: one ore / chest per line, like the map-item list */
+.hp-orow { display: flex; gap: 8px; align-items: center; margin: 3px 0; }
+.hp-orow > img { flex: none; width: 22px; height: 22px; image-rendering: pixelated; }
+.hp-orow > b { flex: none; width: 6.2em; white-space: nowrap; font-weight: normal; color: #ffe36a; }
+.hp-orow > span { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hp-orow > em { flex: none; width: 2.6em; font-style: normal; white-space: nowrap; }
+.hp-orow img.cur { width: 1em; height: 1em; vertical-align: -0.15em; margin: 0 1px 0 4px; image-rendering: pixelated; }
+.hp-orow .cur.gem { width: .9em; height: .9em; margin: 0 1px; }
+/* Cubic's glyphs sit ~2px above the centre of their line box: nudge the text so it centres on the icon */
+.hp-orow > b, .hp-orow > em, .hp-orow > span { position: relative; top: 2px; }

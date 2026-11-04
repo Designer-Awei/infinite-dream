@@ -6,7 +6,7 @@ import { load, save, unlockProgress, pull, checkUnlocks, ssrDone, gachaDone, loa
 import { sfx, setSound, setMusic, playMusic } from "./audio.js";
 import { el } from "./util.js";
 import { iconURL, skillIcon } from "./icons.js";
-import { mountItemDemo, hasLiveDemo, demoCaption } from "./itemdemo.js";
+import { mountItemDemo, hasLiveDemo } from "./itemdemo.js";
 import { localVersion, nativeInfo } from "./updater.js";
 import { bushSprite, crateSprite, generateRoom, renderGround, wallSprite, wallMask, WALL, BUSH, CRATE, BARREL, LIFT } from "./map.js";
 import { T } from "./data.js";
@@ -159,16 +159,109 @@ export function showLobby() {
   renderModes(s);
   renderRoster(s);
   renderHero(s, m.sel, false);
-  // click the hero: a little hop
-  q(".lb-hero", s).onclick = () => {
-    const h = q(".lb-hero", s);
-    h.classList.remove("hop");
-    void h.offsetWidth;
-    h.classList.add("hop");
-    sfx("pickup");
-  };
+  setTimeout(() => s.isConnected && heroSummon(s, s.classList.contains("quick")), s.classList.contains("quick") ? 0 : 300);
+  // tap the hero: one of three drawn reaction clips, picked at random but never the same twice in a row
+  q(".lb-hero", s).onclick = () => heroReact(s);
   const fresh = m.chars.filter((c) => !["deepseek", "gpt"].includes(c) && !m.seenUnlock.includes(c));
   if (fresh.length) setTimeout(() => showUnlock(fresh[0]), 900);
+}
+
+// ------------------------------------------------------------------ lobby hero: summon entrance + tap reactions
+let lastReact = -1;
+// lobby hero animation sheets (PixelLab): 256 px cells, one row per clip, 8 frames each
+const LB_CLIPS = ["idle", "wave", "joy", "cast"], LB_FPS = { idle: 6, wave: 10, joy: 10, cast: 10 };
+const lbSheets = {};
+function lbSheet(id) {
+  if (!lbSheets[id]) {
+    lbSheets[id] = new Promise((res) => {
+      const im = new Image();
+      im.onload = () => res(im);
+      im.onerror = () => res(null);
+      im.src = `assets/lobby/${id}.png`;
+    });
+  }
+  return lbSheets[id];
+}
+/** the hero on the island plays her idle loop; a reaction clip plays once, then back to idle */
+function heroAnim(s, id) {
+  const h = q(".lb-hero", s);
+  let cv = q("canvas.lb-anim", h);
+  if (!cv) {
+    cv = document.createElement("canvas");
+    cv.className = "lb-anim";
+    cv.width = cv.height = 256;
+    h.appendChild(cv);
+  }
+  const g = cv.getContext("2d");
+  const st = (h.__anim = { id, clip: "idle", t0: performance.now(), sheet: null });
+  h.classList.remove("anim");
+  lbSheet(id).then((sheet) => {
+    if (h.__anim !== st || !sheet) return;
+    st.sheet = sheet;
+    h.classList.add("anim");
+    const frame = (now) => {
+      if (h.__anim !== st || !cv.isConnected) return;
+      const fps = LB_FPS[st.clip], k = Math.floor(((now - st.t0) / 1000) * fps);
+      if (st.clip !== "idle" && k >= 8) (st.clip = "idle"), (st.t0 = now);
+      const f = st.clip === "idle" ? k % 8 : Math.min(7, k), row = LB_CLIPS.indexOf(st.clip);
+      g.clearRect(0, 0, 256, 256);
+      g.imageSmoothingEnabled = false;
+      g.drawImage(sheet, f * 256, row * 256, 256, 256, 0, 0, 256, 256);
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  });
+}
+/** restart a CSS animation class on the hero container (summon / swap); data-busy marks it as playing */
+function playAnim(n, cls, ms) {
+  n.classList.remove("summon", "summonq", "swap");
+  void n.offsetWidth;
+  n.classList.add(cls);
+  n.dataset.busy = "1";
+  clearTimeout(n.__t);
+  n.__t = setTimeout(() => (n.classList.remove(cls), delete n.dataset.busy), ms);
+}
+/** element-coloured bits flying out from (x%, y%) of the stage */
+function burst(stage, n, cls, x = 50, y = 55, spread = 1) {
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + Math.random() * 0.5, d = (60 + Math.random() * 70) * spread;
+    const p = el("i", "lbp " + cls);
+    p.style.left = x + "%";
+    p.style.top = y + "%";
+    p.style.setProperty("--dx", Math.cos(a) * d + "px");
+    p.style.setProperty("--dy", Math.sin(a) * d * 0.7 - 20 + "px");
+    p.style.animationDelay = Math.random() * 0.12 + "s";
+    stage.appendChild(p);
+    setTimeout(() => p.remove(), 1300);
+  }
+}
+function fx(stage, cls, ms, html = "") {
+  const n = el("div", cls, html);
+  stage.appendChild(n);
+  setTimeout(() => n.remove(), ms);
+  return n;
+}
+/** the hero appears: magic circle on the island, a light pillar, she forms inside it from the feet up */
+function heroSummon(s, quick) {
+  const stage = q(".lb-center", s), h = q(".lb-hero", s);
+  fx(stage, "lb-pillar" + (quick ? " q" : ""), 1300);
+  setTimeout(() => burst(stage, quick ? 10 : 16, "mote", 50, 62, 0.8), quick ? 160 : 420);
+  h.classList.add("ready"); // past the pre-entrance hide
+  playAnim(h, "summon" + (quick ? "q" : ""), quick ? 700 : 1300);
+}
+function heroReact(s) {
+  const h = q(".lb-hero", s), stage = q(".lb-center", s), st = h.__anim;
+  if (!st || !st.sheet || st.clip !== "idle") return;
+  const m = load(), id = m.sel;
+  let k;
+  do k = Math.floor(Math.random() * 3);
+  while (k === lastReact);
+  lastReact = k;
+  st.clip = ["wave", "joy", "cast"][k];
+  st.t0 = performance.now();
+  if (st.clip === "cast") {
+    setTimeout(() => (fx(stage, "lb-wave", 800), burst(stage, 14, "spark", 50, 50, 1.1), sfx("skill")), 300);
+  } else sfx(st.clip === "wave" ? "card" : "pickup");
 }
 
 function renderRoster(s) {
@@ -217,16 +310,29 @@ function renderHero(s, id, swap) {
     };
     img.src = `assets/hero_${id}.png`;
     hero.classList.toggle("dark", !open);
+    heroAnim(s, id);
     const isl = q(".lb-island", s);
     isl.innerHTML = "";
     isl.appendChild(islandCanvas(e.color));
     q(".lb-name", s).innerHTML = `${c.short}<small>${c.title}</small>`;
   };
   if (swap) {
-    hero.classList.remove("swap");
-    void hero.offsetWidth;
-    hero.classList.add("swap");
-    setTimeout(apply, 160);
+    // the current girl dissolves upward into motes and stays hidden until the new girl's art and animation
+    // sheet are both loaded, so the old picture (or a half-loaded one) never shows; then she is summoned
+    const stage = q(".lb-center", s), token = (hero.__swap = {});
+    playAnim(hero, "swap", 4000);
+    burst(stage, 10, "mote", 50, 45, 0.7);
+    const art = new Promise((res) => {
+      const im = new Image();
+      im.onload = im.onerror = res;
+      im.src = `assets/hero_${id}.png`;
+    });
+    const ready = Promise.all([art, lbSheet(id), new Promise((r) => setTimeout(r, 180))]);
+    Promise.race([ready, new Promise((r) => setTimeout(r, 2500))]).then(() => {
+      if (hero.__swap !== token || !hero.isConnected) return;
+      apply();
+      heroSummon(s, true);
+    });
     sfx("card");
   } else apply();
   const dps = c.atk.dmg * c.atk.rate;
@@ -705,8 +811,9 @@ export function showGacha() {
   }
   q(".gp-poolbtn", s).onclick = () => (sfx("click"), showPool());
   // 兑换卡 from 梦境工坊: pick any SSR that isn't maxed
-  const exc = mineState().cards;
-  if (exc) {
+  // SSR 兑换卡: always shown (×0 when used up), next to 卡池预览
+  const exc = mineState().cards || 0;
+  {
     const eb = el("button", "gp-poolbtn gp-exbtn o1", `<img src="${iconURL("cardgold", 2)}" alt=""><span><i class="lbl">兑换卡 </i>×${exc}</span>`);
     eb.onclick = () => (sfx("click"), showExchange(() => showGacha()));
     q(".gp-head", s).insertBefore(eb, q(".gp-poolbtn", s));
@@ -791,8 +898,7 @@ export function showExchange(after) {
         save();
         sfx("ssr");
         toast(`兑换成功：${it.name}${it.max > 1 ? " Lv" + (lv + 1) : ""}`, 2400);
-        if (ms.cards) draw();
-        else close();
+        draw(); // stays open (and the entry stays) even when the last card is used
       } });
     }));
   };
@@ -815,7 +921,7 @@ function previewScene(it) {
     case "t_startcard":
       return `<div class="sc sc-deal">${["atk_up", "multishot", "crit"].map((c, i) => `<div class="sc-card" style="--i:${i}">${ic(c)}</div>`).join("")}<div class="sc-card gold" style="--i:3">${ic("cardgold")}<b class="outline">+1</b></div><div class="sc-cap o1">开局：额外多选 1 张技能卡（满级 +2）</div></div>`;
     case "u_links":
-      return `<div class="sc sc-link"><div class="sc-who">${hero(me)}${ic(skillIcon(me, "skill"), "sk")}</div><div class="sc-beam"><i></i></div><div class="sc-who b">${hero(mate)}${ic(skillIcon(mate, "skill"), "sk")}</div><div class="sc-pop outline">联动！</div><div class="sc-cap o1">放小技能时，同时放出另一位 AI 娘的小技能（70% 效果）</div></div>`;
+      return `<div class="sc sc-link"><div class="sc-who">${hero(me)}${ic(skillIcon(me, "skill"), "sk")}</div><div class="sc-beam"><i></i></div><div class="sc-who b">${hero(mate)}${ic(skillIcon(mate, "skill"), "sk")}</div><div class="sc-pop outline">联动！</div><div class="sc-cap o1">放小技能时，同时放出另一位角色的小技能（70% 效果）</div></div>`;
     case "u_echo":
       return `<div class="sc sc-echo">${ic(skillIcon(me, "skill"), "big")}${ic(skillIcon(me, "skill"), "big ghost")}<div class="sc-pop outline">×2</div><div class="sc-cap o1">小技能有 35% 概率自动再释放一次</div></div>`;
     case "u_second_ult":
@@ -829,16 +935,11 @@ function showItemPreview(it, act) {
   const m = load(), lv = m.talents[it.id] || 0;
   const md = el("div", "modal pv-modal");
   md.innerHTML = `<div class="pvm ${it.r}"><div class="pvm-card rc ${it.r}" style="--c:${RCOL[it.r]}"><div class="rc-front"><div class="rr o1">${it.r}</div><div class="ri">${ICON(it, 4)}</div><div class="rn">${it.name}</div><div class="rd">${it.desc}</div><div class="rl">${lv ? (it.max > 1 ? `已拥有 Lv${lv}/${it.max}` : "已拥有") : "未拥有"}</div></div></div>
-    <div class="pvm-r"><div class="pvm-h outline">效果预览</div>${hasLiveDemo(it) ? `<div class="sc sc-live"><canvas class="sc-cv"></canvas><div class="sc-cap o1">${demoCaption(it)}</div></div>` : previewScene(it)}<div class="pvm-odds o1">单抽获得概率 <b>${pct(itemRate(it))}</b>${it.r === "SSR" ? ` · ${GACHA.pity} 抽保底必出 SSR` : ""}</div>${act ? `<button class="btn ${act.off ? "gray" : ""} pvm-act"><span>${act.label}</span></button>` : ""}<div class="pvm-close o1">点击其他地方关闭</div></div></div>`;
+    <div class="pvm-r${it.r === "SSR" ? "" : " plain"}">${it.r === "SSR" ? `<div class="pvm-h outline">效果预览</div>${hasLiveDemo(it) ? `<div class="sc sc-live"></div>` : previewScene(it)}` : `<div class="pvm-h outline">${it.name}</div><div class="pvm-desc o1">${it.desc}${it.max > 1 ? `<br><small>最高 Lv${it.max}，可叠加</small>` : ""}</div>`}<div class="pvm-odds o1">单抽获得概率 <b>${pct(itemRate(it))}</b>${it.r === "SSR" ? ` · ${GACHA.pity} 抽保底必出 SSR` : ""}</div>${act ? `<button class="btn ${act.off ? "gray" : ""} pvm-act"><span>${act.label}</span></button>` : ""}<div class="pvm-close o1">点击其他地方关闭</div></div></div>`;
   uiRoot().appendChild(md);
   // live demo: the selected girl actually using the item in a small real fight
-  const cv = md.querySelector(".sc-cv");
-  if (cv) {
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    cv.width = Math.round(cv.clientWidth * dpr);
-    cv.height = Math.round(cv.clientHeight * dpr);
-    mountItemDemo(cv, it, CHARS[m.sel] ? m.sel : "deepseek");
-  }
+  const live = md.querySelector(".sc-live");
+  if (live) mountItemDemo(live, it, CHARS[m.sel] ? m.sel : "deepseek");
   md.onclick = (e) => {
     if (act && e.target.closest(".pvm-act")) {
       if (act.off) return sfx("click");

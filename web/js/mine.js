@@ -3,7 +3,7 @@
 // Dying keeps 30% of the bag, running out of power keeps 50%.
 import { RELICS, SHOP, MT, MW, MH, T, SOLID, HARD, ZONES, zoneAt, ORES, SHOVELS, MOBS, CHEST_STARS, DEPTH_STARS } from "./minedata.js";
 import { CHARS, ELEM, VIEW_W, VIEW_H } from "./data.js";
-import { A } from "./assets.js";
+import { A, silhouette } from "./assets.js";
 import { rng, clamp, TAU } from "./util.js";
 import { sfx } from "./audio.js";
 
@@ -1526,12 +1526,6 @@ export class Dive {
           if (!SOLID(this.get(c - 1, r))) (g.fillStyle = "rgba(0,0,0,.25)"), g.fillRect(X, Y, 2, MT);
           if (!SOLID(this.get(c + 1, r))) (g.fillStyle = "rgba(0,0,0,.25)"), g.fillRect(X + MT - 2, Y, 2, MT);
         }
-        if (radar >= 2 && t === T.ORE && !this.revealed[i]) {
-          g.strokeStyle = ORES[this.ore[i]].col[0];
-          g.globalAlpha = 0.5;
-          g.strokeRect(X + 3.5, Y + 3.5, MT - 7, MT - 7);
-          g.globalAlpha = 1;
-        }
       }
     }
     // water
@@ -1659,6 +1653,25 @@ export class Dive {
     this.drawDark(g, cx, cy, rs);
     g.setTransform(rs, 0, 0, rs, 0, 0);
     g.translate(-cx, -cy);
+    // 雷达 Lv2 透视矿物: unexplored ores ping through the darkness as small blinking diamonds in the ore colour
+    // (drawn above the fog; it used to be a square outline under the fog, visible only where something lit it)
+    if ((this.up.radar || 0) >= 2) {
+      const r0 = Math.max(0, Math.floor(cy / MT)), r1 = Math.min(this.rows - 1, r0 + Math.ceil(vh() / MT) + 1);
+      const c0 = Math.max(0, Math.floor(cx / MT)), c1 = Math.min(MW - 1, c0 + Math.ceil(vw() / MT) + 1);
+      for (let r = r0; r <= r1; r++)
+        for (let c = c0; c <= c1; c++) {
+          const i = r * MW + c;
+          if (this.t[i] !== T.ORE || this.revealed[i]) continue;
+          const a = 0.35 + 0.35 * Math.sin(this.time * 3 + c * 1.7 + r * 2.3);
+          if (a < 0.08) continue;
+          const X = c * MT + MT / 2, Y = r * MT + MT / 2;
+          g.globalAlpha = a;
+          g.fillStyle = ORES[this.ore[i]].col[0];
+          g.fillRect(X - 1, Y - 3, 2, 6);
+          g.fillRect(X - 3, Y - 1, 6, 2);
+          g.globalAlpha = 1;
+        }
+    }
     for (const t of this.texts) this.label(g, t.s, t.x, t.y, t.col, 10 * t.size, Math.min(1, t.t * 2));
     // extraction ring
     if (this.extractHint && this.extractT <= 0) this.label(g, "站着别动 1 秒即可撤离", p.x, p.y - PH - 18, "#7dffb0", 9);
@@ -2014,17 +2027,40 @@ export class Dive {
   drawPlayer(g) {
     const p = this.p, set = A.girls[this.o.cid];
     if (!set) return;
-    const img = p.face > 0 ? set.views.side : set.views.sideL;
-    const H = 32, k = H / set.foot, W = set.w * k;
+    const L = p.face > 0 ? "" : "L", side = p.face > 0 ? "side" : "sideL";
     const blink = p.inv > 0 && Math.floor(this.time * 20) % 2 === 0;
     const walking = Math.abs(p.vx) > 10 && p.ground;
-    const bob = walking ? -Math.abs(Math.sin(p.anim * 12)) * 1.5 : p.jet ? Math.sin(p.anim * 30) * 0.5 : 0;
-    const digShake = p.dig ? Math.sin(this.time * 70) * 1 : 0;
+    const C = set.clips || {};
+    // drawn clips: the run cycle for walking, breathing when idle; digging uses the still side pose, shaking,
+    // with the drill in front of her (as before the shovel clips)
+    let clip = null, fps = 12;
+    if (!p.dig && walking && C["run_e" + L]) clip = C["run_e" + L];
+    else if (!p.dig && C["idle_e" + L]) (clip = C["idle_e" + L]), (fps = 5);
+    const frame = clip ? clip[Math.floor(p.anim * fps) % clip.length] : set.views[side];
+    // the figure is about 32 world px tall: frames are pre-shrunk once with smoothing so the small sprite stays clean
+    const fig = set.foot - set.top, k = 32 / fig;
+    const small = (c) => {
+      if (c.__s && c.__sk === k) return c.__s;
+      const o = document.createElement("canvas");
+      o.width = Math.max(1, Math.round(c.width * k));
+      o.height = Math.max(1, Math.round(c.height * k));
+      const og = o.getContext("2d");
+      og.imageSmoothingEnabled = true;
+      og.imageSmoothingQuality = "high";
+      og.drawImage(c, 0, 0, o.width, o.height);
+      c.__s = o;
+      c.__sk = k;
+      return o;
+    };
+    const img = small(frame), W = img.width, Hh = img.height;
+    const bob = !clip && walking ? -Math.abs(Math.sin(p.anim * 12)) * 1.5 : p.jet ? Math.sin(p.anim * 30) * 0.5 : 0;
+    const digShake = p.dig ? Math.sin(this.time * 70) * 1 : 0, digJit = p.dig ? Math.round(Math.sin(this.time * 53)) * 0.5 : 0;
+    const x = Math.round(p.x - W / 2 + digShake), y = Math.round(p.y - set.foot * k + bob + digJit);
     g.save();
     g.globalAlpha = blink ? 0.45 : 1;
-    // the drill in front of her
-    const dx = p.dig ? (p.dig.dir === "side" ? p.face * 10 : 0) : p.face * 9, dy = p.dig && p.dig.dir === "down" ? 2 : p.dig && p.dig.dir === "up" ? -PH - 2 : -PH / 2;
-    g.fillStyle = "#c8c8d8";
+    g.drawImage(img, x, y);
+    // the drill she holds: pointing ahead, or down / up while digging that way; the tip spins while digging
+    const dx = p.dig ? (p.dig.dir === "side" ? p.face * 10 : 0) : p.face * 9, dy = p.dig && p.dig.dir === "down" ? 2 : p.dig && p.dig.dir === "up" ? -34 : -PH / 2; // up: above her head (the figure is ~32 px)
     g.save();
     g.translate(p.x + dx + digShake, p.y + dy);
     g.rotate(p.dig && p.dig.dir === "down" ? Math.PI / 2 : p.dig && p.dig.dir === "up" ? -Math.PI / 2 : p.face > 0 ? 0 : Math.PI);
@@ -2036,9 +2072,17 @@ export class Dive {
     g.lineTo(10 + (p.dig ? Math.sin(this.time * 80) : 0), 0);
     g.lineTo(2, 4);
     g.fill();
+    if (p.dig) {
+      // spinning grooves on the bit
+      g.fillStyle = "#8a8a9a";
+      const o = (this.time * 40) % 3;
+      for (let i = 0; i < 3; i++) g.fillRect(3 + ((i * 3 + o) % 7), -2 + (i % 2), 1, 3 - (i % 2) * 2);
+    }
     g.restore();
-    g.drawImage(img, Math.round(p.x - W / 2 + digShake), Math.round(p.y - set.h * k + (set.h - set.foot) * k + bob), W, set.h * k);
-    if (p.hurtT > 0) (g.globalCompositeOperation = "lighter"), (g.globalAlpha = 0.6), g.drawImage(set.white[p.face > 0 ? "side" : "sideL"], Math.round(p.x - W / 2), Math.round(p.y - set.h * k + (set.h - set.foot) * k + bob), W, set.h * k);
+    if (p.hurtT > 0) {
+      const wsrc = frame.__w || (frame.__w = silhouette(frame, "#ffffff"));
+      (g.globalCompositeOperation = "lighter"), (g.globalAlpha = 0.6), g.drawImage(wsrc, x, y, W, Hh);
+    }
     g.restore();
     // jetpack flame
     if (p.jet) {

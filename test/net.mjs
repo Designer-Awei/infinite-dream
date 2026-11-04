@@ -16,7 +16,7 @@ console.log("code", code);
 await B.click(".t-net"); await B.waitForTimeout(300);
 await B.fill(".code-in", code); await B.click("button:has-text(\"加入\")"); await B.waitForTimeout(1200);
 await B.screenshot({ path: out + "/b_room.png" });
-await B.click(".pl-sw"); await B.waitForTimeout(300); await B.click(".rcp-c >> text=小龙娘"); await B.waitForTimeout(500);
+await B.click(".mychars >> text=小龙娘"); await B.waitForTimeout(500);
 await A.screenshot({ path: out + "/a_room.png" });
 await A.click(pvp ? "text=开战！" : "text=出发！"); await A.waitForTimeout(2000);
 // host bot-ish: hold J, move right; client: move & attack

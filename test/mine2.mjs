@@ -6,7 +6,7 @@ const p = await ctx.newPage(); const errs = []; p.on("pageerror", (e) => errs.pu
 await p.goto("http://localhost:8765/index.html"); await p.waitForTimeout(200);
 await p.evaluate(() => localStorage.setItem("ai-girls-dungeon-v1", JSON.stringify({ tutorialSeen: true, tokens: 900, chars: ["deepseek", "gpt"], sel: "gpt", mine: { shovels: { cu: 1, ag: 1, au: 2 }, mats: 300, stars: 400, up: { drill: 3, battery: 5, bag: 3, armor: 2, radar: 2, beacon: 1, tank: 2 } } })));
 await p.reload(); await p.waitForTimeout(1800);
-const shot = (n) => p.screenshot({ path: `/home/claude/game/tmp/z_${n}_${W}.png` });
+const shot = (n) => p.screenshot({ path: `/home/claude/infinite-dream-preview/tmp/z_${n}_${W}.png` });
 await p.evaluate(() => document.querySelector(".t-mine").click()); await p.waitForTimeout(800);
 await shot("hub");
 await p.evaluate(() => document.querySelector('.mh-tab[data-t="shop"]').click()); await p.waitForTimeout(300);
