@@ -267,7 +267,7 @@ export function showMineHud(dive) {
    <div class="tl"><div class="face"><img src="assets/head_${cid}.png"></div>
      <div class="bars"><div class="bar hp"><i></i><span class="o1"></span></div><div class="bar en"><i></i><span class="o1"></span></div><div class="bar ox"><i></i><span class="o1"></span></div><div class="mrel"></div></div></div>
    <div class="tc o1"><div class="depth"></div><div class="lite"></div><div class="mboss"><b class="outline"></b><div class="bb"><i></i></div></div></div>
-   <div class="tr"><div class="bag o1"></div><button class="btn small gray pausebtn">Ⅱ</button></div>
+   <div class="tr"><button class="bag o1" title="打开背包：丢弃不要的矿物"></button><button class="btn small gray pausebtn">Ⅱ</button></div>
    <div class="gauge"><i class="me"></i></div>
    <div class="keys o1">A/D 移动 · S 向下挖 · W 喷气上升（耗电）· 顶着墙走 = 横挖 · J 攻击 · K 炸药 · L 撤离信标</div>
    <div class="pcskills o1">
@@ -277,6 +277,7 @@ export function showMineHud(dive) {
    </div>`;
   uiRoot().appendChild(hud);
   hud.querySelector(".pausebtn").onclick = () => app.pause();
+  hud.querySelector(".bag").onclick = () => showBag(dive);
   // depth gauge: zone bands, seal, lifts
   const gauge = q(".gauge", hud), rows = dive.rows;
   for (const z of ZONES) {
@@ -378,7 +379,7 @@ export function showMineResult(res, again, back) {
       <div class="res-chip o1"><span>${CUR.ore()} 矿石</span><b>+${res.mats}</b></div>
       ${res.stars ? `<div class="res-chip o1"><span>${CUR.star()} 星砂</span><b>+${res.stars}${res.starsFound > res.stars ? `（丢失 ${res.starsFound - res.stars}）` : ""}</b></div>` : ""}
       ${res.record ? `<div class="res-chip o1"><span>最深纪录</span><b>${res.depth}m</b></div>` : ""}
-      ${res.questsDone && res.questsDone.length ? `<div class="mres-q o1">✔ 委托完成：${res.questsDone.join("、")}（回矿场领取）</div>` : ""}
+      ${res.questsDone && res.questsDone.length ? `<div class="mres-q o1">委托完成：${res.questsDone.join("、")}（回矿场领取）</div>` : ""}
       ${res.relics && Object.keys(res.relics).length ? `<div class="mres-rel o1">遗物 ${Object.keys(res.relics).map((id) => `<img src="${iconURL(RELICS[id].icon, 2)}" title="${RELICS[id].name}" alt="">`).join("")}</div>` : ""}</div>
     <div class="res-r"><div class="mres-items">${Object.keys(counts).length ? Object.entries(counts).sort((a, b) => ORES[b[0]].v - ORES[a[0]].v).map(([id, n]) => `<div class="mri"><img src="${oreIcon(id)}" alt=""><span>${ORES[id].name}</span><b>×${n}</b></div>`).join("") : `<div class="muted">两手空空…</div>`}</div>
       <div class="res-stats"><div class="res-st"><span>到达深度</span><b class="outline">${res.depth}m</b></div><div class="res-st"><span>挖掘方块</span><b class="outline">${res.dug}</b></div><div class="res-st"><span>击败怪物</span><b class="outline">${res.kills}</b></div><div class="res-st"><span>剩余铲子</span><b class="outline">${ms.shovels.cu + ms.shovels.ag + ms.shovels.au}</b></div></div>
@@ -463,6 +464,38 @@ export function showMerchant(dive, onClose) {
 }
 
 // ------------------------------------------------------------------ beacon: ask before leaving
+// ------------------------------------------------------------------ 背包: see what you carry, drop the cheap stuff to make room
+export function showBag(dive) {
+  if (app.paused || dive.ended || document.querySelector(".bagm")) return;
+  app.paused = true;
+  sfx("click");
+  const md = el("div", "modal bagm-md");
+  const close = () => (md.remove(), (app.paused = false));
+  const draw = () => {
+    const n = {};
+    for (const id of dive.bag) n[id] = (n[id] || 0) + 1;
+    const ids = Object.keys(n).sort((a, b) => ORES[a].v - ORES[b].v || a.localeCompare(b));
+    md.innerHTML = `<div class="panel bagm"><div class="bg-h"><h2 class="outline">背包</h2><span class="o1">${dive.bag.length} / ${dive.bagCap} 格 · 价值 ${CUR.gem()}${dive.bagValue()}</span></div>
+      <div class="bg-list">${ids.length ? ids.map((id) => {
+        const o = ORES[id];
+        return `<div class="bg-it"><img src="${oreIcon(id)}" alt=""><b class="o1">${o.name}</b><em class="o1">×${n[id]}</em><span class="bg-v">${CUR.gem()}${o.v}${o.m ? ` ${CUR.ore()}${o.m}` : ""}<small>／个</small></span><button class="btn small gray bg-1" data-id="${id}">丢 1 个</button><button class="btn small red bg-all" data-id="${id}">全丢</button></div>`;
+      }).join("") : `<div class="bg-empty muted">背包是空的</div>`}</div>
+      <div class="bg-f"><span class="muted o1">按价值从低到高排列；丢掉的矿物不会再出现</span><span class="bg-close"></span></div></div>`;
+    const drop = (id, all) => {
+      if (all) dive.bag = dive.bag.filter((x) => x !== id);
+      else dive.bag.splice(dive.bag.lastIndexOf(id), 1);
+      sfx("click");
+      draw();
+    };
+    md.querySelectorAll(".bg-1").forEach((b) => (b.onclick = () => drop(b.dataset.id, false)));
+    md.querySelectorAll(".bg-all").forEach((b) => (b.onclick = () => drop(b.dataset.id, true)));
+    q(".bg-close", md).appendChild(btn("关闭", "blue", close));
+  };
+  md.onclick = (e) => e.target === md && close();
+  draw();
+  uiRoot().appendChild(md);
+}
+
 export function confirmBeacon(dive, yes, no) {
   const md = el("div", "modal bc-md");
   md.innerHTML = `<div class="panel bc-p"><h2 class="outline">确认撤离？</h2><p class="o1">启动撤离信标，1.5 秒后带着背包全部离开（剩余信标 ${dive.p.beacons}）。</p><div class="row bc-acts"></div></div>`;
