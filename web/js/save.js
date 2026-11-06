@@ -1,6 +1,9 @@
 // Meta progression kept in the player's own browser (no account needed).
 import { START_CHARS, START_TOKENS, UNLOCKS, GACHA, CHAR_ORDER, LOADOUT_SLOTS } from "./data.js";
 
+import { progressFromXP, MAX_CHARACTER_XP } from "./progression.js";
+import { collectionBonuses } from "./collection.js";
+
 const KEY = "ai-girls-dungeon-v1";
 const fresh = () => ({
   tokens: START_TOKENS,
@@ -38,6 +41,8 @@ export function load() {
     if (mem.stats.bossKills) mem.maps.grass = mem.maps.grass || mem.stats.bossKills;
     save();
   }
+  // the starters are always owned (they have no unlock condition)
+  if (Array.isArray(mem.chars) && START_CHARS.some((id) => !mem.chars.includes(id))) mem.chars = [...new Set([...START_CHARS, ...mem.chars])];
   if (!mem.name) {
     mem.name = "玩家" + Math.floor(1000 + Math.random() * 9000);
     save();
@@ -48,6 +53,15 @@ export function save() {
   try {
     localStorage.setItem(KEY, JSON.stringify(mem));
   } catch {}
+}
+export const characterProgress = cid => progressFromXP(load().characterXP?.[cid]);
+export function grantCharacterXP(cid, amount) {
+  const before = characterProgress(cid);
+  if (!CHAR_ORDER.includes(cid) || !Number.isFinite(amount) || amount <= 0) return { gained: 0, before, after: before };
+  const m = load(), total = Math.min(MAX_CHARACTER_XP, before.total + Math.floor(amount));
+  m.characterXP = m.characterXP && typeof m.characterXP === "object" && !Array.isArray(m.characterXP) ? m.characterXP : {};
+  m.characterXP[cid] = total; save();
+  return { gained: total - before.total, before, after: progressFromXP(total) };
 }
 export const talent = (id) => load().talents[id] || 0;
 
@@ -80,7 +94,7 @@ export function makeKit(cid) {
     tal[it.id] = lv;
   }
   for (const id of loadoutOf(cid)) if (id) eq[id] = m.talents[id] || 1;
-  return { tal, eq, cards: [...m.cards], core: (m.cores || {})[cid] ? 1 : 0 };
+  return { tal, eq, level: characterProgress(cid).level, collection: collectionBonuses(m.curios), cards: [...m.cards], core: (m.cores || {})[cid] ? 1 : 0 };
 }
 
 /** Check unlock conditions; returns newly unlocked char ids. */
@@ -217,6 +231,14 @@ export function claimFreeShovels() {
   s.freePend = 0;
   save();
   return n;
+}
+
+/** Repeatable resource sink; no currency round trip, no fractional or negative exchanges. */
+export function refineOre(batches = 1) {
+  if (!Number.isSafeInteger(batches) || batches < 1 || batches > 10) return false;
+  const ms = mineState(), cost = batches * 20;
+  if (ms.mats < cost) return false;
+  ms.mats -= cost; ms.stars += batches; save(); return true;
 }
 
 /** 每日委托: today's three quests (regenerated when the local date changes) */

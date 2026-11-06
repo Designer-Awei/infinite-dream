@@ -7,6 +7,7 @@ import { sfx } from "./audio.js";
 import { tileAt } from "./map.js";
 import { fireAttack } from "./skills.js";
 import { angTo } from "./util.js";
+import { levelBonuses } from "./progression.js";
 
 const PREFIX = "aigirls-dungeon-v1-";
 const ALPH = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -435,6 +436,7 @@ function snapshot(g) {
     po: g.portal ? [r1(g.portal.x), r1(g.portal.y)] : 0,
     sh: g.shop ? g.shop.map((s) => s.price) : 0,
     bn: g.banner ? [g.banner.text, g.banner.sub, round2(g.banner.t)] : 0,
+    cu: g.curiosFound,
     sc: g.pvpScore, su: g.spikeUp || 0, cf: Object.keys(g.cardOffers).map(Number), rs: g.runStats,
   };
 }
@@ -456,6 +458,7 @@ function applySnapshot(app, s) {
   }
   if (!g.map) return;
   g.phase = s.ph;
+  g.curiosFound = s.cu || [];
   g.serverTime = s.tm;
   // players
   for (const a of s.P) {
@@ -615,13 +618,14 @@ function clientUpdate(g, me, dt) {
 
 /** a kit received from another player: only known talents, sane levels */
 function cleanKit(k) {
-  const out = { tal: {}, eq: {}, cards: [] };
+  const out = { tal: {}, eq: {}, cards: [], level: 1 };
   if (!k || typeof k !== "object") return out;
   for (const it of GACHA.pool) {
     const lv = Math.max(0, Math.min(it.max, Math.floor(+((it.eq ? k.eq : k.tal) || {})[it.id] || 0)));
     if (lv) (it.eq ? out.eq : out.tal)[it.id] = lv;
   }
   out.core = k.core ? 1 : 0;
+  out.level = levelBonuses(k.level).level;
   if (Object.keys(out.eq).length > LOADOUT_SLOTS) out.eq = {};
   out.cards = Array.isArray(k.cards) ? k.cards.filter((c) => typeof c === "string").slice(0, 40) : [];
   return out;
