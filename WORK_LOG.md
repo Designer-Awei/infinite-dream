@@ -18,4 +18,5 @@
 - 对应 commit：[dbfa906](https://github.com/Designer-Awei/infinite-dream/commit/dbfa906abe138559f34a45c0d75f2335d55d6042)。
 - 验证：原构建流程、语法与 git diff --cached --check 通过；dist/docs/Git 暂存全部 65 文件大小与哈希通过，版本 20261106.1039-934be4。源码对齐检查通过：相对已确认预览版，运行文件仅正式版 updater、邀请地址和补齐字体不同；正式版包名、签名流程、原生版本与更新地址保留，打包文件不含预览版运行地址。
 - 已完成正式版天赋面板、结算布局检查，以及同步初期的更新器模拟检查。首次启动时部分既有测试在页面就绪前操作，后续三组持久浏览器配置仍等待超时，未将其记录为通过；按用户要求不再重复全套本地测试，正式发布采用已确认预览版的验证、源码一致性、正式版身份/更新包校验及原 CI/CD。测试脚本增加可配置地址与首页就绪等待，更新器旧版样本改用正式版历史，便于后续独立验证。
-- 本条推送后继续检查正式版 Pages、固定签名 Android 构建及线上更新文件；结果另行补记，不预先声明成功。
+- 发布结果：[Pages](https://github.com/Designer-Awei/infinite-dream/actions/runs/42204677638)与[固定签名 Android APK](https://github.com/Designer-Awei/infinite-dream/actions/runs/42204678986)均成功；部署后 test/update-integrity.py --git-ref HEAD --url 对正式站点 65 个文件的实际大小和哈希全量核验通过，版本 20261106.1039-934be4。
+- 按用户要求清理本地开发环境：移除两仓库的 node_modules/dist/tmp、专用测试浏览器与 npm/Node 缓存，停止本任务两个调试服务，释放约 0.423 GiB；源码、素材、web/docs、依赖声明和 Git 历史保留，清理后工作树干净。不改变远端 CI/CD，后续需要本地构建时再安装依赖。其他项目工作目录的定向清理单独记录在 E:/Rouge-Game/context/CLEANUP_REPORT_2026-11-06.md。
