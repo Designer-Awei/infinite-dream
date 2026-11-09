@@ -1,6 +1,7 @@
 // Lobby (Brawl Stars-style home: hero on a stage in the middle, info on the left, play button bottom-right)
 // and the capsule gacha with a staged pull sequence (crank → capsule → open → card flips → summary).
 import { CHARS, CHAR_ORDER, ELEM, UNLOCKS, GACHA, RARITY, REACTIONS, MAPS, MAP_ORDER, LOADOUT_SLOTS, CORE_FX, CORE_DETAIL } from "./data.js";
+import { STASH_ITEM, redeemExchangeCard } from "./save.js";
 import { characterProgress } from "./save.js";
 import { claimable } from "./minequests.js";
 import { load, save, unlockProgress, pull, checkUnlocks, ssrDone, gachaDone, loadoutOf, setLoadout, exportSave, parseSave, importSave, mineState } from "./save.js";
@@ -13,6 +14,10 @@ import { bushSprite, crateSprite, generateRoom, renderGround, wallSprite, wallMa
 import { T } from "./data.js";
 import { btn, toast, clear, showNet, showHelp, showUnlock, uiRoot } from "./ui.js";
 import { app, playMode, mapUnlocked, endlessUnlocked } from "./main.js";
+import { showPets } from "./petui.js";
+import { petPortrait } from "./petdata.js";
+import { petState } from './petsave.js';
+import { petPreview } from './petpreview.js';
 
 const q = (s, r) => r.querySelector(s);
 let entered = false; // full entrance animation only the first time per session
@@ -113,6 +118,13 @@ export function showLobby() {
   q(".pname", s).textContent = m.name;
   q(".name-pill", s).onclick = () => (sfx("click"), showRename(s));
   q(".set-btn", s).onclick = () => (sfx("click"), showSettings());
+  const pets=petState(),petId=pets.equipped||Object.keys(pets.owned)[0];
+  if(petId){
+    const entry=el('button','lb-pet pet-entry','<span class="lb-pet-preview"></span>');
+    entry.title='梦境伙伴';entry.setAttribute('aria-label','梦境伙伴');q('.lb-right',s).appendChild(entry);
+    petPreview(entry.querySelector('span'),petId,pets.owned[petId].stage,'lobby',true,false,true);
+    entry.onclick=()=>{sfx('click');showPets(()=>showLobby());};
+  }
   wireCurrency(s);
   const fs = q(".fs-btn", s);
   if (window.Capacitor || !document.documentElement.requestFullscreen) fs.remove();
@@ -139,7 +151,7 @@ export function showLobby() {
   };
   tile("🎰", "扭蛋机", "t-gacha", () => showGacha(), pulls > 0 && !gachaDone() ? Math.min(99, pulls) : "", "抽天赋卡");
   const msh = mineState(), shovels = msh.shovels.cu + msh.shovels.ag + msh.shovels.au + (msh.freePend || 0);
-  tile("⛏", "梦境矿场", "t-mine", () => import("./mineui.js").then((M) => M.showMineHub()), shovels || "", "搜 · 打 · 撤");
+  tile('<img src="assets/ui/mine-pick.png" alt="">', "梦境矿场", "t-mine", () => import("./mineui.js").then((M) => M.showMineHub()), shovels || "", "搜 · 打 · 撤");
   if (claimable()) q(".t-mine", s).insertAdjacentHTML("beforeend", `<i class="rdot" title="有可领取的每日委托"></i>`);
   tile("👥", "联机模式", "t-net", () => showNet());
   q(".help-btn", s).onclick = () => (sfx("click"), showHelp());
@@ -495,7 +507,7 @@ function renderModes(s) {
     if (id === "endless")
       return `<div class="mcard pv${ok ? "" : " lock"}" data-id="endless"><img class="mc-map" src="${mapPreview("endless")}" alt="" draggable="false"><span class="mc-k">无尽</span><div class="mc-info"><b class="mc-t">无尽回廊</b><span class="mc-foot">${ok ? `最佳 ${m.stats.endlessBest || 0} 层` : "🔒 完成任意一局解锁"}</span></div></div>`;
     const d = MAPS[id], clears = (m.maps || {})[id] || 0;
-    return `<div class="mcard pv${ok ? "" : " lock"}" data-id="${id}"><img class="mc-map" src="${mapPreview(id)}" alt="" draggable="false"><span class="mc-k">主线 ${MAP_ORDER.indexOf(id) + 1}/${MAP_ORDER.length}</span><div class="mc-info"><b class="mc-t">${d.name}</b><span class="mc-foot">${ok ? (d.reward > 1 ? `奖励×${d.reward}` : "入门") + (clears ? ` · 通关${clears}` : "") : `🔒 先通关${MAPS[d.need].name}`}</span></div></div>`;
+    return `<div class="mcard pv${ok ? "" : " lock"}" data-id="${id}"><img class="mc-map" src="${mapPreview(id)}" alt="" draggable="false"><span class="mc-k">主线 ${MAP_ORDER.indexOf(id) + 1}/${MAP_ORDER.length}</span><div class="mc-info"><b class="mc-t">${d.name}</b><span class="mc-foot">${ok ? (id==="grass" ? "入门" + (clears ? ` · 通关${clears}` : "") : `通关${clears}`) : `🔒 先通关${MAPS[d.need].name}`}</span></div></div>`;
   }).join("");
   dots.innerHTML = MODE_IDS.map(() => "<i></i>").join("");
   const cards = [...track.children];
@@ -650,11 +662,11 @@ function showSettings() {
   // two even columns: toggles, save tools, then a full-width close; the version line sits clear below the buttons
   md.innerHTML = `<div class="panel set-p"><h2 class="outline">设置</h2><div class="set-g"></div><div class="muted set-v"></div></div>`;
   const tg = (label, key, fn) =>
-    btn(`${label}：${m[key] ? "开" : "关"}`, "gray", (ev) => {
+    btn(`${label}：${m[key] ? "开" : "关"}`, m[key] ? "green" : "gray", (ev) => {
       m[key] = !m[key];
       fn && fn(m[key]);
       save();
-      ev.target.closest("button").innerHTML = `${label}：${m[key] ? "开" : "关"}`;
+      const b=ev.target.closest("button");b.innerHTML = `${label}：${m[key] ? "开" : "关"}`;b.classList.toggle("green",m[key]);b.classList.toggle("gray",!m[key]);
     });
   q(".set-g", md).append(tg("音效", "sound", setSound), tg("音乐", "music", setMusic), btn("导出存档", "blue", () => showSaveExport()), btn("导入存档", "green", () => showSaveImport()), btn("联系作者", "pink", () => showContact()));
   q(".set-v", md).textContent = `版本 ${localVersion || "dev"}${nativeInfo.version ? " · 安装包 " + nativeInfo.version : ""}${window.Capacitor ? " · 启动时自动增量更新" : ""}`;
@@ -821,6 +833,20 @@ function vcard(it, o = {}) {
 const ICON = (it, s = 3) => `<img class="pxi" src="${iconURL(it.id, s)}" alt="">`;
 const CAP_COLORS = ["#ffd84a", "#5fb4ff", "#c27bff", "#5dff7a", "#ff7cc8", "#ff8a5a"];
 
+function stashFraction(n) {
+  return n<=10?n/10*.3:n<=20?.3+(n-10)/10*.25:Math.min(1,.55+(n-20)/30*.45);
+}
+function stashBarContent(n, animated=false) {
+  return `<div class="sb-h outline">积攒</div><div class="sb-tube"><i class="sb-fill" style="height:${stashFraction(n)*100}%"></i>
+    <b class="sb-t ur" style="bottom:30%"><em>10</em></b><b class="sb-t hur" style="bottom:55%"><em>20</em></b><b class="sb-t" style="bottom:100%"><em>50</em></b></div><div class="sb-n outline">${animated?`<span class="sp-old">${n}<small>/∞</small></span><span class="sp-next">${n+1}<small>/∞</small></span>`:`${n}<small>/∞</small>`}</div>`;
+}
+function stashPreview(n) {
+  return `<div class="sc sc-stash-preview" style="--stash-before:${stashFraction(n)*100}%;--stash-after:${stashFraction(n+1)*100}%">
+    <div class="sp-side"><div class="sp-caption o1">当前</div><div class="stashbar sp-before" aria-label="当前积攒点 ${n}">${stashBarContent(n)}</div></div>
+    <div class="sp-count o1"><div>${n} → <b>${n+1}</b></div><small>积攒点 +1</small></div>
+    <div class="sp-side"><div class="sp-caption o1">增加后</div><div class="stashbar sp-after" aria-label="积攒点 ${n} 增加至 ${n+1}">${stashBarContent(n,true)}</div></div></div>`;
+}
+
 export function showGacha() {
   clear();
   playMusic("lobby");
@@ -890,9 +916,8 @@ export function showGacha() {
   }
   // 积攒条: always shown; once every SSR is maxed, SSR pulls fill it (ticks at 10 / 20 / 50; past 50 only the number grows)
   {
-    const n = m.stash || 0, f = n <= 10 ? (n / 10) * 0.3 : n <= 20 ? 0.3 + ((n - 10) / 10) * 0.25 : Math.min(1, 0.55 + ((n - 20) / 30) * 0.45);
-    const sb = el("button", "stashbar", `<div class="sb-h outline">积攒</div><div class="sb-tube"><i class="sb-fill" style="height:${f * 100}%"></i>
-      <b class="sb-t ur" style="bottom:30%"><em>10</em></b><b class="sb-t hur" style="bottom:55%"><em>20</em></b><b class="sb-t" style="bottom:100%"><em>50</em></b></div><div class="sb-n outline">${n}<small>/∞</small></div>`);
+    const n = m.stash || 0;
+    const sb = el("button", "stashbar", stashBarContent(n));
     sb.onclick = () => (sfx("click"), showStash());
     s.appendChild(sb);
     s.classList.add("has-stash");
@@ -951,36 +976,51 @@ function showPool() {
 /** SSR 兑换卡 (bought in 梦境工坊 with 星砂): same card grid as the pool; tap → effect preview with the 兑换 button */
 export function showExchange(after) {
   const m = load(), ms = mineState();
-  const list = GACHA.pool.filter((it) => it.r === "SSR");
+  const stash={...STASH_ITEM,desc:"消耗1张兑换卡，获得1积攒点；可用于兑换梦境伙伴。",exchangeStash:true};
+  const list = [...GACHA.pool.filter((it) => it.r === "SSR"),stash];
   const md = el("div", "modal pool-modal ex-modal");
+  const full = it => !it.exchangeStash && (m.talents[it.id] || 0) >= it.max;
+  const fit = () => {
+    if(!md.isConnected)return;
+    const panel=q('.pool-panel',md),featured=document.querySelector('.gacha2 .gp-feat .vc');
+    // Measure the original compact panel before increasing only its internal rows.
+    md.style.removeProperty('--exchange-card-height');panel.style.height='';
+    const height=getComputedStyle(panel).height;
+    panel.style.height=height;
+    if(featured)md.style.setProperty('--exchange-card-height',getComputedStyle(featured).height);
+  };
   const draw = () => {
+    const ordered=[...list].sort((a,b)=>Number(full(a))-Number(full(b)));
     md.innerHTML = `<div class="panel pool-panel"><div class="pl-head"><img class="ex-face" src="${iconURL("cardgold", 3)}" alt=""><h2 class="outline">兑换卡 ×${ms.cards}</h2><button class="btn gray small x-btn">×</button></div>
-      <div class="pl-rule o1">每张兑换卡可直接换 1 级任意未满级的 SSR · 点卡片查看效果并兑换 · 兑换卡在梦境工坊用星砂换</div>
-      <div class="pl-list"><div class="vgrid">${list.map((it) => { const lv = m.talents[it.id] || 0, full = lv >= it.max; return vcard(it, { dim: full, tag: full ? "已满级" : "", sub: lv ? `Lv${lv}/${it.max}` : "未拥有" }); }).join("")}</div></div></div>`;
+      <div class="pl-rule o1">每张兑换卡可换1级未满级SSR，或1积攒点 · 点卡片查看并兑换</div>
+      <div class="pl-list"><div class="vgrid">${ordered.map((it) => { if(it.exchangeStash)return vcard(it,{sub:`持有 ${m.stash||0} 点`,tag:"+1"});const lv = m.talents[it.id] || 0, done = full(it); return vcard(it, { dim: done, tag: done ? "已满级" : "", sub: lv ? `Lv${lv}/${it.max}` : "未拥有" }); }).join("")}</div></div></div>`;
     q(".x-btn", md).onclick = close;
     md.querySelectorAll(".vc").forEach((d) => (d.onclick = () => {
-      const it = GACHA.pool.find((p) => p.id === d.dataset.id), lv = m.talents[it.id] || 0, full = lv >= it.max;
+      const it = list.find((p) => p.id === d.dataset.id), lv=m.talents[it.id]||0,full=!it.exchangeStash&&lv>=it.max;
       sfx("card");
-      showItemPreview(it, { label: full ? "已满级" : ms.cards ? `兑换${it.max > 1 ? " → Lv" + (lv + 1) : ""}（兑换卡 ×${ms.cards}）` : "没有兑换卡", off: full || !ms.cards, fn: () => {
-        ms.cards--;
-        m.talents[it.id] = lv + 1;
-        if (it.card && !m.cards.includes(it.card)) m.cards.push(it.card);
-        save();
-        sfx("ssr");
-        toast(`兑换成功：${it.name}${it.max > 1 ? " Lv" + (lv + 1) : ""}`, 2400);
-        draw(); // stays open (and the entry stays) even when the last card is used
-      } });
+      showItemPreview(it,{exchange:true,label:full?"已满级":ms.cards?`兑换${it.exchangeStash?"积攒点 +1":it.max>1?" → Lv"+(lv+1):""}（兑换卡 ×${ms.cards}）`:"没有兑换卡",off:full||!ms.cards,fn:()=>{
+        const r=redeemExchangeCard(it.id);if(!r.ok){toast(r.reason);draw();return;}
+        sfx("ssr");toast(`兑换成功：${r.name}${r.level&&it.max>1?" Lv"+r.level:""}`,2400);draw();
+      }});
     }));
+    fit();
   };
-  const close = () => (md.remove(), after && after());
+  let resize,removal;
+  const cleanup=()=>{resize?.disconnect();removal?.disconnect();};
+  const close = () => (cleanup(),md.remove(), after && after());
   md.addEventListener("click", (e) => e.target === md && close());
   draw();
   uiRoot().appendChild(md);
+  fit();
+  resize=new ResizeObserver(fit);resize.observe(uiRoot());
+  const featured=document.querySelector('.gacha2 .gp-feat .vc');if(featured)resize.observe(featured);
+  removal=new MutationObserver(()=>{if(!md.isConnected)cleanup();});removal.observe(uiRoot(),{childList:true});
 }
 
 /** a little looping stage that demonstrates what the item does */
 function previewScene(it) {
   const m = load();
+  if(it.exchangeStash)return stashPreview(m.stash||0);
   const me = CHARS[m.sel] ? m.sel : "deepseek";
   const mate = me === "gpt" ? "deepseek" : "gpt";
   const hero = (id, cls = "") => `<img class="sc-hero ${cls}" src="assets/hero_${id}.png" alt="">`;
@@ -1004,8 +1044,8 @@ function previewScene(it) {
 function showItemPreview(it, act) {
   const m = load(), lv = m.talents[it.id] || 0;
   const md = el("div", "modal pv-modal");
-  md.innerHTML = `<div class="pvm ${it.r}"><div class="pvm-card rc ${it.r}" style="--c:${RCOL[it.r]}"><div class="rc-front"><div class="rr o1">${it.r}</div><div class="ri">${ICON(it, 4)}</div><div class="rn">${it.name}</div><div class="rd">${it.desc}</div><div class="rl">${lv ? (it.max > 1 ? `已拥有 Lv${lv}/${it.max}` : "已拥有") : "未拥有"}</div></div></div>
-    <div class="pvm-r${it.r === "SSR" ? "" : " plain"}">${it.r === "SSR" ? `<div class="pvm-h outline">效果预览</div>${hasLiveDemo(it) ? `<div class="sc sc-live"></div>` : previewScene(it)}` : `<div class="pvm-h outline">${it.name}</div><div class="pvm-desc o1">${it.desc}${it.max > 1 ? `<br><small>最高 Lv${it.max}，可叠加</small>` : ""}</div>`}<div class="pvm-odds o1">单抽获得概率 <b>${pct(itemRate(it))}</b>${it.r === "SSR" ? ` · ${GACHA.pity} 抽保底必出 SSR` : ""}</div>${act ? `<button class="btn ${act.off ? "gray" : ""} pvm-act"><span>${act.label}</span></button>` : ""}<div class="pvm-close o1">点击其他地方关闭</div></div></div>`;
+  md.innerHTML = `<div class="pvm ${it.r}"><div class="pvm-card rc ${it.r}" style="--c:${RCOL[it.r]}"><div class="rc-front"><div class="rr o1">${it.r}</div><div class="ri">${ICON(it, 4)}</div><div class="rn">${it.name}</div><div class="rd">${it.desc}</div><div class="rl">${it.exchangeStash ? `持有 ${m.stash||0} 点` : lv ? (it.max > 1 ? `已拥有 Lv${lv}/${it.max}` : "已拥有") : "未拥有"}</div></div></div>
+    <div class="pvm-r${it.r === "SSR" ? "" : " plain"}">${it.r === "SSR" ? `<div class="pvm-h outline">效果预览</div>${!it.exchangeStash&&hasLiveDemo(it) ? `<div class="sc sc-live"></div>` : previewScene(it)}` : `<div class="pvm-h outline">${it.name}</div><div class="pvm-desc o1">${it.desc}${it.max > 1 ? `<br><small>最高 Lv${it.max}，可叠加</small>` : ""}</div>`}${act?.exchange?"":`<div class="pvm-odds o1">单抽获得概率 <b>${pct(itemRate(it))}</b>${it.r === "SSR" ? ` · ${GACHA.pity} 抽保底必出 SSR` : ""}</div>`}${act ? `<button class="btn ${act.off ? "gray" : ""} pvm-act"><span>${act.label}</span></button>` : ""}<div class="pvm-close o1">点击其他地方关闭</div></div></div>`;
   uiRoot().appendChild(md);
   // live demo: the selected girl actually using the item in a small real fight
   const live = md.querySelector(".sc-live");
@@ -1287,7 +1327,7 @@ function pullSequence(screen, res) {
   });
 }
 
-/** 积攒点 exchange: UR (red) for 10 points, HUR (rainbow) for 20 — the items themselves are still to be decided */
+/** UR exchanges a young pet; HUR content is reserved and cannot be redeemed. */
 const ssrOwned = () => {
   const m = load(), list = GACHA.pool.filter((it) => it.r === "SSR");
   return `${list.filter((it) => (m.talents[it.id] || 0) >= it.max).length} / ${list.length}`;
@@ -1296,12 +1336,13 @@ function showStash() {
   const m = load(), n = m.stash || 0;
   const md = el("div", "modal stash-md");
   md.innerHTML = `<div class="panel stash-p"><h2 class="outline">积攒兑换</h2>
-    <div class="st-sub o1">SSR 全部收齐后，每抽到 1 张 SSR 积攒 1 点（当前 ${n} 点）。点数可兑换更稀有的天赋或限时活动道具。${ssrDone() ? "" : `<br><b class="st-prog">SSR 收集进度 ${ssrOwned()}，收齐后开始积攒</b>`}</div>
+    <div class="st-sub o1">SSR 全部收齐后，每抽到 1 张 SSR 积攒 1 点（当前 ${n} 点）。点数可兑换梦境伙伴，首次获得后解锁出战。${ssrDone() ? "" : `<br><b class="st-prog">SSR 收集进度 ${ssrOwned()}，收齐后开始积攒</b>`}</div>
     <div class="st-list">
-      <div class="st-it ur"><div class="st-r o1">UR</div><div class="st-tx"><b class="outline">UR 天赋 / 活动道具</b><span>敬请期待</span></div><button class="btn small gray" disabled><span>兑换</span><small>积攒 10</small></button></div>
-      <div class="st-it hur"><div class="st-r o1">HUR</div><div class="st-tx"><b class="outline">HUR 天赋 / 活动道具</b><span>敬请期待</span></div><button class="btn small gray" disabled><span>兑换</span><small>积攒 20</small></button></div>
-    </div><div class="row st-acts"></div></div>`;
+      <div class="st-it ur"><div class="st-r o1">UR</div><div class="st-tx"><b class="outline">幼年伙伴</b><span>三选一 · 自动助战，可养成进化</span></div><button class="btn small"><span>选择伙伴</span><small>积攒 10</small></button></div>
+      <div class="st-it hur"><div class="st-r o1">HUR</div><div class="st-tx"><b class="outline">兑换内容待定</b><span>暂未开放</span></div><button class="btn small" disabled>敬请期待</button></div>
+    </div></div>`;
 
   md.onclick = (e) => e.target === md && md.remove();
+  md.querySelector('.st-it.ur button').onclick=()=>{md.remove();showPets(()=>showGacha());};
   uiRoot().appendChild(md);
 }

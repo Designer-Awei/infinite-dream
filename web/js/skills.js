@@ -2,6 +2,7 @@
 import { CHARS, ELEM } from "./data.js";
 import { dist, angTo, TAU } from "./util.js";
 import { BLOCKS_SHOT, tileAt } from "./map.js";
+import { mountedAttack, mountedUlt } from "./pets.js";
 
 const MUZZLE = 20; // bullets leave from chest height
 
@@ -18,6 +19,7 @@ const atkBullet = (...a) => Object.assign(baseBullet(...a), { atk: true });
 
 /** one trigger of the normal attack */
 export function fireAttack(g, p, a, target) {
+  if (mountedAttack(g, p, a, target)) return;
   const c = CHARS[p.cid], s = p.st;
   p.atkCount++;
   let elem = c.elem;
@@ -174,7 +176,7 @@ export function castSkill(g, p, cid, a, target, pw = 1) {
       break;
     }
     case "gpt": {
-      p.breathT = 1.2;
+      p.buff.breath = 1.2;
       const f = g.vfx("fire/fire-breath", p.x + Math.cos(a) * 8, p.y - 18, { palette: ["#0e0618", "#24103e", "#3e1e6e", "#6a3eb0", "#9b6cf0", "#c9a8ff", "#efe4ff", "#ffffff", "#ffffff"], angle: a, life: 1.2, opts: { speed: 260 } });
       let tick = 0;
       g.addZone({
@@ -276,6 +278,7 @@ export function castSkill(g, p, cid, a, target, pw = 1) {
 
 /** ultimate (L) */
 export function castUlt(g, p, a, target) {
+  if (mountedUlt(g, p, a, target)) return;
   const pal = ELEM[CHARS[p.cid].elem].ramp;
   const tx = target ? target.x : p.x + Math.cos(a) * 130, ty = target ? target.y : p.y + Math.sin(a) * 130;
   g.text(p.x, p.y - 84, CHARS[p.cid].ult.name, ELEM[CHARS[p.cid].elem].glow, 1.5, 1.2);
@@ -327,10 +330,8 @@ export function castUlt(g, p, a, target) {
     }
     case "claude": {
       const cx = p.x, cy = p.y;
-      g.vfx("holy/holy-pillar", cx, cy, { palette: pal, speed2: 1.5 });
-      g.vfx("arcane/rune-circle", cx, cy + 6, { palette: pal, layer: "back", life: 6, opts: {} });
       for (const e of g.enemiesNear(cx, cy, 100)) g.hit(e, 20, { p, elem: "sun" });
-      g.addZone({
+      const domain=g.addZone({
         kind: "domain", x: cx, y: cy, r: 104, life: 6, side: "p", owner: p.id,
         update: (z, dt) => {
           if (p.core) {
@@ -359,6 +360,8 @@ export function castUlt(g, p, a, target) {
           }
         },
       });
+      g.vfx("holy/holy-pillar",cx,cy,{palette:pal,speed2:1.5,follow:domain,life:6});
+      g.vfx("arcane/rune-circle",cx,cy+6,{palette:pal,layer:"back",life:6,follow:domain,dy:6});
       break;
     }
     case "doubao": {

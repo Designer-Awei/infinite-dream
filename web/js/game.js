@@ -1,18 +1,25 @@
 // The simulation: players, enemies, bullets, zones, pickups, rooms. The host (or solo) runs it; clients mirror it.
 import { T, BAL, CHARS, CHAR_ORDER, ELEM, ELEM_KEYS, REACTIONS, reactionKey, ENEMIES, RUN, ITEMS, ITEM_WEIGHTS, CARDS, fusionCards, RARITY, REWARD, MAPS, endlessRoom, PVP_MODES } from "./data.js";
 import { clamp, dist, dist2, angTo, R, rng, nid, TAU } from "./util.js";
-import { generateRoom, renderGround, tileAt, mudAt, moveCircle, los, flowField, flowDir, WALL, WATER, BUSH, CRATE, BARREL, BLOCKS_SHOT } from "./map.js";
+import { generateRoom, renderGround, tileAt, mudAt, moveCircle, los, flowField, flowDir, WALL, WATER, BUSH, CRATE, BARREL, BLOCKS_SHOT, DRAGON_WALL_HP } from "./map.js";
 import { sfx } from "./audio.js";
 import { castSkill, castUlt, fireAttack, onBulletHit } from "./skills.js";
 import { updateEnemy, spawnBossAdds } from "./enemies.js";
 import { rollCurio, rareOf, CURIOS } from "./codex.js";
 import { levelBonuses } from "./progression.js";
+import { attachPet, resetPet, updatePets, toggleMount, releaseEmptyBlink } from "./pets.js";
+import { flyingMount, visualTilesIn } from './petcombat.js';
+import { FOX_RIDE_RANGE, DRAGON_FIREBALL } from './petdata.js';
+
+import { endlessEnemyHP, endlessEnemyHit, cubeDamage, cubeHealth, reactionRoom } from "./endless-balance.js";
 
 export const RIFT_CHANCE = 0.25;
 export class Game {
   constructor({ mode = "solo", pvp = false, seed = (Math.random() * 1e9) | 0, fx, opt = {} }) {
     this.mode = mode; // solo | host | client
     this.pvp = pvp;
+    this.petTrial = !pvp && !!opt.petTrial;
+    this.petFields = [];
     // mode options: map (chapter) for PVE, endless corridor, PVP rule set
     this.opt = { map: MAPS[opt.map] ? opt.map : "grass", endless: !!opt.endless, pvpMode: PVP_MODES[opt.pvpMode] ? opt.pvpMode : "brawl" };
     this.endless = !pvp && this.opt.endless;
@@ -33,7 +40,7 @@ export class Game {
     this.phase = "init";
     this.time = 0;
     this.shake = 0;
-    this.runStats = { kills: 0, elites: 0, reactions: 0, rooms: 0, boss: false, dmg: 0, coins: 0 };
+    this.runStats = { kills: 0, elites: 0, reactions: 0, rooms: 0, boss: false, dmg: 0, coins: 0, riftDeclines: 0 };
     // 怪物图鉴: what this run met and beat; 藏品 dropped by rare monsters (saved at the end of the run)
     this.seen = {};
     this.killedTypes = {};
@@ -68,7 +75,7 @@ export class Game {
       coins: 15 * talent("t_start_coin"), cubes: 0,
       downed: false, reviveT: 0, dead: false, revives: kit.eq.t_revive ? 1 : 0, kit, fwCd: 0,
       target: null, input: { mx: 0, my: 0, atk: false, aim: null, skill: false, ult: false, dash: false, castAim: {} },
-      dodgeCrit: 0, sunCd: 0, barrier: 0, breathT: 0, orbs: 0, kills: 0, pvpAcc: 0, respawnT: 0,
+      dodgeCrit: 0, sunCd: 0, barrier: 0, orbs: 0, kills: 0, pvpAcc: 0, respawnT: 0,
     };
     if (!this.pvp) {
       // Accept only known, bounded bonuses; the host applies each player's own kit.
@@ -82,6 +89,7 @@ export class Game {
       p.hp += growth.hp;
       p.maxHp += growth.hp;
     }
+    attachPet(this, p, kit.pet);
     this.players.push(p);
     return p;
   }
@@ -170,6 +178,7 @@ export class Game {
     this.ground = renderGround(this.map);
     this.enemies.length = 0;
     this.bullets.length = 0;
+    this.petFields.length = 0;
     this.zones.length = 0;
     this.pickups.length = 0;
     this.lines.length = 0;
@@ -192,6 +201,7 @@ export class Game {
       if (p.hp <= 0) p.hp = 1;
       p.dashT = 0;
       p.invuln = 1;
+      resetPet(this, p);
       this.fx.spawn("arcane/magic-circle-cast", p.x, p.y + 4, { palette: ELEM[CHARS[p.cid].elem].ramp, speed2: 1.8 });
     });
     // map items
@@ -276,8 +286,9 @@ export class Game {
   spawnEnemy(type, x, y, elite = false, delay = 0.8) {
     const d = ENEMIES[type], np = this.players.length;
     const mapK = this.endless ? 1 : this.mapDef.hp || 1;
-    const hpMul = 1.5 * (1 + BAL.roomHp * Math.max(0, this.roomIdx)) * (1 + BAL.coop.hp * (np - 1)) * (elite ? 3 : 1) * mapK;
-    const bossK = (1 + BAL.coop.hp * (np - 1)) * mapK * (this.endless ? 0.55 + 0.35 * Math.floor(this.roomIdx / 10) : 1);
+    const roomHP=this.endless?endlessEnemyHP(this.roomIdx+1):1.5*(1+BAL.roomHp*Math.max(0,this.roomIdx));
+    const hpMul = roomHP * (1 + BAL.coop.hp * (np - 1)) * (elite ? 3 : 1) * mapK;
+    const bossK = (1 + BAL.coop.hp * (np - 1)) * mapK * (this.endless ? .55*endlessEnemyHP(this.roomIdx+1)/endlessEnemyHP(10) : 1);
     const e = {
       id: nid(), kind: "enemy", type, def: d, x, y, r: d.r * (elite ? 1.2 : 1) * (d.scale || 1), hp: d.hp * (d.boss ? bossK : hpMul), elite, boss: !!d.boss,
       vx: 0, vy: 0, kbx: 0, kby: 0, t: 0, cd: 1 + Math.random() * 1.5, st: "idle", anim: Math.random() * 5, face: 1, flash: 0,
@@ -300,7 +311,7 @@ export class Game {
     const f = this.fx.spawn(id, x, y, o);
     if (this.mode === "host") {
       const oo = { ...o };
-      if (oo.follow) (oo.followId = oo.follow.id), delete oo.follow;
+      if (oo.follow) {if(this.zones.includes(oo.follow))oo.followZoneId=oo.follow.id;else oo.followId=oo.follow.id;delete oo.follow;}
       this.events.push({ t: "fx", id, x: Math.round(x), y: Math.round(y), o: oo });
     }
     return f;
@@ -313,9 +324,9 @@ export class Game {
     this.floaters.push({ x, y, s: String(s), color, size, life, max: life, vy: -38 });
     if (this.mode === "host") this.events.push({ t: "txt", x: Math.round(x), y: Math.round(y), s: String(s), c: color, z: size });
   }
-  line(x0, y0, x1, y1, color, w = 2, life = 0.18, kind = "zap") {
-    this.lines.push({ x0, y0, x1, y1, color, w, life, max: life, kind, seed: Math.random() * 1000 });
-    if (this.mode === "host") this.events.push({ t: "ln", a: [x0, y0, x1, y1].map(Math.round), c: color, w, l: life, k: kind });
+  line(x0, y0, x1, y1, color, w = 2, life = 0.18, kind = "zap", anchorOwner = null) {
+    this.lines.push({ x0, y0, x1, y1, color, w, life, max: life, kind, anchorOwner, seed: Math.random() * 1000 });
+    if (this.mode === "host") this.events.push({ t: "ln", a: [x0, y0, x1, y1].map(Math.round), c: color, w, l: life, k: kind, o:anchorOwner });
   }
   after(t, fn) {
     this.timers.push({ t, fn });
@@ -343,6 +354,10 @@ export class Game {
   }
   /** lock-on: nearest visible enemy in range, sticky to the current target */
   findTarget(p) {
+    if(p.mounted&&p.pet?.id==='fox'){
+      let best=null,distance=FOX_RIDE_RANGE;
+      for(const e of this.enemies){if(e.dead||e.spawnT>0)continue;const d=dist(p.x,p.y,e.x,e.y);if(d<=distance){best=e;distance=d;}}return best;
+    }
     const range = CHARS[p.cid].atk.range * p.st.range;
     const cand = [];
     for (const e of this.enemies) {
@@ -371,7 +386,7 @@ export class Game {
 
   // ------------------------------------------------------------ combat
   dmgMul(p) {
-    let m = p.st.dmg * (1 + 0.06 * p.cubes);
+    let m = p.st.dmg * cubeDamage(p.cubes,this.endless);
     if (p.buff.star > 0) m *= 1.3;
     if (p.cards.low_rage && p.hp <= 2) m *= 1.6;
     if (p.kit && p.kit.eq.t_moe && p.hp * 2 <= p.maxHp) m *= 1.3; // SSR 混合专家
@@ -396,7 +411,7 @@ export class Game {
     e.flash = 0.1;
     e.lastBy = p ? p.id : e.lastBy;
     if (p) {
-      p.ult = Math.min(1, p.ult + (dmg / CHARS[p.cid].ult.need) * p.st.ultG * (p.buff.ultOn > 0 ? 0.25 : 1));
+      if (!src.noUltGain) p.ult = Math.min(1, p.ult + (dmg / CHARS[p.cid].ult.need) * p.st.ultG * (p.buff.ultOn > 0 ? 0.25 : 1));
       this.runStats.dmg += dmg;
     }
     const col = crit ? "#ffe14a" : src.elem ? ELEM[src.elem].glow : "#ffffff";
@@ -430,7 +445,7 @@ export class Game {
   }
   react(e, key, p, spreadElem) {
     const R0 = REACTIONS[key], amp = p && p.cards.reaction_amp ? 1 + 0.6 * p.cards.reaction_amp : 1;
-    const dmg = R0.dmg * amp * (1 + 0.08 * Math.max(0, this.roomIdx));
+    const dmg = R0.dmg * amp * (1 + 0.08 * reactionRoom(this.roomIdx,this.endless));
     this.runStats.reactions++;
     if (p) p.reactions = (p.reactions || 0) + 1;
     this.text(e.x, e.y - e.r * 2 - 22, R0.name + "!", "#ffffff", 1.25, 0.9);
@@ -583,21 +598,21 @@ export class Game {
     this.pickups.push(it);
     return it;
   }
-  explodeAt(x, y, r, playerDmg, enemyDmg, p) {
+  explodeAt(x, y, r, playerDmg, enemyDmg, p, source = {}) {
     this.vfx("explosions/small-explosion", x, y + 8, { opts: { size: r > 45 ? 0.8 : 0.55 }, speed2: 1.3 });
     this.sound("explode");
     this.shake = Math.max(this.shake, 7);
     for (const o of this.enemiesNear(x, y, r)) {
-      this.hit(o, enemyDmg, { p, noReact: true, noCrit: true });
+      this.hit(o, enemyDmg, { p, noReact: true, noCrit: true, noUltGain:!!source.noUltGain });
       this.knock(o, x, y, 240);
     }
-    if (playerDmg) for (const q of this.alivePlayers()) if (dist(q.x, q.y, x, y) < r + q.r) this.hurt(q, playerDmg, { x, y });
+    if (playerDmg) for (const q of this.alivePlayers()) if (dist(q.x, q.y, x, y) < r + q.r) this.hurt(q, playerDmg, { x, y, groundHazard:true });
     // chain to barrels/crates
     const m = this.map;
     for (let ty = Math.floor((y - r) / T); ty <= Math.floor((y + r) / T); ty++)
       for (let tx = Math.floor((x - r) / T); tx <= Math.floor((x + r) / T); tx++) {
         const i = ty * m.W + tx;
-        if (m.crates[i] && dist(x, y, tx * T + 16, ty * T + 16) < r + 12) this.damageTile(i, 40, p);
+        if (m.crates[i] && dist(x, y, tx * T + 16, ty * T + 16) < r + 12) this.damageTile(i, 40, p, source);
       }
   }
   /** area attacks that are not bullets (breath cones, shock rings) also hit crates and barrels.
@@ -614,7 +629,23 @@ export class Game {
         this.damageTile(i, dmg, p);
       }
   }
-  damageTile(i, dmg, p) {
+  burnBush(i,p){
+    const m=this.map,x=i%m.W,y=Math.floor(i/m.W);
+    if(!this.host||this.pvp||!p?.mounted||p.pet?.id!=='dragon'||p.pet.stage!==3||p.dead||p.downed||!Number.isInteger(i)||x<=0||y<=0||x>=m.W-1||y>=m.H-1||m.t[i]!==BUSH)return;
+    m.t[i]=0;(m.burnedBushes||(m.burnedBushes=[])).push(i);m.groundDirty=true;this.emit({t:'tile',i,bush:true});
+    this.vfx('spawn/poof',x*T+T/2,y*T+T/2,{layer:'back',palette:['#291c14','#633727','#a55b30','#d49342','#efc15c','#fff1b1']});
+  }
+  /** Mounted dragon fireballs and tornadoes can break internal walls; borders stay solid. */
+  damageWall(i, dmg, p) {
+    const m=this.map,tx=i%m.W,ty=Math.floor(i/m.W);
+    if(!this.host||this.pvp||!p?.mounted||p.pet?.id!=='dragon'||p.pet.stage!==3||p.dead||p.downed||!(dmg>0)||!Number.isInteger(i)||tx<=0||ty<=0||tx>=m.W-1||ty>=m.H-1||m.t[i]!==WALL)return;
+    const hp=m.wallHp||(m.wallHp={});hp[i]=(hp[i]??DRAGON_WALL_HP)-dmg;
+    if(hp[i]>0)return;
+    delete hp[i];m.t[i]=0;(m.brokenWalls||(m.brokenWalls=[])).push(i);m.groundDirty=true;this.flowT=0;
+    const x=tx*T+T/2,y=ty*T+T/2;this.emit({t:'tile',i,wall:true});
+    this.vfx('spawn/poof',x,y,{palette:['#342b2c','#665054','#a18476','#d2b69c','#f3dbc1','#ffffff'],layer:'back'});this.sound('kill');
+  }
+  damageTile(i, dmg, p, source = {}) {
     const m = this.map, c = m.crates[i];
     if (!c || c.dead) return;
     c.hp -= dmg;
@@ -626,7 +657,7 @@ export class Game {
     const x = (i % m.W) * T + 16, y = Math.floor(i / m.W) * T + 16;
     this.emit({ t: "tile", i });
     if (kind === BARREL) {
-      this.explodeAt(x, y, 58, 1, 26, p);
+      this.explodeAt(x, y, 58, 1, 26, p, source);
     } else {
       this.vfx("spawn/poof", x, y + 6, { palette: ["#2a1a10", "#6a4020", "#b8742e", "#e0a050", "#ffd090", "#ffffff"] });
       this.sound("kill");
@@ -636,23 +667,19 @@ export class Game {
     this.flowT = 0;
   }
 
-  /**
-   * 无尽回廊: enemies hit harder the deeper you go. Floor L (1-based): minions ×(1 + 0.05·(L-1)), elites another
-   * +3%/floor, bosses another +4%/floor (their base hits are already big). Damage stays whole hearts: the fraction
-   * is rolled (×1.6 on a 1-damage hit = 2 with 60% chance). Floor 20: minion ≈ ×1.95, elite ≈ ×2.5, boss ≈ ×2.7.
-   */
+  /** Stage-scaled enemy hits; projectiles retain their shooter reference. */
   scaleHurt(n, src) {
     if (!this.endless || this.pvp) return n;
     const e = src && (src.kind === "enemy" ? src : src.src && src.src.kind === "enemy" ? src.src : null);
     if (!e) return n;
-    const L = Math.max(0, this.roomIdx);
-    const k = 1 + 0.05 * L + (e.elite ? 0.03 * L : 0) + (e.boss ? 0.04 * L : 0);
+    const k = endlessEnemyHit(this.roomIdx+1)*(e.boss?1.35:e.elite?1.15:1);
     const v = n * k, w = Math.floor(v);
     return w + (Math.random() < v - w ? 1 : 0);
   }
   /** hurt a player by n points */
   hurt(p, n, src = {}) {
     if (!p || p.dead || p.downed) return false;
+    if ((p.mounted&&p.pet?.id==='fox'&&p.pet.blinkT>0)||(flyingMount(p)&&(src.groundHazard||src.kind==='poison'))) return false;
     if (p.invuln > 0 || p.dashT > 0 || p.buff.star > 0) return false;
     if (p.barrier > 0) {
       p.barrier = 0;
@@ -798,6 +825,31 @@ export class Game {
       h: o.h || 0, wave: o.wave, shieldGive: o.shieldGive, noReact: o.noReact, big: o.big, arcTo: o.arcTo, onLand: o.onLand,
     };
   }
+  dragonFireballImpact(b) {
+    if(!this.host)return;
+    const p=this.player(b.owner),r=DRAGON_FIREBALL.splash,m=this.map;
+    this.vfx('explosions/small-explosion',b.x,b.y+8,{opts:{size:.8},speed2:1.3});
+    this.sound('explode',.15);this.shake=Math.max(this.shake,3);
+    for(const e of this.enemies){
+      if(e.dead||e.spawnT>0||Math.hypot(e.x-b.x,e.y-e.r-b.y)>r+e.r)continue;
+      this.hit(e,b.dmg,{p,elem:'dragon',noReact:true});
+    }
+    for(const {i} of visualTilesIn(m,b.x,b.y,r,true)){
+        if(m.crates[i])this.damageTile(i,b.dmg,p);
+        else if(m.t[i]===WALL)this.damageWall(i,b.dmg,p);
+        else if(m.t[i]===BUSH)this.burnBush(i,p);
+    }
+  }
+  stepDragonFireball(b,dt){
+    const elapsed=Math.min(dt,Math.max(0,b.life+dt)),steps=Math.max(1,Math.ceil(Math.hypot(b.vx,b.vy)*elapsed/4));
+    for(let n=0;n<steps;n++){
+      b.x+=b.vx*elapsed/steps;b.y+=b.vy*elapsed/steps;
+      const blocked=visualTilesIn(this.map,b.x,b.y,b.r).length>0;
+      const target=this.enemies.some(e=>!e.dead&&!(e.spawnT>0)&&dist2(b.x,b.y,e.x,e.y-e.r)<=(b.r+e.r)**2);
+      if(blocked||target){if(this.host)this.dragonFireballImpact(b);return true;}
+    }
+    return b.life<=0;
+  }
   updateBullets(dt) {
     const m = this.map;
     for (let i = this.bullets.length - 1; i >= 0; i--) {
@@ -816,6 +868,7 @@ export class Game {
         }
         continue;
       }
+      if(b.kind==='pet_dragon'&&b.big){if(this.stepDragonFireball(b,dt))this.bullets.splice(i,1);continue;}
       b.x += b.vx * dt;
       b.y += b.vy * dt;
       let gone = b.life <= 0;
@@ -825,7 +878,9 @@ export class Game {
         gone = true;
         if (this.host && b.side === "p") {
           const ti = Math.floor(gy / T) * m.W + Math.floor(b.x / T);
-          if (m.crates[ti]) this.damageTile(ti, b.dmg, this.player(b.owner));
+          if(b.kind==='pet_dragon'&&b.big)this.dragonFireballImpact(b);
+          else if (m.crates[ti]) this.damageTile(ti, b.dmg, this.player(b.owner));
+          else if(t===WALL&&b.kind==='pet_dragon')this.damageWall(ti,b.dmg,this.player(b.owner));
         }
         if (b.side === "p" && b.kind !== "fire") this.fx.spawn("impacts/hit-spark", b.x - b.vx * 0.012, b.y - b.vy * 0.012, { angle: Math.atan2(b.vy, b.vx) + Math.PI, palette: ELEM[b.elem]?.ramp?.slice(1, 8), light: 0.6, opts: { height: 0 } });
       } else if (!gone && b.wave && t === WALL) b.life = Math.min(b.life, 0.05);
@@ -853,7 +908,8 @@ export class Game {
             if (e.dead || e.spawnT > 0 || b.hits.has(e.id)) continue;
             if (dist2(b.x, b.y, e.x, e.y - e.r) > (b.r + e.r + 2) * (b.r + e.r + 2)) continue;
             b.hits.add(e.id);
-            onBulletHit(this, b, e, owner);
+            if(b.kind==='pet_dragon'&&b.big)this.dragonFireballImpact(b);
+            else onBulletHit(this, b, e, owner);
             if (b.pierce > 0) b.pierce--;
             else if (b.bounce > 0) {
               b.bounce--;
@@ -920,6 +976,7 @@ export class Game {
       this.flowT = 0.3;
     }
     for (const p of this.players) this.updatePlayer(p, dt);
+    updatePets(this, dt);
     for (const e of this.enemies) if (!e.dead) updateEnemy(this, e, dt);
     // lava burns walking enemies too
     if (this.hazard === "lava" && this.host)
@@ -953,7 +1010,7 @@ export class Game {
     if (this.spikeUp > 0.8 && this.host)
       for (const s of this.map.spikes) {
         const cx = s.x * T + 16, cy = s.y * T + 16;
-        for (const p of this.alivePlayers()) if (Math.abs(p.x - cx) < 18 && Math.abs(p.y - cy) < 18) this.hurt(p, 1, { x: cx, y: cy });
+        for (const p of this.alivePlayers()) if (Math.abs(p.x - cx) < 18 && Math.abs(p.y - cy) < 18) this.hurt(p, 1, { x: cx, y: cy, groundHazard:true });
         for (const e of this.enemiesNear(cx, cy, 14)) if (!e.def.fly && (e.spikeCd || 0) < this.time) (e.spikeCd = this.time + 1), this.hit(e, 8, { noReact: true });
       }
     if (this.host) this.updateFlow(dt);
@@ -1077,8 +1134,8 @@ export class Game {
     // a boss always drops a 梦境矿场 shovel: it lands with a light beam; walk over it to pick it up
     // (it is counted at the settlement either way)
     if (this.room.kind === "boss") this.dropShovel();
-    // a boss sometimes leaves a 梦境裂隙: a 60-second dig (solo only)
-    if (this.room.kind === "boss" && this.mode === "solo" && Math.random() < RIFT_CHANCE) {
+    // a boss sometimes leaves a 梦境裂隙: a 90-second dig (solo only)
+    if (this.room.kind === "boss" && this.mode === "solo" && !this.petTrial && Math.random() < RIFT_CHANCE) {
       this.banner = { text: "梦境裂隙出现！", sub: "限时挖宝的机会", t: 2 };
       this.vfx("arcane/portal", this.map.center.x, this.map.center.y + 8, { layer: "back", life: 3 });
       this.after(1.8, () => this.onUi("rift"));
@@ -1095,10 +1152,16 @@ export class Game {
       });
       return;
     }
+    const rewardPlayers=this.players.filter(p=>!p.dead);
+    if(this.endless&&rewardPlayers.length&&rewardPlayers.every(p=>this.cardPool(p).length===0)){
+      this.chest=null;this.openPortal();
+      for(const q of this.pickups)if(q.kind==='coin')q.magnet=true;
+      return;
+    }
     this.banner = { text: "清场完成！", sub: "打开补给箱选择技能卡", t: 2 };
     const c = this.map.center;
     this.chest = { x: c.x, y: c.y + 38, opened: false };
-    this.vfx("pickups/loot-beam", c.x, c.y + 44, { life: 2.5, opts: { item: false } });
+    this.vfx("pickups/loot-beam", c.x, c.y + 44, { layer: "back", life: 2.5, opts: { item: false } });
     // vacuum coins
     for (const q of this.pickups) if (q.kind === "coin") q.magnet = true;
   }
@@ -1121,11 +1184,11 @@ export class Game {
     this.sound("pickup");
     for (const q of this.players) this.offerCards(q);
     if (this.phase === "clear") this.phase = "cards";
+    if (this.phase === "cards" && !Object.keys(this.cardOffers).length) this.openPortal();
   }
-  /** roll 3 card offers for a player (host) */
-  offerCards(p, n = 3, rarityFloor = null) {
+  cardPool(p) {
     const meta = { cards: (p.kit && p.kit.cards) || [] };
-    const pool = [...CARDS, ...fusionCards(p.cid)].filter((c) => {
+    return [...CARDS, ...fusionCards(p.cid)].filter((c) => {
       if ((p.cards[c.id] || 0) >= c.max) return false;
       if (c.locked) {
         if (c.tag === "混搭" && c.kind === "skill") return meta.cards.includes("links");
@@ -1133,6 +1196,21 @@ export class Game {
       }
       return true;
     });
+  }
+  shopAvailable(p, item) {
+    // Shop slots remain stable for network price snapshots; hide the depleted
+    // machine per player without taking remaining cards away from teammates.
+    return item.id !== "gacha" || this.cardPool(p).length > 0;
+  }
+  /** roll 3 card offers for a player (host) */
+  offerCards(p, n = 3, rarityFloor = null) {
+    const pool = this.cardPool(p);
+    if (!pool.length) {
+      delete this.cardOffers[p.id];
+      p.startCards = 0;
+      if (p.local) this.onUi("cardsClosed");
+      return false;
+    }
     const out = [];
     const rr = rng((Math.random() * 1e9) | 0);
     while (out.length < n && pool.length) {
@@ -1173,6 +1251,7 @@ export class Game {
     this.banner = { text: "传送门已开启", sub: "所有存活角色进入传送门前往下一层", t: 2 };
   }
   buy(p, item) {
+    if (!this.shopAvailable(p, item) || (item.id === "gacha" && this.cardOffers[p.id]?.length)) return;
     if (p.coins < item.price) {
       this.text(p.x, p.y - 64, "金币不足", "#ff8080");
       return;
@@ -1200,6 +1279,7 @@ export class Game {
 
   // ------------------------------------------------------------ players
   updatePlayer(p, dt) {
+    if (this.host && p.input.mount) { toggleMount(this, p); p.input.mount = false; }
     p.animT += dt;
     for (const k in p.buff) if (p.buff[k] > 0) p.buff[k] -= dt;
     p.invuln -= dt;
@@ -1215,19 +1295,24 @@ export class Game {
       p.moving = false;
       return;
     }
+    releaseEmptyBlink(this,p);
+    if(p.pet?.blinkT>0&&p.mounted){p.moving=false;p.atkCd-=dt;p.skillCd-=dt;p.dashCd-=dt;p.castT-=dt;p.input.skill=p.input.ult=p.input.dash=false;return;}
+    const flying=flyingMount(p);
+    if(flying){p.buff.burn=0;p.buff.poison=0;p.poisonT=p.lavaT=p.burnTick=0;}
     const inp = p.input;
     const c = CHARS[p.cid];
     // movement
     let spd = c.speed * p.st.speed;
+    if (p.mounted) spd *= 1.25;
     if (p.kit && p.kit.eq.t_moe && p.hp * 2 <= p.maxHp) spd *= 1.15; // SSR 混合专家
     if (p.buff.speed > 0) spd *= 1.4;
     if (p.buff.ultOn > 0 && p.cid === "grok") spd *= 1.4;
     if (p.buff.inkHaste > 0) spd *= 1.3;
     if (p.buff.slow > 0) spd *= 0.6;
-    const onHz = mudAt(this.map, p.x, p.y);
+    const onHz = !flying && mudAt(this.map, p.x, p.y);
     if (onHz && this.hazard === "mud") spd *= 0.55;
     if (onHz && this.hazard === "ice") spd *= 1.12;
-    if (p.breathT > 0) spd *= 0.7;
+    if (p.buff.breath > 0) spd *= 0.7;
     let mx = inp.mx || 0, my = inp.my || 0;
     const ml = Math.hypot(mx, my);
     if (ml > 1) (mx /= ml), (my /= ml);
@@ -1241,15 +1326,15 @@ export class Game {
       if (p.dashT > 0) p.dashT -= dt;
     } else if (p.dashT > 0) {
       p.dashT -= dt;
-      moveCircle(this.map, p, p.dashDx * BAL.dashSpeed * dt, p.dashDy * BAL.dashSpeed * dt);
+      moveCircle(this.map, p, p.dashDx * BAL.dashSpeed * dt, p.dashDy * BAL.dashSpeed * dt, flying, flying);
       if (Math.random() < 0.6) p.trail = (p.trail || []).concat([{ x: p.x, y: p.y, t: 0.25 }]).slice(-6);
-    } else if (this.hazard === "ice") {
+    } else if (this.hazard === "ice" && !flying) {
       // ice: momentum carries you (accelerate / brake slowly while standing on it)
       const k = onHz ? 1 - Math.exp(-3 * dt) : 1;
       p.ivx = (p.ivx || 0) + (mx * spd - (p.ivx || 0)) * k;
       p.ivy = (p.ivy || 0) + (my * spd - (p.ivy || 0)) * k;
       moveCircle(this.map, p, p.ivx * dt, p.ivy * dt);
-    } else moveCircle(this.map, p, mx * spd * dt, my * spd * dt);
+    } else {if(flying)p.ivx=p.ivy=0;moveCircle(this.map, p, mx * spd * dt, my * spd * dt, flying, flying);}
     if (remote) p.moving = ml > 0.1;
     if (p.trail) for (const q of p.trail) q.t -= dt;
     if (!this.host && !p.local) return;
@@ -1266,7 +1351,7 @@ export class Game {
       p.lavaT = (p.lavaT || 0) + dt;
       if (p.lavaT > 1) {
         p.lavaT = 0;
-        if (this.hurt(p, 1, {})) this.text(p.x, p.y - 50, "灼烧", "#ff8a3a", 0.9);
+        if (this.hurt(p, 1, {groundHazard:true})) this.text(p.x, p.y - 50, "灼烧", "#ff8a3a", 0.9);
       }
     } else p.lavaT = Math.min(p.lavaT || 0, 0.6);
     // status damage
@@ -1316,7 +1401,7 @@ export class Game {
         if (p.buff.rage > 0) rate *= 1.6;
         if (p.cid === "grok") rate *= 1 + c.atk.ramp * (p.rampT / 2) * (p.buff.ultOn > 0 ? 1 : 1);
         if (p.cid === "grok" && p.buff.ultOn > 0) rate *= 1.6;
-        p.atkCd = 1 / rate;
+        p.atkCd = p.mounted&&p.pet?.id==='dragon'?DRAGON_FIREBALL.interval:1/rate;
       }
     } else {
       p.idleFire += dt;
@@ -1353,7 +1438,7 @@ export class Game {
     }
     // hazards
     for (const z of this.zones) {
-      if (z.kind !== "poison") continue;
+      if (z.kind !== "poison" || flying) continue;
       if (dist(p.x, p.y, z.x, z.y) < z.r + 6) {
         p.poisonT = (p.poisonT || 0) + dt;
         if (p.poisonT > 1.2) (p.poisonT = 0), this.hurt(p, 1, z);
@@ -1373,6 +1458,7 @@ export class Game {
     if (this.chest && !this.chest.opened && dist(p.x, p.y, this.chest.x, this.chest.y) < 30) this.openChest(p);
     if (this.shop && this.room.kind === "shop") {
       for (const it of this.shop) {
+        if (!this.shopAvailable(p, it)) continue;
         const near = dist(p.x, p.y, it.x, it.y + 16) < 26;
         if (near && inp.atk && !p.buyLock) {
           p.buyLock = true;
@@ -1398,6 +1484,7 @@ export class Game {
         }
       }
       if (z.life <= 0) {
+        z.gone=true;
         if (z.onEnd && this.host) z.onEnd(z);
         if (z.fxh) z.fxh.stop();
         this.zones.splice(i, 1);
@@ -1470,10 +1557,11 @@ export class Game {
     this.sound("pickup");
     this.vfx("pickups/collect-burst", p.x, p.y - 12, {});
     switch (item) {
-      case "cube":
-        p.cubes++;
-        if (p.cubes % 5 === 0) (p.maxHp++), p.hp++;
+      case "cube": {
+        const before=cubeHealth(p.cubes,this.endless);p.cubes++;
+        const gain=cubeHealth(p.cubes,this.endless)-before;p.maxHp+=gain;p.hp+=gain;
         break;
+      }
       case "speed":
         p.buff.speed = 6;
         

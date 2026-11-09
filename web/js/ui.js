@@ -7,6 +7,8 @@ import { el } from "./util.js";
 import { iconURL, skillIcon } from "./icons.js";
 import { ORES, ZONES, CHEST_STARS, oreIcon, chestIcon } from "./minedata.js";
 import { LEVEL_REWARDS } from "./progression.js";
+import { PETS, PET_COST, PET_EVOLVE, PET_MAX_XP, PET_ATTACK_RANGE, FOX_RIDE_RANGE, petPortrait } from "./petdata.js";
+import { input } from "./input.js";
 
 let root, app;
 export const $ = (s, r = root) => r.querySelector(s);
@@ -74,15 +76,15 @@ export function showHelp() {
   const reacts = Object.entries(REACTIONS).map(([k, r]) => `<span class="chip">${k === "bubble" ? "泡+任意" : k.split("+").map((x) => ELEM[x].name).join("+")} → ${r.name}</span>`).join(" ");
   const cur = (cls, name, text) => `<div class="hp-cur"><span class="chip ${cls}">${name}</span><span>${text}</span></div>`;
   const SECS = [
-    ["操作", `${H("电脑")}WASD 移动 · <b>J</b> 攻击（自动锁定范围内最近的敌人）· <b>K</b> 小技能 · <b>L</b> 大招 · 空格 闪避 · Esc 暂停
-      ${H("手机")}左侧拖动摇杆移动 · 按住攻击键自动锁敌连射，拖动攻击键手动瞄准 · 技能 / 大招键轻点自动释放，拖动瞄准后松手释放`],
-    ["闯关循环", `每局 7 个房间：战斗 → 战斗 → 补给站 → 精英战 → 战斗 → 补给站 → 首领。
+    ["闯关基础", `${H("电脑操作")}WASD 移动 · <b>J</b> 攻击（自动锁定范围内最近的敌人）· <b>K</b> 小技能 · <b>L</b> 大招 · 空格 闪避 · Esc 暂停
+      ${H("手机操作")}左侧拖动摇杆移动 · 按住攻击键自动锁敌连射，拖动攻击键手动瞄准 · 技能 / 大招键轻点自动释放，拖动瞄准后松手释放
+      ${H("闯关循环")}每局 7 个房间：战斗 → 战斗 → 补给站 → 精英战 → 战斗 → 补给站 → 首领。
       ${H("技能卡")}清场后开箱三选一技能卡，构筑你的流派。
       ${H("生存")}护盾受击后几秒自动回复，生命不会。
-      ${H("首领")}首领倒下时地上会掉一把梦境矿场的铲子（带光柱），然后开出传送门；捡没捡都会在结算时计入。偶尔还会撕开「梦境裂隙」：90 秒限时挖宝，电量无限。`],
-    ["技能混搭", `每位角色带一种元素。拿到【融合】【联动】卡后可以借用其他角色的弹幕和技能；不同元素先后命中同一敌人会触发反应：<div class="hp-chips">${reacts}</div>`],
+      ${H("首领与裂隙")}首领倒下时地上会掉一把梦境矿场的铲子（带光柱），捡没捡都会在结算时计入。偶尔还会撕开「梦境裂隙」：90 秒限时挖宝，电量无限；无尽模式挖宝后返回原进度继续，放弃进入则在本局结算额外获得 200 晶石。
+      ${H("技能混搭")}每位角色带一种元素。拿到【融合】【联动】卡后可以借用其他角色的弹幕和技能；不同元素先后命中同一敌人会触发反应：<div class="hp-chips">${reacts}</div>`],
     ["地图道具", `走过去自动拾取：${Object.values(ITEMS).map((i) => `<div class="hp-cur"><span class="chip" style="background:${i.color};color:#1a1020">${i.name}</span><span>${i.desc}</span></div>`).join("")}
-      ${H("算力方块")}本局的成长道具：左上角绿色方块旁的数字就是已拿到的个数，每个让伤害 +6%，每 2 个最大生命 +1，持续到本局结束。打碎箱子、击败敌人会刷出。
+      ${H("算力方块")}本局的成长道具：左上角绿色方块旁的数字就是已拿到的个数，常规模式每个让伤害 +6%，每5个生命上限 +1；无尽前40个收益相同，之后伤害和生命收益逐渐递减，持续到本局结束。打碎箱子、击败敌人会刷出。
       ${H("地块")}草丛可以隐身；毒雾、泥沼、尖刺、炸药桶会伤人（也会伤敌）。`],
     ["模式与地图", `在大厅「开始冒险」上方左右滑动地图卡切换（全部支持离线单机）：${MAP_ORDER.map((k, i) => { const d = MAPS[k]; return `${H(`主线 ${i + 1} · ${d.name}`)}${d.desc} 敌人血量 ×${d.hp}，晶石奖励 ×${d.reward}${d.need ? `，通关【${MAPS[d.need].name}】后解锁` : ""}；首通 +200 晶石。`; }).join("")}
       ${H("稀有怪物与梦境藏品")}藏品首次获得后提供永久 PVE 加成，同一件重复获得不叠加；首领有 35% 概率掉落本图藏品。每张地图都有一只稀有怪物（带金色光圈），偶尔混在战斗房间里出现：草原的黄金缓存史莱姆、冰原的极光水母、熔炉的黑曜骷髅。打倒它必掉一件该地图的梦境藏品（已集齐则换成 40 晶石）。
@@ -97,6 +99,14 @@ export function showHelp() {
       ${H("矿物")}矿物带出后按价值换成晶石，同时得到矿石；带星砂图标的矿物挖到时额外给星砂。图标依次是：晶石、矿石、星砂。${Object.entries(ORES).map(([id, o]) => `<div class="hp-orow"><img src="${oreIcon(id)}" alt=""><b>${o.name}</b><em><i class="cur gem"></i>${o.v}</em><em>${o.m ? `<img class="cur" src="${iconURL("ore", 1)}" alt="矿石">${o.m}` : ""}</em><em>${o.s ? `<img class="cur" src="${oreIcon("star")}" alt="星砂">${o.s}` : ""}</em><span>${Object.keys(o.zones).map((z) => ZONES.find((q) => q.id === z).name).join("、")}${o.light ? " · 会发光" : ""}</span></div>`).join("")}
       ${H("宝箱")}<div class="hp-orow"><img src="${chestIcon("plain")}" alt=""><b>普通宝箱</b><span>2～4 个本层矿物，50% 多掉星砂金矿，星砂 ${CHEST_STARS[ZONES[0].id][0]}～${CHEST_STARS[ZONES[ZONES.length - 1].id][1]}</span></div><div class="hp-orow"><img src="${chestIcon("relic")}" alt=""><b>紫色遗物箱</b><span>每层一个，三选一本次下潜的遗物增益</span></div><div class="hp-orow"><img src="${chestIcon("star")}" alt=""><b>星图宝箱</b><span>遗迹深处，金铲开启：4 个遗迹矿物 + 星砂 ${CHEST_STARS.star.join("～")}</span></div>
       ${H("梦境工坊")}最终减伤（矿场里每次受伤 -1，最多 2 级）、SSR 兑换卡、角色专属梦核（强化该角色的大招）。`],
+    ["梦境伙伴", `${H("兑换与解锁")}SSR 全部收齐后，每再抽到一张 SSR 获得 1 积攒点；兑换卡也可每张换1点。在扭蛋机点「积攒」进入兑换，自选火龙、灵狐或冰凰：UR 消耗 ${PET_COST.UR} 点获得幼年；不是随机抽取。宠物只能积累经验后进化，不能直接兑换或直升终极；HUR 兑换内容暂定、尚未开放。已拥有的宠物不可重复兑换。
+      ${H("大厅入口")}首次获得后自动携带，大厅人物右上方出现当前阶段的动画，点击进入面板；首次兑换前不显示这个入口。每次携带一只，可更换或取消。左侧点宠物，右侧切换三阶段及待机 / 行走 / 技能；预览未解锁形态不会获得它。
+      ${H("跟随助战")}主线、无尽与合作模式中，伙伴会靠近附近敌人，到攻击距离后停步普攻并自动释放技能；火龙攻击距离 ${PET_ATTACK_RANGE.dragon}、灵狐 ${PET_ATTACK_RANGE.fox}、冰凰 ${PET_ATTACK_RANGE.phoenix}。没有敌人且离主人较远时自动回跟，到身边停下，小范围移动不会反复踱步；伙伴不承受伤害、不占传送人数。携带加成进入下一局生效，竞技场和矿场不出战、不提供加成。
+      ${H("经验与进化")}携带出战的伙伴在正常结算时获得经验：有效游玩每 6 秒 +1，清理战斗房 +4，首领 +8；暂停和长时间无操作不计。幼年 → 成长需要累计 ${PET_EVOLVE[2].xp} 经验 + ${PET_EVOLVE[2].stars} 星砂，成长 → 终极需要累计 ${PET_EVOLVE[3].xp} 经验 + ${PET_EVOLVE[3].stars} 星砂。达到条件后在面板手动「进化」，只扣星砂、不扣累计经验；经验上限 ${PET_MAX_XP}，进度随存档保留。
+      ${H("终极骑乘")}只有终极可骑乘。电脑按 <b>R</b>，手机点右上角暂停旁的「骑乘」，再次操作下骑。骑乘移速 +25%，普攻与大招换成坐骑能力，角色小技能与闪避保留；下骑恢复自动助战。
+      ${Object.values(PETS).map(d => `${H(d.name)}携带${d.passive} +${d.bonus.map(n => Math.round(n * 100) + "%").join(" / ")}（幼年 / 成长 / 终极）。助战：${d.attack}、${d.skill}。${d.trait}<br>骑乘：${d.rideDesc}`).join("")}
+      ${H("能力边界")}火龙骑乘普攻从龙嘴发射大火球，点按或长按每0.5秒一发，命中爆炸造成范围伤害，瞄准也从龙嘴开始；大招召出一道大型自动追敌火龙卷。两者可烧毁内墙和草丛，墙体耐久为箱子的两倍，房间外边界保留。宠物范围技能可伤害木箱、火药桶，保留物品掉落和爆炸连锁；大招伤害不会为自身大招充能。灵狐助战连锁限制在 ${FOX_RIDE_RANGE} 范围内；骑乘普攻发射电弧，最多弹射3次，可指向木箱与火药桶，索敌半径 ${FOX_RIDE_RANGE}；大招只攻击释放位置周围同样范围内的敌人，无有效目标时立即结束，不会原地等待；不会连续跳到全图；10 秒光环仍清除全图敌方弹幕，保留友方。冰凰的穿障碍和地面免伤仅骑乘时生效，仍受房间边界限制、仍会被直接攻击命中；下骑会寻找安全地面。
+      ${H("免费试用")}面板右下「免费试用 · 终极骑乘」可试玩任意一只的终极能力，大招每 10 秒恢复；无需兑换，不扣积攒点或星砂，试用的货币、经验、图鉴等收益都不保存。`],
     ["角色养成", `<div class="hp-levels">${LEVEL_REWARDS.map(r => `<div class="hp-level"><b>Lv.${r.level}</b><em>${r.name}</em><span>${r.text}</span></div>`).join("")}</div>
       ${H("成长规则")}每位角色独立积累经验，最高 7 级；闯关奖励逐级累计，下局生效，竞技场禁用。蓄能按每次主动释放小技能计算，回响和联动不重复增加，进度最多 100%；矿场装备独立。
       ${H("升级经验")}六次升级需要 611 / 795 / 1033 / 1343 / 1746 / 2272 经验，累计 7800；闯关与矿场获得经验，暂停和长时间无操作不计。
@@ -222,6 +232,12 @@ export function showHud(game, me) {
    </div>
    <div class="tipline o1" style="display:none"></div>`;
   root.appendChild(hud);
+  if(me.pet?.stage===3) {
+    const ride=el('button','btn small pet-ride-btn',`<img src="${petPortrait(me.pet.id,3)}" alt=""><span>骑乘</span><small>R</small>`);
+    ride.onclick=()=>{input.pressed.mount=true;sfx('click');};hud.querySelector('.tr').insertBefore(ride,hud.querySelector('.pausebtn'));
+    hud.querySelector('.keys').textContent+=' · R 骑乘';
+  }
+  if(game.petTrial)hud.appendChild(el('div','pet-trial-tag o1','伙伴试用 · 大招10秒恢复 · 收益不保存'));
   hud.querySelector(".pausebtn").onclick = () => app.pause();
   document.querySelectorAll(".touch .empty, .b-skill.empty, .b-ult.empty").forEach(n => n.classList.remove("empty"));
   document.querySelectorAll(".b-skill .cnt, .b-ult .cnt").forEach(n => n.remove());
@@ -244,6 +260,17 @@ export function updateHud(game, me) {
   const set = (k, v, fn) => {
     if (hudCache[k] !== v) (hudCache[k] = v), fn(v);
   };
+  set('mounted',!!me.mounted, mounted=>{
+    const b=hud.querySelector('.pet-ride-btn');if(b){b.querySelector('span').textContent=mounted?'下骑':'骑乘';b.disabled=!!me.dead||!!me.downed;}
+    for(const slot of ['atk','ult']) {
+      const name=mounted?PETS[me.pet.id][slot==='atk'?'rideAttack':'rideUlt']:CHARS[me.cid][slot].name;
+      const url=mounted?petPortrait(me.pet.id,3):iconURL(skillIcon(me.cid,slot),4);
+      document.querySelectorAll(`.b-${slot} .ico,.s-${slot} .ico`).forEach(im=>im.src=url);
+      document.querySelectorAll(`.b-${slot} .lb`).forEach(n=>n.textContent=name);
+      hud.querySelector(`.s-${slot}`).title=name;
+    }
+  });
+  const ride=hud.querySelector('.pet-ride-btn');if(ride)ride.disabled=!!me.dead||!!me.downed;
   set("hp", me.hp + "/" + me.maxHp, (v) => {
     hud.querySelector(".bar.hp i").style.width = (100 * Math.max(0, me.hp)) / me.maxHp + "%";
     hud.querySelector(".bar.hp span").textContent = "❤ " + v;
@@ -338,6 +365,7 @@ export function updateHud(game, me) {
 // ------------------------------------------------------------------ cards
 export function showCards(game, me, ids, onPick) {
   closeCards();
+  if (!ids?.length) return;
   document.body.classList.add("cards-open");
   const md = el("div", "modal cards-modal");
   md.innerHTML = `<div class="cm-wrap"><div class="cm-title outline">选择一张技能卡</div><div class="cm-sub o1">清场奖励 · 构筑你的混搭流派</div><div class="cards"></div><div class="build o1"></div><div class="muted cm-hint">${document.body.classList.contains("touchmode") ? "点击卡牌选择" : "点击或按 1 / 2 / 3 选择"}</div></div>`;
@@ -398,10 +426,10 @@ export function showPause(game, opts) {
   const m = load();
   // top row: toggles; bottom row: 放弃本局 (left) and 继续 (right)
   md.innerHTML = `<div class="panel pause-p"><h2 class="outline">暂停</h2><div class="row r1"></div><div class="row r2"></div><div class="build o1"></div></div>`;
-  const tg = (label, get, flip) => btn(`${label}：${get() ? "开" : "关"}`, "gray small pz-tg", (e) => (flip(), save(), (e.target.closest("button").innerHTML = `${label}：${get() ? "开" : "关"}`)));
+  const tg = (label,get,flip,audio=false)=>btn(`${label}：${get()?"开":"关"}`,`${audio&&get()?"green":"gray"} small pz-tg`,e=>{flip();save();const b=e.target.closest("button");b.innerHTML=`${label}：${get()?"开":"关"}`;if(audio){b.classList.toggle("green",get());b.classList.toggle("gray",!get());}});
   $(".r1", md).append(
-    tg("音效", () => m.sound, () => ((m.sound = !m.sound), setSound(m.sound))),
-    tg("音乐", () => m.music, () => ((m.music = !m.music), setMusic(m.music))),
+    tg("音效", () => m.sound, () => ((m.sound = !m.sound), setSound(m.sound)),true),
+    tg("音乐", () => m.music, () => ((m.music = !m.music), setMusic(m.music)),true),
     tg("自动攻击", () => m.autoFire, () => (m.autoFire = !m.autoFire)),
   );
   $(".r2", md).append(btn(opts.quitLabel || "放弃本局", "red pz-act", () => (md.remove(), opts.quit())), btn("继续", "pz-act", () => (md.remove(), opts.resume())));
@@ -437,7 +465,7 @@ export function showResult(r, onAgain, onLobby) {
   // landscape two-column panel: everything (incl. the buttons) fits a 360px-tall phone screen without scrolling
   const md = el("div", "modal result");
   // Progress and new rewards come before routine bonuses. Stable ties retain run order.
-  const priority = (label) => /首通|新地图|新角色|新纪录|角色升级/.test(label) ? 0 : /梦境藏品/.test(label) ? 1 : /梦境裂隙/.test(label) ? 2 : /梦境矿场/.test(label) ? 3 : /怪物图鉴/.test(label) ? 4 : 5;
+  const priority = (label) => /首通|新地图|新角色|新纪录|角色升级/.test(label) ? 0 : /梦境藏品/.test(label) ? 1 : /梦境裂隙|放弃裂隙/.test(label) ? 2 : /梦境矿场/.test(label) ? 3 : /怪物图鉴/.test(label) ? 4 : 5;
   const extras = [...(r.extras || [])].sort((a, b) => priority(a[0]) - priority(b[0]));
   if (!extras.length) extras.push(["本局晶石", `+${r.tokens}`]);
   const chip = ([label, value]) => {

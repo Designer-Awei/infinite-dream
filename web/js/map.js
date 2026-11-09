@@ -2,8 +2,10 @@
 import { T } from "./data.js";
 import { rng } from "./util.js";
 import { applyRoomRules, isCalmTile } from "./roomrules.js";
+import { applyWallDamage } from './wallwear.js';
 
 export const F = 0, WALL = 1, WATER = 2, BUSH = 3, CRATE = 4, BARREL = 5;
+export const CRATE_HP = 30, DRAGON_WALL_HP = CRATE_HP * 2;
 export const SOLID = (t) => t === WALL || t === WATER || t === CRATE || t === BARREL;
 export const BLOCKS_SHOT = (t) => t === WALL || t === CRATE || t === BARREL;
 const LIFT = 14; // block height in px (3/4 view)
@@ -132,7 +134,7 @@ export function generateRoom(kind, seed, themeIdx = 0, gopt = {}) {
     }
     if (reached < open && attempt < 29) continue;
     for (let i = 0; i < W * H; i++) if (!SOLID(m.t[i]) && !seen[i]) m.t[i] = WALL;
-    for (let i = 0; i < W * H; i++) if (m.t[i] === CRATE || m.t[i] === BARREL) m.crates[i] = { hp: m.t[i] === CRATE ? 30 : 12 };
+    for (let i = 0; i < W * H; i++) if (m.t[i] === CRATE || m.t[i] === BARREL) m.crates[i] = { hp: m.t[i] === CRATE ? CRATE_HP : 12 };
     // decals (flowers, pebbles, tufts)
     for (let i = 0; i < W * H * 0.18; i++) {
       const x = r.int(1, W - 2), y = r.int(1, H - 2);
@@ -370,8 +372,9 @@ export function drawSpikes(g, X, Y, up) {
 }
 
 /** A wall block sprite for a neighbor mask. Returns canvas T x (T+LIFT), drawn at (X, Y - LIFT). */
-export function wallSprite(theme, mask) {
-  const key = "w" + theme + "_" + mask;
+export function wallSprite(theme, mask, damage=0) {
+  damage=Math.round(Math.max(0,Math.min(1,damage))*20)/20;
+  const key = "w" + theme + "_" + mask+'_'+damage;
   if (cache.has(key)) return cache.get(key);
   const th = THEMES[theme], c = cv(T, T + LIFT), g = c.getContext("2d");
   const L = mask & 1, Rr = mask & 2, U = mask & 4, D = mask & 8; // neighbors that are walls
@@ -397,6 +400,7 @@ export function wallSprite(theme, mask) {
   if (!Rr) g.fillRect(T - 2, 0, 2, T + LIFT);
   // rim highlight
   if (!U) px(g, L ? 0 : 2, 2, T - (L ? 0 : 2) - (Rr ? 0 : 2), 2, th.topHi);
+  applyWallDamage(g,damage,T,T+LIFT);
   cache.set(key, c);
   return c;
 }
@@ -405,8 +409,8 @@ export function wallMask(m, x, y) {
   return (at(x - 1, y) ? 1 : 0) | (at(x + 1, y) ? 2 : 0) | (at(x, y - 1) ? 4 : 0) | (at(x, y + 1) ? 8 : 0);
 }
 
-export function crateSprite(kind, dmg = 0) {
-  const key = "c" + kind + (dmg > 0.5 ? "d" : "");
+export function crateSprite(kind) {
+  const key = "c" + kind;
   if (cache.has(key)) return cache.get(key);
   const c = cv(T, T + 10), g = c.getContext("2d");
   if (kind === "crate") {
@@ -418,7 +422,6 @@ export function crateSprite(kind, dmg = 0) {
     px(g, 4, 25, 24, 2, "#8a5420");
     px(g, 6, 20, 2, 12, "#8a5420"); px(g, 24, 20, 2, 12, "#8a5420");
     px(g, 8, 8, 16, 2, "#b8742e"); px(g, 8, 12, 16, 2, "#b8742e");
-    if (dmg > 0.5) { px(g, 12, 6, 2, 10, "#2a1a10"); px(g, 14, 20, 2, 8, "#2a1a10"); px(g, 18, 22, 4, 2, "#2a1a10"); }
   } else {
     // barrel: red with hazard band
     px(g, 6, 2, 20, 34, "#2a1010");

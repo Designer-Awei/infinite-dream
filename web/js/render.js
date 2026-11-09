@@ -1,11 +1,14 @@
 // Draws the world: ground, y-sorted blocks/bushes/characters, pixelfx layers, bullets, overlays.
 import { T, VIEW_W, VIEW_H, CHARS, ELEM, ITEMS, ENEMIES, RS } from "./data.js";
 import { A, silhouette } from "./assets.js";
-import { WALL, WATER, BUSH, CRATE, BARREL, wallSprite, wallMask, crateSprite, bushSprite, drawSpikes, tileAt, THEMES, LIFT } from "./map.js";
+import { WALL, WATER, BUSH, CRATE, BARREL, wallSprite, wallMask, crateSprite, bushSprite, drawSpikes, tileAt, THEMES, LIFT, renderGround, DRAGON_WALL_HP } from "./map.js";
 import { clamp, TAU, dist } from "./util.js";
 import { input } from "./input.js";
 import { hex } from "../pixelfx/core/index.js";
 import { icon } from "./icons.js";
+import { drawPet, drawMountedPet, mountedHeadHeight, mountedAttackOrigin, drawPetFields, drawPetAfterimages, petLine } from "./pets.js";
+import { DRAGON_FIREBALL, FOX_RIDE_RANGE } from './petdata.js';
+import { flyingMount } from './petcombat.js';
 const shovelIcon = (k) => icon("shovel_" + k);
 const HC = new Map();
 const H = (c) => {
@@ -57,6 +60,7 @@ export class Renderer {
     const sh = game.shake, sx = sh ? (Math.random() - 0.5) * sh : 0, sy = sh ? (Math.random() - 0.5) * sh : 0;
     const cx = Math.round(this.cam.x + sx), cy = Math.round(this.cam.y + sy);
     const m = game.map;
+    if(m.groundDirty){game.ground=renderGround(m);m.groundDirty=false;}
     // ground
     const gx0 = Math.max(0, cx), gy0 = Math.max(0, cy);
     g.drawImage(game.ground, gx0, gy0, Math.min(VIEW_W, m.pxW - gx0), Math.min(VIEW_H, m.pxH - gy0), gx0 - cx, gy0 - cy, Math.min(VIEW_W, m.pxW - gx0), Math.min(VIEW_H, m.pxH - gy0));
@@ -100,18 +104,24 @@ export class Renderer {
     // zones on the floor (before the back fx layer)
     for (const z of game.zones) this.drawZone(g, z, game);
     // ground marks: own ring, lock-on reticle, telegraphs
-    for (const p of game.players) if (!p.dead) this.drawRing(g, p, me);
+    for (const p of game.players) if (!p.dead) {
+      if(flyingMount(p)&&!p.downed){g.fillStyle='rgba(15,30,45,.22)';g.beginPath();g.ellipse(p.x,p.y,30,8,0,0,TAU);g.fill();}
+      this.drawRing(g, p, me);
+    }
     if (me && me.target && !me.target.dead && !me.target.downed) this.drawReticle(g, me.target);
     for (const e of game.enemies) this.drawTelegraph(g, e);
 
     // pixelfx: back layer
     g.setTransform(RS, 0, 0, RS, 0, 0);
+    this.fx.syncPetFields(game);
     this.fx.begin(cx, cy);
     this.drawBullets(game, cx, cy);
     this.fx.drawBack(g);
     g.translate(-cx, -cy);
 
     // y-sorted scene
+    drawPetFields(g, game, this.t);
+    drawPetAfterimages(g,game,this.t);
     const list = [];
     for (let y = ty0; y <= ty1; y++) for (let x = tx0; x <= tx1; x++) {
       const t = m.t[y * m.W + x];
@@ -119,17 +129,23 @@ export class Renderer {
       else if (t === BUSH) list.push({ y: y * T + T - 2, k: 1, x, ty: y });
       else if (t === CRATE || t === BARREL) list.push({ y: y * T + T, k: 2, x, ty: y, t });
     }
-    for (const p of game.players) if (!p.dead) list.push({ y: p.y, k: 3, o: p });
+    for (const p of game.players) if (!p.dead&&(!flyingMount(p)||p.downed)) list.push({ y: p.y, k: 3, o: p });
+    for (const p of game.players) if (p.pet && !p.mounted && !p.dead && !p.downed) list.push({ y: p.pet.y, k: 10, o: p });
     for (const e of game.enemies) if (e.spawnT <= 0.25) list.push({ y: e.y + (e.boss ? 20 : 0), k: 4, o: e });
     for (const q of game.pickups) list.push({ y: q.y, k: 5, o: q });
     for (const z of game.zones) if (z.kind === "station") list.push({ y: z.y, k: 6, o: z });
-    if (game.shop && game.room && game.room.kind === "shop") for (const it of game.shop) list.push({ y: it.y + 10, k: 7, o: it });
+    if (game.shop && game.room && game.room.kind === "shop") for (const it of game.shop) if (me && game.shopAvailable(me,it)) list.push({ y: it.y + 10, k: 7, o: it });
     if (game.chest && !game.chest.opened) list.push({ y: game.chest.y + 8, k: 8, o: game.chest });
     if (game.shovelItem && !game.shovelItem.got) list.push({ y: game.shovelItem.y, k: 9, o: game.shovelItem });
     list.sort((a, b) => a.y - b.y);
     for (const d of list) {
       switch (d.k) {
-        case 0: g.drawImage(wallSprite(m.theme, wallMask(m, d.x, d.ty)), d.x * T, d.ty * T - LIFT); break;
+        case 0: {
+          const X=d.x*T,Y=d.ty*T-LIFT,hp=m.wallHp?.[d.ty*m.W+d.x];
+          const damage=hp!=null?Math.max(0,Math.min(1,1-hp/DRAGON_WALL_HP)):0;
+          g.drawImage(wallSprite(m.theme, wallMask(m, d.x, d.ty),damage),X,Y);
+          break;
+        }
         case 1: {
           const X = d.x * T, Y = d.ty * T;
           // players hiding inside: the bush goes see-through near them
@@ -142,7 +158,7 @@ export class Renderer {
         }
         case 2: {
           const c = m.crates[d.ty * m.W + d.x];
-          const s = crateSprite(d.t === CRATE ? "crate" : "barrel", c ? 1 - c.hp / (d.t === CRATE ? 30 : 12) : 0);
+          const s = crateSprite(d.t === CRATE ? "crate" : "barrel");
           g.drawImage(s, d.x * T, d.ty * T - 8);
           if (c && c.flash > 0) {
             g.globalAlpha = 0.6;
@@ -159,22 +175,29 @@ export class Renderer {
         case 7: this.drawShopItem(g, d.o, me); break;
         case 8: this.drawChest(g, d.o); break;
         case 9: this.drawShovelDrop(g, d.o, game.time); break;
+        case 10: drawPet(g, d.o, this.t); break;
       }
     }
+    drawPetFields(g,game,this.t,'front');
     // lobbed bullets get a shadow on the ground (drawn already) - lines
     g.setTransform(RS, 0, 0, RS, 0, 0);
     this.fx.drawFront(g);
     g.translate(-cx, -cy);
     this.drawLines(g, game);
+    // Flying riders are the last world sprites, above walls, units and combat FX.
+    for(const p of game.players)if(flyingMount(p)&&!p.dead&&!p.downed)this.drawHero(g,p,me,game);
+    g.setTransform(RS,0,0,RS,0,0);
+    this.fx.drawAirShields(g);
+    g.translate(-cx,-cy);
     // overlays
     for (const e of game.enemies) this.drawEmbers(g, e), this.drawEnemyBar(g, e);
-    for (const p of game.players) this.drawHeroBar(g, p, me, game);
     this.drawAim(g, me);
     for (const f of game.floaters) {
       const a = clamp(f.life / f.max * 2, 0, 1);
       const pop = 1 + Math.max(0, (f.life / f.max - 0.8) * 2.5);
       this.text(g, f.s, f.x, f.y, f.color, Math.round(12 * f.size * pop), a);
     }
+    for (const p of game.players) this.drawHeroBar(g, p, me, game);
     g.setTransform(RS, 0, 0, RS, 0, 0);
     this.drawEdgeArrows(g, game, me, cx, cy);
     // vignette
@@ -291,6 +314,7 @@ export class Renderer {
   drawHero(g, p, me, game) {
     const set = A.girls[p.cid];
     if (!set) return;
+    if (p.mounted && p.pet && !p.downed && drawMountedPet(g,p,this.t)) return;
     const inBush = tileAt(game.map, p.x, p.y) === BUSH;
     if (inBush && p !== me && p.pvpEnemy) return;
     // pick a view from the facing angle
@@ -406,7 +430,7 @@ export class Renderer {
     if (p.dead || p.downed) return;
     const set = A.girls[p.cid];
     if (tileAt(game.map, p.x, p.y) === BUSH && p !== me && p.pvpEnemy) return;
-    const y = p.y - (set.foot - (set.top || 0)) / (set.k || 1) - 8, w = 34, x = p.x - w / 2;
+    const y = p.y - (p.mounted ? mountedHeadHeight(p)??68 : (set.foot-(set.top||0))/(set.k||1)) - 8, w = 34, x = p.x - w / 2;
     const col = p === me ? "#5dff7a" : p.pvpEnemy ? "#ff4a5a" : "#4ab8ff";
     // name
     if (game.players.length > 1 || p !== me) this.text(g, p.name, p.x, y - 9, col, 10);
@@ -430,12 +454,13 @@ export class Renderer {
   }
   drawAim(g, me) {
     if (!me || me.dead || me.downed) return;
-    const show = (ang, len, wid, col) => {
+    const show = (ang, len, wid, col, origin={x:me.x,y:me.y-16},capsule=false) => {
       g.save();
-      g.translate(me.x, me.y - 16);
+      g.translate(origin.x, origin.y);
       g.rotate(ang);
       g.globalAlpha = 0.28;
       g.fillStyle = col;
+      if(capsule){const r=wid/2;g.beginPath();g.moveTo(0,-r);g.lineTo(len,-r);g.arc(len,0,r,-Math.PI/2,Math.PI/2);g.lineTo(0,r);g.arc(0,0,r,Math.PI/2,Math.PI*1.5);g.closePath();g.fill();g.globalAlpha=.7;g.strokeStyle=col;g.lineWidth=1;g.stroke();g.restore();return;}
       g.fillRect(8, -wid / 2, len, wid);
       g.globalAlpha = 0.7;
       g.fillRect(8, -wid / 2, len, 1);
@@ -443,9 +468,9 @@ export class Renderer {
       g.restore();
     };
     const c = CHARS[me.cid];
-    if (input.aim != null) show(input.aim, c.atk.range * me.st.range, 8, "#ffffff");
+    if (input.aim != null) show(input.aim, me.mounted&&me.pet?.id==='dragon'?DRAGON_FIREBALL.range:me.mounted&&me.pet?.id==='fox'?FOX_RIDE_RANGE:c.atk.range * me.st.range, me.mounted&&me.pet?.id==='dragon'?DRAGON_FIREBALL.radius*2:8, "#ffffff",mountedAttackOrigin(me),me.mounted&&me.pet?.id==='dragon');
     if (input.skillAim != null) show(input.skillAim, 160, 24, "#7fd0ff");
-    if (input.ultAim != null) show(input.ultAim, 190, 30, "#ffe14a");
+    if (input.ultAim != null && !(me.mounted&&me.pet?.id==='dragon')) show(input.ultAim, 190, 30, "#ffe14a");
   }
 
   // ---------------------------------------------------------- enemies
@@ -853,6 +878,15 @@ export class Renderer {
       const tl = Math.min(14, b.t * 300);
       P.glowLine(x - Math.cos(ang) * tl, y - Math.sin(ang) * tl, x, y, r * 0.8, H(el.color), 0.45);
       switch (b.kind) {
+        case "pet_dragon":
+          for(let j=8;j>=1;j--){const d=j*3.4,w=Math.max(1,r*(1-j/10));P.circle(x-Math.cos(ang)*d,y-Math.sin(ang)*d+Math.sin(this.t*20+j)*j*.22,w,H(j>4?'#e3442d':'#ffb448'),1-j*.08);}
+          P.circle(x,y,r+1,H('#7b2032'),1);P.circle(x,y,r,H('#ff7433'),1);P.circle(x-1,y-1,Math.max(1,r-2),H('#ffe79b'),1);break;
+        case "pet_fox":
+        case "pet_phoenix": {
+          const cs=Math.cos(ang),sn=Math.sin(ang),col=b.kind==='pet_fox'?'#ffe699':'#baf4ff';
+          for(let i=-6;i<=6;i++)for(let j=-2;j<=2;j++)if(Math.abs(j)<=2-Math.abs(i)/4)P.dot(x+cs*i-sn*j,y+sn*i+cs*j,H(j===0?'#fff':col));
+          break;
+        }
         case "gpt":
           P.circle(x, y, r + 1, H("#2a1050"), 1);
           P.circle(x, y, r, H(el.color), 1);
@@ -889,7 +923,8 @@ export class Renderer {
     }
   }
   drawLines(g, game) {
-    for (const l of game.lines) {
+    for (const original of game.lines) {
+      const l=petLine(game,original);if(!l)continue;
       const a = clamp(l.life / l.max);
       g.save();
       if (l.kind === "warn") {

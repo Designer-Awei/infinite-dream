@@ -1,7 +1,7 @@
 // Loads images and prepares the sprite canvases the renderer draws from.
 import { CHAR_ORDER, ELEM, CHARS, SPR_K } from "./data.js";
 
-export const A = { girls: {}, critters: {}, portraits: {}, ready: false };
+export const A = { girls: {}, critters: {}, portraits: {}, pets: null, mounts: {}, ready: false };
 
 function img(src) {
   return new Promise((res, rej) => {
@@ -98,6 +98,13 @@ export async function loadAll(progress = () => {}) {
   progress(0.8);
   const ps = await Promise.all(CHAR_ORDER.map((id) => img(base + "portrait_" + id + ".png")));
   CHAR_ORDER.forEach((id, i) => (A.portraits[id] = ps[i]));
+  const [petMeta, petImage] = await Promise.all([json(base + "pets/pets.json"), img(base + "pets/pets.png")]);
+  const petImages=await Promise.all((petMeta.pages||[{file:'pets.png'}]).map((page,i)=>i===0?petImage:img(base+'pets/'+page.file)));
+  A.pets = { meta: petMeta, image: petImage, images:petImages };
+  await Promise.all(['fox','dragon','phoenix'].map(async id=>{
+    const [meta,image]=await Promise.all([json(base+'pets/'+id+'-mounted.json'),img(base+'pets/'+id+'-mounted.png')]);
+    A.mounts[id]={meta,image};
+  }));
   try {
     await document.fonts.load("12px Cubic");
   } catch {}

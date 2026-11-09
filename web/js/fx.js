@@ -3,8 +3,11 @@
 import { createFrame, clearFrame, createFx, painterFor, setSimHz } from "../pixelfx/core/index.js";
 import { VIEW_W, VIEW_H } from "./data.js";
 import { FX_MODS } from "./fxmods.js";
+import { mountedShield } from './pets.js';
+import { flyingMount } from './petcombat.js';
 
 export const FX_IDS = [
+  "fire/fire-tornado",
   "water/splash", "water/wave-crash", "water/whirlpool", "water/bubbles",
   "fire/fire-breath", "explosions/plasma-explosion", "explosions/small-explosion", "explosions/implosion",
   "lightning/zap-hit", "lightning/lightning-strike", "lightning/thunderclap",
@@ -28,6 +31,7 @@ let MAX = 40;
 // big screen-filling effects: overlapping ults used to stack 3-4 of each (rune circles of radius ~90 px painted
 // every frame), which is what made phones heat up; keep the newest few and drop the oldest of the same kind
 const HEAVY = new Set([
+  "fire/fire-tornado",
   "arcane/rune-circle", "holy/holy-pillar", "arcane/magic-circle-cast", "arcane/star-fall", "arcane/portal",
   "shadow/eclipse", "shadow/black-hole", "shadow/hex-sigil", "water/whirlpool", "water/wave-crash",
   "holy/sunburst", "holy/heal-aoe", "lightning/thunderclap", "ice/frost-nova", "scifi/force-field",
@@ -43,10 +47,14 @@ export class FxLayer {
     // display frame (and shifted with the camera in between): half the per-pixel glow work at 60 fps
     this.hback = createFrame(w, h);
     this.hfront = createFrame(w, h);
+    // Shield shells belonging to flying riders must be drawn after their body.
+    // Other front effects stay below the flying rider as before.
+    this.airShield = createFrame(w, h);
     this.hT = 0;
     this.hcam = [0, 0];
     this.cam = [0, 0];
     this.list = [];
+    this.petFx = new Map();
     const mk = () => {
       const c = document.createElement("canvas");
       c.width = w;
@@ -61,6 +69,8 @@ export class FxLayer {
     this.cHF = mk();
     this.cHLB = mk();
     this.cHLF = mk();
+    this.cAirShield = mk();
+    this.cAirLight = mk();
     this.img = new ImageData(w, h);
     this.u32 = new Uint32Array(this.img.data.buffer);
     this.enabled = true;
@@ -75,13 +85,14 @@ export class FxLayer {
   }
   clearAll() {
     this.list.length = 0;
+    this.petFx.clear();
     this.hNew = true;
   }
   /** spawn an effect; o: {palette, angle, flip, light, layer, follow:{x,y}, dy, loop, life, scale} */
   spawn(id, x, y, o = {}) {
     const mod = mods[id];
     if (!mod || !this.enabled) return null;
-    const cap = HEAVY.has(id) ? (this.lite ? 1 : 2) : this.lite ? 4 : 8;
+    const cap = id==='fire/fire-tornado'?4:HEAVY.has(id) ? (this.lite ? 1 : 2) : this.lite ? 4 : 8;
     let n = 0, old = -1;
     for (let i = 0; i < this.list.length; i++) if (this.list[i].id === id) {
       if (old < 0) old = i;
@@ -103,6 +114,7 @@ export class FxLayer {
     if (fx.heavy) this.hNew = true;
     fx.layer = o.layer || "front";
     fx.follow = o.follow || null;
+    fx.baseRadius=fx.options.radius;
     fx.dy = o.dy || 0;
     fx.dx = o.dx || 0;
     fx.life = o.life ?? Infinity;
@@ -119,6 +131,11 @@ export class FxLayer {
         if (f.follow.dead || f.follow.gone) f.stop();
         f.options.x = f.follow.x + f.dx;
         f.options.y = f.follow.y + f.dy;
+        if(f.id==='holy/divine-shield'){
+          const shield=mountedShield(f.follow);
+          f.options.radius=shield?shield.radius:f.baseRadius;
+          if(shield){f.options.x=shield.x;f.options.y=shield.y;}
+        }
       }
       f.life -= dt;
       if (f.life <= 0) {
@@ -128,13 +145,30 @@ export class FxLayer {
       if (f.done()) this.list.splice(i, 1);
     }
   }
+  // Field IDs survive cooperative snapshots; visual objects stay local, never serialized.
+  syncPetFields(game) {
+    const active=new Set();
+    for(const f of game.petFields||[]){
+      if(f.kind!=='tornado'||f.life<=0)continue;
+      const p=game.player(f.owner);if(!p?.mounted||p.pet?.id!=='dragon'||p.dead||p.downed)continue;
+      active.add(f.id);let fx=this.petFx.get(f.id);
+      if(!fx||!this.list.includes(fx)){
+        fx=this.spawn('fire/fire-tornado',f.x,f.y,{height:94,radius:f.r,follow:f,layer:'front',skip:f.t%2});
+        if(fx)this.petFx.set(f.id,fx);
+      }
+      if(fx){fx.follow=f;fx.options.x=f.x;fx.options.y=f.y;}
+    }
+    for(const [id,fx] of this.petFx)if(!active.has(id)){fx.follow=null;fx.stop();this.petFx.delete(id);this.hNew=true;}
+  }
   /** start a frame: clear (only what was drawn last frame) & position at camera */
   begin(camX, camY) {
     const cx = Math.round(camX), cy = Math.round(camY), now = performance.now();
     this._clear(this.back);
     this._clear(this.front);
+    this._clear(this.airShield);
     this.back.ox = this.front.ox = this.cam[0] = cx;
     this.back.oy = this.front.oy = this.cam[1] = cy;
+    this.airShield.ox=cx;this.airShield.oy=cy;this.airShieldUsed=false;
     const re = this.hNew || now - this.hT >= (this.lite ? 48 : 30);
     if (re) {
       this._clear(this.hback);
@@ -146,6 +180,9 @@ export class FxLayer {
     }
     this.backUsed = this.frontUsed = false;
     for (const f of this.list) {
+      if(f.id==='holy/divine-shield'&&f.follow&&!f.follow.dead&&!f.follow.downed&&flyingMount(f.follow)){
+        this.airShieldUsed=true;f.draw(this.airShield);continue;
+      }
       const back = f.layer === "back";
       if (f.heavy) {
         if (re) f.draw(back ? this.hback : this.hfront);
@@ -228,5 +265,8 @@ export class FxLayer {
   }
   drawFront(g) {
     this._blit(g, this.hfront, this.cHF, this.cHLF, this.front, this.cFront, this.cLightF, this.frontUsed, this.lightF);
+  }
+  drawAirShields(g) {
+    this._blit(g,{bbox:null},null,null,this.airShield,this.cAirShield,this.cAirLight,this.airShieldUsed,this.lightF);
   }
 }

@@ -3,6 +3,7 @@ import { START_CHARS, START_TOKENS, UNLOCKS, GACHA, CHAR_ORDER, LOADOUT_SLOTS } 
 
 import { progressFromXP, MAX_CHARACTER_XP } from "./progression.js";
 import { collectionBonuses } from "./collection.js";
+import { normalizePets, equippedPet } from "./petdata.js";
 
 const KEY = "ai-girls-dungeon-v1";
 const fresh = () => ({
@@ -20,6 +21,7 @@ const fresh = () => ({
   seenUnlock: [],
   loadout: null, // cid -> [ssr talent id | null] (one page per character)
   maps: {}, // map id -> clears
+  pets: { owned: {}, equipped: null },
 });
 
 let mem = null;
@@ -47,6 +49,7 @@ export function load() {
     mem.name = "玩家" + Math.floor(1000 + Math.random() * 9000);
     save();
   }
+  mem.pets = normalizePets(mem.pets);
   return mem;
 }
 export function save() {
@@ -94,7 +97,7 @@ export function makeKit(cid) {
     tal[it.id] = lv;
   }
   for (const id of loadoutOf(cid)) if (id) eq[id] = m.talents[id] || 1;
-  return { tal, eq, level: characterProgress(cid).level, collection: collectionBonuses(m.curios), cards: [...m.cards], core: (m.cores || {})[cid] ? 1 : 0 };
+  return { tal, eq, level: characterProgress(cid).level, collection: collectionBonuses(m.curios), cards: [...m.cards], core: (m.cores || {})[cid] ? 1 : 0, pet: equippedPet(m) };
 }
 
 /** Check unlock conditions; returns newly unlocked char ids. */
@@ -119,6 +122,16 @@ export function unlockProgress(id) {
 
 /** what an SSR pull gives once every SSR is maxed */
 export const STASH_ITEM = { id: "cardgold", r: "SSR", name: "积攒点 +1", desc: "SSR 已全部收齐，这张转化为 1 点积攒", max: 1 };
+/** Spend one workshop exchange card on an SSR level or one stash point. */
+export function redeemExchangeCard(id) {
+  const m=load(),ms=mineState();if(!(ms.cards>0))return{ok:false,reason:'没有兑换卡'};
+  if(id===STASH_ITEM.id){ms.cards--;m.stash=(m.stash||0)+1;save();return{ok:true,stash:true,name:STASH_ITEM.name};}
+  const it=GACHA.pool.find(it=>it.id===id&&it.r==='SSR');
+  if(!it)return{ok:false,reason:'无效兑换'};
+  const lv=m.talents[id]||0;if(lv>=it.max)return{ok:false,reason:'已满级'};
+  ms.cards--;m.talents[id]=lv+1;if(it.card&&!m.cards.includes(it.card))m.cards.push(it.card);save();
+  return{ok:true,name:it.name,level:lv+1};
+}
 /** every SSR owned at max level (from then on SSR pulls become 积攒点) */
 export const ssrDone = () => {
   const m = load();

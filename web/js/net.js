@@ -8,6 +8,8 @@ import { tileAt } from "./map.js";
 import { fireAttack } from "./skills.js";
 import { angTo } from "./util.js";
 import { levelBonuses } from "./progression.js";
+import { validPet } from "./petdata.js";
+import { animateClientPets } from "./pets.js";
 
 const PREFIX = "aigirls-dungeon-v1-";
 const ALPH = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -243,8 +245,10 @@ export class Net {
       if (d.sk) (i.skill = true), (i.castAim = { ...i.castAim, skill: d.cs });
       if (d.ul) (i.ult = true), (i.castAim = { ...i.castAim, ult: d.cu });
       if (d.da) i.dash = true;
+      if (d.mt) i.mount = true;
       // client-authoritative movement (validated loosely)
-      if (!p.downed && typeof d.x === "number" && Math.hypot(d.x - p.x, d.y - p.y) < 160) {
+      const warpAcknowledged=(d.ws||0)===(p.pet?.warpSeq||0);
+      if (!p.downed && warpAcknowledged && !(p.pet?.blinkT>0) && !(g.time<p.petWarpUntil) && typeof d.x === "number" && Math.hypot(d.x - p.x, d.y - p.y) < 160) {
         p.x = d.x;
         p.y = d.y;
       }
@@ -365,6 +369,7 @@ export class Net {
     const g = this.app.game, me = this.app.me;
     if (!g || !me) return;
     const i = me.input;
+    if (i.mount) { this.edges.mt = true; i.mount = false; }
     if (i.skill) {
       this.edges.sk = true;
       this.edges.cs = i.castAim.skill;
@@ -402,7 +407,7 @@ export class Net {
     this.inT -= dt;
     if (this.inT <= 0) {
       this.inT = 1 / 30;
-      this.send({ t: "in", mx: round2(i.mx), my: round2(i.my), atk: i.atk, aim: i.aim == null ? null : round2(i.aim), sk: this.edges.sk, ul: this.edges.ul, da: this.edges.da, cs: this.edges.cs ?? null, cu: this.edges.cu ?? null, x: Math.round(me.x), y: Math.round(me.y) });
+      this.send({ t: "in", mx: round2(i.mx), my: round2(i.my), atk: i.atk, aim: i.aim == null ? null : round2(i.aim), sk: this.edges.sk, ul: this.edges.ul, da: this.edges.da, mt: !!this.edges.mt, cs: this.edges.cs ?? null, cu: this.edges.cu ?? null, ws:me.pet?.warpSeq||0, x: Math.round(me.x), y: Math.round(me.y) });
       this.edges = { sk: false, ul: false, da: false };
     }
     clientUpdate(g, me, dt);
@@ -424,7 +429,8 @@ function snapshot(g) {
     const fl = (p.moving ? 1 : 0) | (p.downed ? 2 : 0) | (p.dashT > 0 ? 4 : 0) | (p.hurtT > 0 ? 8 : 0) | (p.castT > 0 ? 16 : 0) | (p.input.atk ? 32 : 0);
     const bf = {};
     for (const k in p.buff) if (p.buff[k] > 0) bf[k] = Math.round(p.buff[k] * 10) / 10;
-    return [p.id, r1(p.x), r1(p.y), round2(p.face), p.hp, p.maxHp, p.shield, p.maxShield, fl, Math.round(p.ult * 100), p.coins, p.cubes, Math.round(p.recoil), Math.round((Math.max(0, p.skillCd) / (CHARS[p.cid].skill.cd * p.st.cd)) * 100), Math.round((Math.max(0, p.dashCd) / 1.6) * 100), bf, p.target ? p.target.id : 0, p.cards, p.infuseElem || null, round2(p.reviveT), round2(p.respawnT || 0), p.barrier > 0 ? 1 : 0, p.st, p.fusions];
+    const pet=p.pet?{id:p.pet.id,stage:p.pet.stage,x:round2(p.pet.x),y:round2(p.pet.y),face:round2(p.pet.face),moving:p.pet.moving,castT:round2(p.pet.castT),castMax:round2(p.pet.castMax),anim:round2(p.pet.anim),walkT:round2(p.pet.walkT||0),blinkT:round2(p.pet.blinkT||0),warpSeq:p.pet.warpSeq||0}:null;
+    return [p.id, r1(p.x), r1(p.y), round2(p.face), p.hp, p.maxHp, p.shield, p.maxShield, fl, Math.round(p.ult * 100), p.coins, p.cubes, Math.round(p.recoil), Math.round((Math.max(0, p.skillCd) / (CHARS[p.cid].skill.cd * p.st.cd)) * 100), Math.round((Math.max(0, p.dashCd) / 1.6) * 100), bf, p.target ? p.target.id : 0, p.cards, p.infuseElem || null, round2(p.reviveT), round2(p.respawnT || 0), p.barrier > 0 ? 1 : 0, p.st, p.fusions, pet, !!p.mounted];
   });
   const E = g.enemies.map((e) => [e.id, e.type, r1(e.x), r1(e.y), Math.ceil(e.hp), Math.ceil(e.maxHp), (e.elite ? 1 : 0) | (e.flash > 0 ? 4 : 0) | (e.freezeT > 0 ? 8 : 0) | (e.slowT > 0 ? 16 : 0) | (e.burnT > 0 ? 32 : 0), e.st, r1(e.z || 0), e.face, Object.keys(e.marks).filter((k) => e.marks[k] > g.time).join(","), e.lx != null ? r1(e.lx) : null, e.ly != null ? r1(e.ly) : null, round2(Math.max(0, e.spawnT)), round2(e.cd), e.bubble > g.time ? 1 : 0]);
   const B = g.bullets.map((b) => [b.id, b.side === "e" ? 1 : 0, b.kind, r1(b.x), r1(b.y), r1(b.vx), r1(b.vy), b.r, b.elem || 0, b.big ? 1 : 0, b.wave ? 1 : 0, b.arcTo ? [r1(b.arcTo.x0), r1(b.arcTo.y0), r1(b.arcTo.x), r1(b.arcTo.y), b.arcTo.dur, round2(b.t)] : 0, r1(b.h || 0), b.owner || 0, b.atk ? 1 : 0]);
@@ -436,7 +442,8 @@ function snapshot(g) {
     po: g.portal ? [r1(g.portal.x), r1(g.portal.y)] : 0,
     sh: g.shop ? g.shop.map((s) => s.price) : 0,
     bn: g.banner ? [g.banner.text, g.banner.sub, round2(g.banner.t)] : 0,
-    cu: g.curiosFound,
+    cu: g.curiosFound, pf: (g.petFields||[]).map(f=>({...f})),
+    dw:g.map.brokenWalls||[],wh:g.map.wallHp||{},bb:g.map.burnedBushes||[],
     sc: g.pvpScore, su: g.spikeUp || 0, cf: Object.keys(g.cardOffers).map(Number), rs: g.runStats,
   };
 }
@@ -457,6 +464,15 @@ function applySnapshot(app, s) {
     g.onUi("room");
   }
   if (!g.map) return;
+  // Full room state makes destroyed walls survive a missed one-shot tile event.
+  g.map.wallHp={...(s.wh||{})};
+  for(const i of s.dw||[]){
+    const x=i%g.map.W,y=Math.floor(i/g.map.W);
+    if(Number.isInteger(i)&&x>0&&y>0&&x<g.map.W-1&&y<g.map.H-1&&g.map.t[i]===1){g.map.t[i]=0;g.map.groundDirty=true;}
+  }
+  g.map.brokenWalls=[...(s.dw||[])];
+  for(const i of s.bb||[]){const x=i%g.map.W,y=Math.floor(i/g.map.W);if(Number.isInteger(i)&&x>0&&y>0&&x<g.map.W-1&&y<g.map.H-1&&g.map.t[i]===3){g.map.t[i]=0;g.map.groundDirty=true;}}
+  g.map.burnedBushes=[...(s.bb||[])];
   g.phase = s.ph;
   g.curiosFound = s.cu || [];
   g.serverTime = s.tm;
@@ -464,10 +480,19 @@ function applySnapshot(app, s) {
   for (const a of s.P) {
     const p = g.player(a[0]);
     if (!p) continue;
-    const [, x, y, face, hp, maxHp, sh, maxSh, fl, ult, coins, cubes, rec, skf, dkf, bf, tid, cards, inf, rv, rsp, bar, st, fus] = a;
+    const [, x, y, face, hp, maxHp, sh, maxSh, fl, ult, coins, cubes, rec, skf, dkf, bf, tid, cards, inf, rv, rsp, bar, st, fus, pet, mounted] = a;
+    const petWarp=!!pet&&(pet.blinkT>0||(pet.warpSeq||0)!==(p.pet?.warpSeq||0));
     p.hp = hp; p.maxHp = maxHp; p.shield = sh; p.maxShield = maxSh; p.ult = ult / 100; p.coins = coins; p.cubes = cubes;
     if (st) p.st = st;
     if (fus) p.fusions = fus;
+    p.mounted=!!mounted && !!validPet(pet) && pet.stage===3;
+    if(pet && validPet(pet)) {
+      const q=p.pet||{...pet};p.pet=q;
+      if(Math.hypot(q.x-pet.x,q.y-pet.y)>120){q.x=pet.x;q.y=pet.y;}
+      Object.assign(q,{id:pet.id,stage:pet.stage,tx:pet.x,ty:pet.y,face:pet.face,moving:pet.moving,castT:pet.castT,castMax:pet.castMax,blinkT:pet.blinkT||0,warpSeq:pet.warpSeq||0});
+      if(q.anim==null)q.anim=pet.anim;
+      if(q.walkT==null)q.walkT=pet.walkT||0;
+    } else p.pet=null;
     p.skillCdFrac = skf / 100; p.dashCdFrac = dkf / 100; p.buff = bf; p.cards = cards; p.infuseElem = inf; p.reviveT = rv; p.respawnT = rsp; p.barrier = bar;
     const wasDowned = p.downed;
     p.downed = !!(fl & 2);
@@ -476,7 +501,7 @@ function applySnapshot(app, s) {
     if (p === me) {
       // own position is client-authoritative; only accept the host's on respawn/teleport, never mid-dash
       const far = Math.hypot(p.x - x, p.y - y) > 200 && !(p.dashT > 0) && !(p.lastDash > g.time - 0.6);
-      if (p.downed || wasDowned !== p.downed || far) (p.x = x), (p.y = y);
+      if (p.downed || wasDowned !== p.downed || far || petWarp) (p.x = x), (p.y = y);
       // facing and recoil of the local girl are predicted locally (taking the host's would make her flicker)
     } else {
       p.tx = x; p.ty = y; p.face = face; p.moving = !!(fl & 1); p.recoil = rec;
@@ -520,7 +545,10 @@ function applySnapshot(app, s) {
     nb.push(b);
   }
   g.bullets = nb;
-  g.zones = s.Z.map((a) => ({ id: a[0], kind: a[1], x: a[2], y: a[3], r: a[4], life: a[5], t: a[6] }));
+  const oldZones=new Map(g.zones.map(z=>[z.id,z]));
+  g.zones=s.Z.map(a=>{const z=oldZones.get(a[0])||{};oldZones.delete(a[0]);return Object.assign(z,{id:a[0],kind:a[1],x:a[2],y:a[3],r:a[4],life:a[5],t:a[6]});});
+  for(const z of oldZones.values())z.gone=true;
+  g.petFields=(s.pf||[]).map(f=>({...f}));
   g.pickups = s.Q.map((a) => ({ id: a[0], kind: a[1], item: a[2] || undefined, x: a[3], y: a[4], z: a[5], t: a[6], life: a[7], vx: 0, vy: 0, vz: 0 }));
   g.chest = s.ch ? { x: s.ch[0], y: s.ch[1], opened: !!s.ch[2] } : null;
   g.portal = s.po ? { x: s.po[0], y: s.po[1], t: 1 } : null;
@@ -535,13 +563,18 @@ function applySnapshot(app, s) {
       case "fx": {
         const o = { ...ev.o };
         if (o.followId) o.follow = g.player(o.followId) || g.enemies.find((e) => e.id === o.followId);
+        if(o.followZoneId)o.follow=g.zones.find(z=>z.id===o.followZoneId);
         g.fx.spawn(ev.id, ev.x, ev.y, o);
         break;
       }
       case "snd": if (!ev.n.startsWith("shoot_")) sfx(ev.n); break; // our own shots are predicted locally
       case "txt": g.floaters.push({ x: ev.x, y: ev.y, s: ev.s, color: ev.c, size: ev.z, life: 0.8, max: 0.8, vy: -38 }); break;
-      case "ln": g.lines.push({ x0: ev.a[0], y0: ev.a[1], x1: ev.a[2], y1: ev.a[3], color: ev.c, w: ev.w, life: ev.l, max: ev.l, kind: ev.k }); break;
-      case "tile": if (g.map.crates[ev.i]) (g.map.crates[ev.i].dead = true), (g.map.t[ev.i] = 0); break;
+      case "ln": g.lines.push({ x0: ev.a[0], y0: ev.a[1], x1: ev.a[2], y1: ev.a[3], color: ev.c, w: ev.w, life: ev.l, max: ev.l, kind: ev.k, anchorOwner:ev.o??null }); break;
+      case "tile":
+        if(ev.wall){if(g.map.t[ev.i]===1){g.map.t[ev.i]=0;g.map.groundDirty=true;}}
+        else if(ev.bush){if(g.map.t[ev.i]===3){g.map.t[ev.i]=0;g.map.groundDirty=true;}}
+        else if(g.map.crates[ev.i]) (g.map.crates[ev.i].dead = true), (g.map.t[ev.i] = 0);
+        break;
       case "cards": if (ev.pid === me.id) { g.cardOffers[ev.pid] = ev.ids; g.onUi("cards", ev.pid); } break;
       case "over": g.phase = "over"; setTimeout(() => g.onUi("over"), 1200); break;
       case "win": g.onUi("win"); break;
@@ -560,6 +593,7 @@ function predictAttack(g, me, dt) {
   const aim = inp.aim != null ? inp.aim : tgt ? angTo(me.x, me.y - 18, tgt.x, tgt.y - (tgt.r || 12)) : null;
   if (aim != null && (inp.atk || me.castT > 0)) me.face = aim;
   else if (me.moving) me.face = Math.atan2(inp.my, inp.mx);
+  if(me.mounted)return; // mounted projectiles arrive from the host, never duplicate prediction
   if (!inp.atk) {
     me.idleP = (me.idleP || 0) + dt;
     if (me.idleP > 0.5) me.rampP = 0;
@@ -614,6 +648,7 @@ function clientUpdate(g, me, dt) {
   g.updateBullets(dt);
   for (const z of g.zones) (z.t += dt), (z.life -= dt);
   for (const q of g.pickups) q.t += dt;
+  animateClientPets(g,dt);
 }
 
 /** a kit received from another player: only known talents, sane levels */
@@ -626,6 +661,7 @@ function cleanKit(k) {
   }
   out.core = k.core ? 1 : 0;
   out.level = levelBonuses(k.level).level;
+  out.pet = validPet(k.pet);
   if (Object.keys(out.eq).length > LOADOUT_SLOTS) out.eq = {};
   out.cards = Array.isArray(k.cards) ? k.cards.filter((c) => typeof c === "string").slice(0, 40) : [];
   return out;

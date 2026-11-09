@@ -1,0 +1,42 @@
+{
+  "source_preview_commit": "476dcae50bfefc39eb8bf2c9136188e50b3f986c",
+  "formal_base_commit": "8560946bb3b8051966077bc912ffc857eacc272c",
+  "user_authorization": "2026-11-09 当前明确要求同步本次预览内容至正式版",
+  "identity_files_preserved": 20,
+  "journal_and_archives_preserved_before_new_entries": true,
+  "old_glyphs_shape_and_advance_preserved": 1132,
+  "new_glyphs": 46,
+  "retained_legacy_only_glyphs": [
+    "序",
+    "顺"
+  ],
+  "changed_or_new_web_files": 47,
+  "runtime_manifest": "20261109.0903-d25e40",
+  "runtime_files": 84,
+  "checks_passed": [
+    "pet-gameplay",
+    "mounted-attack-paths",
+    "gpt-skill-movement",
+    "exchange-layout",
+    "wall-colour",
+    "pet-network (two local BroadcastChannel players)",
+    "followers-hd",
+    "pet-new-mounts",
+    "endless-empty-gacha",
+    "endless-stage-balance",
+    "pet-dragon-rework",
+    "pet-combat-revision",
+    "pet-published (bundled lobby, three trials, mount/dismount)",
+    "worklog-write (19 isolated Git cases)",
+    "worklog-data",
+    "update-integrity (Windows fixture and dist/docs files)",
+    "formal identity and old glyph checks",
+    "local Markdown links"
+  ],
+  "limits": [
+    "未做实体手机或公网联机实测",
+    "无尽数值检查是固定构筑模拟，不是真人胜率",
+    "未等待或核实推送后CI/CD结果"
+  ],
+  "runtime_source_provenance": "原图、PixelLab任务和完整源帧仍保留预览仓；正式仓接入相同运行素材和说明，未复制全部生成历史。"
+}
