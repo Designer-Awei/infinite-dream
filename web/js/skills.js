@@ -1,8 +1,8 @@
 // The six girls' kits: normal attacks, small skills (K) and ultimates (L), plus fusion bullets.
 import { CHARS, ELEM } from "./data.js";
 import { dist, angTo, TAU } from "./util.js";
-import { BLOCKS_SHOT, tileAt } from "./map.js";
-import { mountedAttack, mountedUlt } from "./pets.js";
+import { BLOCKS_SHOT, WALL, tileAt, moveCircle } from "./map.js";
+import { mountedAttack, mountedUlt, overheadY } from "./pets.js";
 
 const MUZZLE = 20; // bullets leave from chest height
 
@@ -29,16 +29,19 @@ export function fireAttack(g, p, a, target) {
   if (p.cid === "gpt" && p.buff.ultOn > 0) {
     const len = c.atk.range * s.range * 1.1, x0 = p.x, y0 = p.y - MUZZLE;
     let x1 = x0 + Math.cos(a) * len, y1 = y0 + Math.sin(a) * len;
-    // stop at walls
-    for (let d = 8; d < len; d += 8) {
-      const x = x0 + Math.cos(a) * d, y = y0 + Math.sin(a) * d;
-      if (BLOCKS_SHOT(tileAt(g.map, x, y))) {
+    // full pierce: crates and barrels on the path all take the hit and the beam goes on; only a wall stops it
+    const crossed = new Set();
+    for (let d = 8; d < len; d += 4) {
+      const x = x0 + Math.cos(a) * d, y = y0 + Math.sin(a) * d, t = tileAt(g.map, x, y);
+      if (t === WALL) {
         x1 = x;
         y1 = y;
-        // the beam stops at the first blocking tile: a crate or barrel there takes the hit
-        const ti = Math.floor(y / 32) * g.map.W + Math.floor(x / 32);
-        if (g.host && g.map.crates[ti]) g.damageTile(ti, c.atk.dmg * 1.6 * k, p);
         break;
+      }
+      const ti = Math.floor(y / 32) * g.map.W + Math.floor(x / 32);
+      if (BLOCKS_SHOT(t) && !crossed.has(ti)) {
+        crossed.add(ti);
+        if (g.host && g.map.crates[ti]) g.damageTile(ti, c.atk.dmg * 1.6 * k, p);
       }
     }
     g.line(x0, y0, x1, y1, "#e8dcff", 4, 0.12, "beam");
@@ -176,36 +179,60 @@ export function castSkill(g, p, cid, a, target, pw = 1) {
       break;
     }
     case "gpt": {
-      p.buff.breath = 1.2;
-      const f = g.vfx("fire/fire-breath", p.x + Math.cos(a) * 8, p.y - 18, { palette: ["#0e0618", "#24103e", "#3e1e6e", "#6a3eb0", "#9b6cf0", "#c9a8ff", "#efe4ff", "#ffffff", "#ffffff"], angle: a, life: 1.2, opts: { speed: 260 } });
-      let tick = 0;
+      // 龙跃突刺: she leaps forward along the aim (≈115 px, invulnerable), every foe on the path takes a thrust
+      // and a 灼印; non-boss foes are caught on the spearhead and dragged along to the landing spot (bosses are
+      // flung aside), where the dragon flame bursts on the whole pile.
+      p.dashDx = Math.cos(a);
+      p.dashDy = Math.sin(a);
+      p.dashT = 0.22;
+      p.lastDash = g.time;
+      p.invuln = Math.max(p.invuln, 0.34);
+      p.face = a;
+      const hit = new Set(), held = [];
+      // the spot held foes are pulled to: just ahead of the spearhead, a little fanned out so they don't stack
+      const tip = (i) => {
+        const sp = (i % 2 ? 1 : -1) * Math.ceil(i / 2) * 7;
+        return { x: p.x + Math.cos(a) * 18 - Math.sin(a) * sp, y: p.y + Math.sin(a) * 12 + Math.cos(a) * sp };
+      };
+      let landed = false;
+      const pull = (dt, k) => !landed && held.forEach((e, i) => {
+        if (e.dead) return;
+        const t = tip(i);
+        e.kbx = e.kby = 0;
+        e.stunT = Math.max(e.stunT || 0, 0.35);
+        moveCircle(g.map, e, (t.x - e.x) * k, (t.y - e.y) * k, !!e.def.fly);
+      });
       g.addZone({
-        kind: "breath", x: p.x, y: p.y, r: 0, life: 1.2, side: "p", owner: p.id,
+        kind: "lance", x: p.x, y: p.y, r: 0, life: 0.3, side: "p", owner: p.id,
         update: (z, dt) => {
-          const tg = p.target;
-          const aa = tg ? angTo(p.x, p.y - 18, tg.x, tg.y - 10) : p.face;
-          if (f) {
-            f.options.x = p.x + Math.cos(aa) * 8;
-            f.options.y = p.y - 18;
-            f.options.angle = aa;
-          }
-          p.face = aa;
-          tick += dt;
-          if (tick < 0.15) return;
-          tick = 0;
           for (const e of g.enemies) {
-            if (e.dead || e.spawnT > 0) continue;
-            const d = dist(p.x, p.y, e.x, e.y);
-            if (d > 110 + e.r) continue;
-            const da = Math.abs(((angTo(p.x, p.y, e.x, e.y) - aa + Math.PI * 3) % TAU) - Math.PI);
-            if (da > 0.5) continue;
-            g.hit(e, 3 * pw, { p, elem: "dragon", noCrit: false });
-            e.burnT = 2;
-            e.burnDps = 2.5 * pw;
+            if (e.dead || e.spawnT > 0 || hit.has(e) || dist(p.x, p.y - 10, e.x, e.y - e.r) > e.r + 24) continue;
+            hit.add(e);
+            g.hit(e, 9 * pw, { p, elem: "dragon" });
+            g.fx.spawn("impacts/hit-spark", e.x, e.y - e.r, { angle: a + Math.PI, palette: pal.slice(1, 8), light: 0.8, opts: { height: 0 } });
+            if (!e.boss) held.push(e);
+            else {
+              // bosses can't be carried: flung to the side of her path
+              const side = Math.sign(Math.cos(a) * (e.y - p.y) - Math.sin(a) * (e.x - p.x)) || 1;
+              g.knock(e, e.x + Math.sin(a) * side * 20, e.y - Math.cos(a) * side * 20, 240);
+            }
           }
-          if (g.pvp) for (const o of g.players) if (o !== p && !o.downed && dist(p.x, p.y, o.x, o.y) < 110 && Math.abs(((angTo(p.x, p.y, o.x, o.y) - aa + Math.PI * 3) % TAU) - Math.PI) < 0.5) g.hit(o, 3 * pw, { p });
-          g.hitTilesIn(p.x, p.y, 110, 6 * pw, p, [aa, 0.5]); // crates and barrels in the breath
+          pull(dt, Math.min(1, dt * 30));
+          if (g.pvp) for (const o of g.players) if (o !== p && !o.downed && !hit.has(o) && dist(p.x, p.y, o.x, o.y) < 30) (hit.add(o), g.hit(o, 9 * pw, { p }));
         },
+      });
+      g.after(0.24, () => {
+        if (p.dead || p.downed) return;
+        pull(0, 1); // the pile lands with her, then is let go
+        landed = true;
+        const bx = p.x + Math.cos(a) * 16, by = p.y - 8 + Math.sin(a) * 12;
+        g.vfx("explosions/plasma-explosion", bx, by, { palette: pal, life: 0.4 });
+        g.line(bx, by, bx, by, ELEM.dragon.glow, 30, 0.3, "spark");
+        for (const o of g.enemiesNear(bx, by, 54)) g.hit(o, 12 * pw, { p, elem: "dragon" });
+        if (g.pvp) for (const o of g.players) if (o !== p && !o.downed && dist(bx, by, o.x, o.y) < 54) g.hit(o, 12 * pw, { p });
+        g.hitTilesIn(bx, by, 54, 14 * pw, p);
+        g.shake = Math.max(g.shake || 0, 4);
+        g.sound("shoot_dragon", 0.05);
       });
       break;
     }
@@ -281,7 +308,7 @@ export function castUlt(g, p, a, target) {
   if (mountedUlt(g, p, a, target)) return;
   const pal = ELEM[CHARS[p.cid].elem].ramp;
   const tx = target ? target.x : p.x + Math.cos(a) * 130, ty = target ? target.y : p.y + Math.sin(a) * 130;
-  g.text(p.x, p.y - 84, CHARS[p.cid].ult.name, ELEM[CHARS[p.cid].elem].glow, 1.5, 1.2);
+  g.text(p.x, overheadY(p), CHARS[p.cid].ult.name, ELEM[CHARS[p.cid].elem].glow, 1.5, 1.2);
   switch (p.cid) {
     case "deepseek": {
       const d = Math.min(200, dist(p.x, p.y, tx, ty)), aa = angTo(p.x, p.y, tx, ty), cx = p.x + Math.cos(aa) * d, cy = p.y + Math.sin(aa) * d;

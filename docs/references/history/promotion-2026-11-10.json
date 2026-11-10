@@ -1,0 +1,41 @@
+{
+ "source_preview_commit": "161916fa9cfde23e9190e225a70374dfb7d8d251",
+ "previous_source_preview_commit": "476dcae50bfefc39eb8bf2c9136188e50b3f986c",
+ "formal_base_commit": "213f50b4fcda7f49d296e9e065ded540edbc0037",
+ "user_authorization": "2026-11-10 用户当前明确要求「先把正式版内容同步下」",
+ "scope": "web/ 运行代码与素材、tools/build_girls_hd.py、3 个新测试；重建 docs/ 网站文件",
+ "identity_preserved": [
+  "web/js/ui.js 分享/原生地址",
+  "web/js/updater.js 更新源",
+  "README.md",
+  "docs/references/GAMEPLAY.md（只新增同步说明）",
+  ".github/workflows",
+  "app/native",
+  "capacitor.config.json",
+  "package.json",
+  "正式版测试地址"
+ ],
+ "not_synced": [
+  "预览仓 art/ 清理与 docs/rules/ASSETS.md、test/asset-policy.py（预览仓素材政策，正式仓 art/ 保持原状）",
+  "tools/pixellab 生成脚本与 PIXELLAB_PET_WORKFLOW.md（生成历史留预览仓）"
+ ],
+ "font": {
+  "glyphs_before": 1178,
+  "glyphs_after": 1189,
+  "old_glyphs_lost": 0,
+  "old_glyphs_changed": 0
+ },
+ "checks_passed": [
+  "petpanel",
+  "ride-multitouch",
+  "mine-controls",
+  "吉普缇小技能吸附与龙束穿透脚本",
+  "save/restore 配平（喷火闪烁）",
+  "护盾包裹三角色",
+  "打包后 docs/ HUD 图标"
+ ],
+ "limits": [
+  "未做实体手机或公网联机实测",
+  "未等待或核实推送后 CI/CD 结果"
+ ]
+}
