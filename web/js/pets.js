@@ -1,5 +1,6 @@
 // Host-authoritative companions; clients render plain snapshot state.
 import { PETS, validPet, FOX_RIDE_RANGE, PHOENIX_STORM_RADIUS, DRAGON_FIREBALL, DRAGON_TORNADO } from './petdata.js';
+import { PET_SKINS, skinnedFrame, drawAura } from './petskins.js';
 import { A } from './assets.js';
 import { los, tileAt, BLOCKS_SHOT, WALL, BUSH } from './map.js';
 import { updateCompanion, PET_MOTION } from './petai.js';
@@ -9,7 +10,7 @@ import { flyingMount, flightLift, safeLanding, clearLanding, inFire, fireHalfWid
 export function attachPet(game,p,value){
   const pet=!game.pvp&&validPet(value);if(!pet)return;
   p.pet={...pet,x:p.x,y:p.y,r:8,face:0,anim:0,walkT:0,moving:false,castT:0,castMax:0,attackCd:.5,skillCd:2,auraCd:10,blinkT:0,warpSeq:0,route:[],room:-1};
-  const def=PETS[pet.id];p.st[def.stat]*=1+def.bonus[pet.stage-1];p.mounted=false;
+  const def=PETS[pet.id];p.st[def.stat]*=1+def.bonus[pet.stage-1]*(pet.tr?.carry||1);p.mounted=false; // 词条「共鸣」放大携带加成
 }
 export function resetPet(game,p){if(p.pet)Object.assign(p.pet,{x:p.x,y:p.y+12,route:[],room:game.roomIdx,castT:0,moving:false,blinkT:0,targetId:null,state:'idle',returning:false,nav:null,navCd:0,stuck:0});}
 export function petScale(p){return p.mounted?1.04:[1.08,.95,.85][p.pet.stage-1];}
@@ -116,7 +117,7 @@ function strike(game,p,x,y,r,damage,ultimate=false,bounds=null){
   game.sound('shoot_thunder',.1);
 }
 function shot(game,p,angle,mounted=false){
-  const q=p.pet,def=PETS[q.id],m=petMuzzle(p),dmg=mounted?CHARS[p.cid].atk.dmg*1.25:5+q.stage*4;
+  const q=p.pet,def=PETS[q.id],m=petMuzzle(p),dmg=(mounted?CHARS[p.cid].atk.dmg*1.25:5+q.stage*4)*(q.tr?.dmg||1);
   game.bullets.push(game.mkBullet(p,{x:m.x,y:m.y,h:q.y-m.y,a:angle,spd:q.id==='fox'?360:290,dmg,elem:def.elem,kind:'pet_'+q.id,r:q.id==='dragon'?5:3,life:1.15,pierce:mounted&&q.id==='phoenix'?2:0,slow:q.id==='phoenix'?.5:0}));
   game.sound(q.id==='fox'?'shoot_thunder':q.id==='phoenix'?'shoot_water':'shoot_dragon',.12);
 }
@@ -188,12 +189,12 @@ function skill(game,p,target,angle,ultimate=false){
     const length=ultimate?320:180+q.stage*18,width=ultimate?64:25+q.stage*5,duration=ultimate?3.2:1.6;
     // the hit area stays the pixel cone; what you see is pixelfx's living fire-breath (billows, tongues, smoke),
     // started after the wind-up and sized to the cone
-    channel(game,p,'fire',{a:aim,x:m.x,y:m.y,length,width,damage:ultimate?22:5+q.stage*3,fx:true},duration,ultimate);
+    channel(game,p,'fire',{a:aim,x:m.x,y:m.y,length,width,damage:(ultimate?22:5+q.stage*3)*(q.tr?.dmg||1),fx:true},duration,ultimate);
     game.after(.33,()=>{if(q!==p.pet||p.dead||p.downed||!(q.castT>0))return;const n=petMuzzle(p);
       game.vfx('fire/fire-breath',n.x,n.y,{angle:aim,life:duration,opts:{speed:length*1.5,spread:Math.atan(width/length)*1.3}});});
   }
-  else if(q.id==='phoenix')channel(game,p,'snow',{x:ultimate?p.x:target?.x??p.x+Math.cos(angle)*140,y:ultimate?p.y:target?.y??p.y+Math.sin(angle)*140,r:ultimate?PHOENIX_STORM_RADIUS:54+q.stage*10,damage:ultimate?18:5+q.stage*3,follow:ultimate},ultimate?5:3.2,ultimate);
-  else{q.castT=q.castMax=1.1;game.line(m.x,m.y,m.x+4,m.y-56,'#ffe36a',2,.3,'bolt',null,.08);game.line(m.x,m.y,m.x,m.y,'#ffe36a',10,.3,'spark');game.after(.3,()=>{if(!p.dead&&!p.downed&&q===p.pet)lightning(game,p,2+q.stage,10+q.stage*5,petMuzzle(p));});}
+  else if(q.id==='phoenix')channel(game,p,'snow',{x:ultimate?p.x:target?.x??p.x+Math.cos(angle)*140,y:ultimate?p.y:target?.y??p.y+Math.sin(angle)*140,r:ultimate?PHOENIX_STORM_RADIUS:54+q.stage*10,damage:(ultimate?18:5+q.stage*3)*(q.tr?.dmg||1),follow:ultimate},ultimate?5:3.2,ultimate);
+  else{q.castT=q.castMax=1.1;game.line(m.x,m.y,m.x+4,m.y-56,'#ffe36a',2,.3,'bolt',null,.08);game.line(m.x,m.y,m.x,m.y,'#ffe36a',10,.3,'spark');game.after(.3,()=>{if(!p.dead&&!p.downed&&q===p.pet)lightning(game,p,2+q.stage,(10+q.stage*5)*(q.tr?.dmg||1),petMuzzle(p));});}
 }
 export function mountedUlt(game,p,angle,target){
   if(!p.mounted||!p.pet)return false;if(!game.host)return true;
@@ -268,7 +269,7 @@ export function updatePets(game,dt){
     if(q.id==='fox'&&game.phase==='fight'){q.auraCd=(q.auraCd??10)-dt;if(q.auraCd<=0){q.auraCd+=10;game.bullets=game.bullets.filter(b=>b.side!=='e');pulse(game,p,'purge',q.x,q.y,Math.hypot(game.map.pxW,game.map.pxH),.7);}}
     q.attackCd-=dt;q.skillCd-=dt;if(p.mounted||q.castT>0||game.phase!=='fight')continue;
     if(!target)continue;const facing=Math.atan2(target.y-q.y,target.x-q.x);q.face=facing;const m=petMuzzle(p),a=Math.atan2(target.y-target.r-m.y,target.x-m.x);
-    if(q.skillCd<=0){skill(game,p,target,facing);q.skillCd=PETS[q.id].skillCd;}else if(q.attackCd<=0){shot(game,p,a);q.attackCd=q.id==='fox'?.7:1.1;}
+    if(q.skillCd<=0){skill(game,p,target,facing);q.skillCd=PETS[q.id].skillCd*(q.tr?.cd||1);}else if(q.attackCd<=0){shot(game,p,a);q.attackCd=(q.id==='fox'?.7:1.1)/(q.tr?.rate||1);}
   }
   for(const f of game.petFields){f.t+=dt;f.life-=dt;const p=game.player(f.owner);if(!p?.pet||p.dead||p.downed){f.life=0;continue;}
     if(f.follow){f.x=p.x;f.y=p.y;}
@@ -310,7 +311,9 @@ export function drawPet(ctx,player,time,ride=false) {
   if(!flyingMount(player)){ctx.fillStyle='rgba(15,12,28,.28)';ctx.beginPath();ctx.ellipse(0,0,ride?29:19,ride?9:6,0,0,Math.PI*2);ctx.fill();}
   ctx.translate(0,-flightLift(player));
   const cw=actor.cw||assets.meta.cw,ch=actor.ch||assets.meta.ch,anchor=actor.anchor||[cw/2,ch-8];
-  ctx.imageSmoothingEnabled=!!actor.native_resolution;if(actor.native_resolution)ctx.imageSmoothingQuality='high';ctx.drawImage(assets.images?.[actor.page||0]||assets.image,pos[0],pos[1],cw,ch,-anchor[0]*scale,-anchor[1]*scale,cw*scale,ch*scale);ctx.restore();
+  ctx.imageSmoothingEnabled=!!actor.native_resolution;if(actor.native_resolution)ctx.imageSmoothingQuality='high';const img=assets.images?.[actor.page||0]||assets.image,skin=q.skin&&PET_SKINS[q.skin];
+  if(skin){const cell=skinnedFrame(q.skin,img,pos[0],pos[1],cw,ch,time);ctx.drawImage(cell,-anchor[0]*scale,-anchor[1]*scale,cw*scale,ch*scale);if(skin.aura)drawAura(ctx,skin.aura,cell,anchor,scale,time);} // 换皮：代码改色 + 代码光环
+  else ctx.drawImage(img,pos[0],pos[1],cw,ch,-anchor[0]*scale,-anchor[1]*scale,cw*scale,ch*scale);ctx.restore();
 }
 export function drawMountedPet(ctx,player,time,shadow=true) {
   const mount=mountAsset(player),actor=mount?.meta.actors[player.cid];if(!actor)return false;

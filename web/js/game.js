@@ -1,7 +1,8 @@
 // The simulation: players, enemies, bullets, zones, pickups, rooms. The host (or solo) runs it; clients mirror it.
 import { T, BAL, CHARS, CHAR_ORDER, ELEM, ELEM_KEYS, REACTIONS, reactionKey, ENEMIES, RUN, ITEMS, ITEM_WEIGHTS, CARDS, fusionCards, RARITY, REWARD, MAPS, endlessRoom, PVP_MODES } from "./data.js";
+import { makeRoute, nodeRoom, EVENTS, CHALLENGES, NODE, PORTAL_PAL, NPCS } from "./route.js";
 import { clamp, dist, dist2, angTo, R, rng, nid, TAU } from "./util.js";
-import { generateRoom, renderGround, tileAt, mudAt, moveCircle, los, flowField, flowDir, WALL, WATER, BUSH, CRATE, BARREL, BLOCKS_SHOT, DRAGON_WALL_HP } from "./map.js";
+import { generateRoom, renderGround, F as FLOOR, tileAt, mudAt, moveCircle, los, flowField, flowDir, WALL, WATER, BUSH, CRATE, BARREL, BLOCKS_SHOT, DRAGON_WALL_HP } from "./map.js";
 import { sfx } from "./audio.js";
 import { castSkill, castUlt, fireAttack, onBulletHit } from "./skills.js";
 import { updateEnemy, spawnBossAdds } from "./enemies.js";
@@ -9,7 +10,7 @@ import { rollCurio, rareOf, CURIOS } from "./codex.js";
 import { levelBonuses } from "./progression.js";
 import { attachPet, resetPet, updatePets, toggleMount, releaseEmptyBlink } from "./pets.js";
 import { flyingMount, visualTilesIn } from './petcombat.js';
-import { FOX_RIDE_RANGE, DRAGON_FIREBALL } from './petdata.js';
+import { FOX_RIDE_RANGE, DRAGON_FIREBALL, PETS } from './petdata.js';
 
 import { endlessEnemyHP, endlessEnemyHit, cubeDamage, cubeHealth, reactionRoom } from "./endless-balance.js";
 
@@ -103,7 +104,65 @@ export class Game {
   // ------------------------------------------------------------ rooms
   startRun() {
     this.roomIdx = -1;
+    // 梦境航线: solo main-map runs choose their own way (co-op, endless, arena and the pet trial keep the fixed run)
+    this.route = this.mode === "solo" && !this.endless && !this.pvp && !this.petTrial && !this.opt.noRoute ? makeRoute(this.seed) : null;
     this.nextRoom();
+  }
+  /** after a room: a fork was chosen by walking into one of its portals; otherwise the route goes on by itself */
+  advance(to = null) {
+    const R = this.route;
+    if (!R) return this.nextRoom();
+    const opts = this.routeNext();
+    if (to != null && opts.includes(to)) return this.chooseRoute(to, opts.length <= 1);
+    this.chooseRoute(opts[0] ?? 0, true);
+  }
+  /** node indices reachable from the current node in the next column ([] off-route or on the last step) */
+  routeNext() {
+    const R = this.route;
+    if (!R || R.step >= R.cols.length - 1) return [];
+    return R.cols[R.step][R.at].next || [];
+  }
+  chooseRoute(j, auto = false) {
+    const R = this.route;
+    if (!R || !(R.cols[R.step][R.at].next || [0]).includes(j)) return;
+    R.step++;
+    R.at = j;
+    R.path.push(j);
+    if (!auto) R.choices++;
+    this.nextRoom();
+  }
+  /** 实时进化: the pet grows a stage in the run — its carry bonus steps up, a light pillar and a burst play on it */
+  evolvePetLive(p, stage) {
+    const q = p.pet;
+    if (!q || stage <= q.stage) return;
+    const def = PETS[q.id], k = q.tr?.carry || 1, name = ["幼年", "成长", "终极"][stage - 1];
+    p.st[def.stat] *= (1 + def.bonus[stage - 1] * k) / (1 + def.bonus[q.stage - 1] * k);
+    q.stage = stage;
+    this.vfx("holy/holy-pillar", q.x, q.y + 4, { life: 1.4 });
+    this.vfx("pickups/collect-burst", q.x, q.y - 16, {});
+    this.sound("ssr");
+    this.text(q.x, q.y - 50, `进化为${name}！`, def.color, 1.3, 1.8);
+    this.banner = { text: "宠物进化！", sub: `${def.name} · ${name}`, t: 2 };
+  }
+  /** a fork on the route: one coloured portal per next room, side by side at (x, y) */
+  openForkPortals(x, y) {
+    const R = this.route, opts = this.routeNext(), n = opts.length, gap = 96;
+    this.portals = opts.map((j, i) => {
+      const node = R.cols[R.step + 1][j], px = x + (i - (n - 1) / 2) * gap;
+      this.vfx("arcane/portal", px, y + 8, { layer: "back", palette: PORTAL_PAL[node.kind] || PORTAL_PAL.combat });
+      return { x: px, y, t: 0, to: j, kind: node.kind, name: NODE[node.kind].name, sub: node.challenge ? CHALLENGES[node.challenge].name : "", col: NODE[node.kind].col };
+    });
+  }
+  /** the fork portals stand in a row through the room's centre: clear that strip before the ground is drawn */
+  clearForkStrip() {
+    const m = this.map, cx = m.centerT.x, cy = m.centerT.y;
+    for (let y = cy - 2; y <= cy + 1; y++) for (let x = cx - 4; x <= cx + 4; x++) if (x > 0 && y > 0 && x < m.W - 1 && y < m.H - 1) {
+      const i = y * m.W + x;
+      m.t[i] = FLOOR;
+      m.mud[i] = 0;
+      delete m.crates[i];
+    }
+    m.spikes = m.spikes.filter((q) => m.t[q.y * m.W + q.x] === FLOOR);
   }
   /** host: apply every player's equipped SSR talents at the start of a run / match */
   applyLoadouts() {
@@ -136,6 +195,7 @@ export class Game {
     if (this.host) this.emit({ t: "room", idx: this.roomIdx, seed: this.seed });
   }
   roomDef(i) {
+    if (this.route) return this.mapRoom(nodeRoom(this.route.cols[i][this.route.at], i, this.seed));
     if (this.endless) {
       const d = endlessRoom(i, this.seed), md = this.roomMap(i);
       return d && d.kind === "boss" && md.boss ? { ...d, boss: md.boss } : d;
@@ -173,8 +233,13 @@ export class Game {
     const md = this.roomMap(idx);
     // every room uses its own map's look and floor hazard (the boss fights on home ground); shops have no hazard patches
     this.hazard = md.hazard;
-    this.map = generateRoom(this.pvp ? "combat" : kind, this.seed + idx * 1013, md.theme, { hazard: this.hazard, koth: this.pvp && this.opt.pvpMode === "koth" });
-    if (kind === "shop") this.map.mud.fill(0);
+    this.map = generateRoom(this.pvp ? "combat" : kind === "event" ? "shop" : kind, this.seed + idx * 1013, md.theme, { hazard: this.hazard, koth: this.pvp && this.opt.pvpMode === "koth" });
+    if (kind === "shop" || kind === "event") this.map.mud.fill(0);
+    // a fork after this room: its portals stand in a row through the centre, so keep that strip open
+    if (this.routeNext().length > 1 && kind !== "shop") this.clearForkStrip();
+    this.roomT = 0;
+    this.eventDone = false;
+    this.leaving = false; // a portal can't stay half-used across rooms (its reset timer is cleared with the room)
     this.ground = renderGround(this.map);
     this.enemies.length = 0;
     this.bullets.length = 0;
@@ -187,6 +252,8 @@ export class Game {
     this.wave = -1;
     this.waveDelay = 1.6;
     this.portal = null;
+    this.portals = null;
+    this.npc = null;
     this.chest = null;
     this.shovelItem = null;
     this.cardOffers = {};
@@ -229,10 +296,16 @@ export class Game {
         if (s) this.spawnItem(rr.weighted(Object.keys(ITEM_WEIGHTS), (k) => ITEM_WEIGHTS[k]), s.x, s.y, true);
       }
     if (kind === "shop") this.setupShop();
-    this.phase = kind === "shop" ? "shop" : "fight";
+    this.phase = kind === "shop" ? "shop" : kind === "event" ? "event" : "fight";
     if (this.pvp) this.phase = "pvp";
+    // an event room: a visitor stands in the middle; walk up and press attack to talk
+    if (kind === "event") this.npc = { x: this.map.center.x, y: this.map.center.y - 6, id: NPCS[def.event] ? def.event : "altar", talked: false };
     const floor = this.endless ? `无尽回廊 · 第 ${idx + 1} 层` : `第 ${idx + 1} 层 · ${md.name}`;
     this.banner = { text: this.pvp ? `竞技场 · ${this.pvpRule.name}` : kind === "boss" ? (this.endless ? `第 ${idx + 1} 层 · 首领` : `首领 · ${(ENEMIES[def.boss] || ENEMIES.boss_eye).name}`) : kind === "shop" ? "补给站" : floor, sub: this.pvp ? this.pvpRule.goalText : kind === "shop" ? "扭蛋机 / 补给 · 准备好后进入传送门" : kind === "boss" ? "击败它！" : md.hazardText || "清除所有敌人", t: 2.4 };
+    if (def.event) this.banner = { text: EVENTS[def.event].name, sub: `走近${NPCS[def.event].name}，按攻击键交谈`, t: 2.4 };
+    else if (def.challenge) this.banner = { text: `挑战 · ${CHALLENGES[def.challenge].name}`, sub: CHALLENGES[def.challenge].desc + " · 清场额外选一次卡", t: 3 };
+    else if (def.treasure) this.banner = { text: "宝藏房", sub: "稀有怪物出没，道具更多", t: 2.4 };
+    else if (def.elite) this.banner = { text: `第 ${idx + 1} 层 · 精英`, sub: "敌人更强，奖励不变", t: 2.4 };
     if (kind === "boss") sfx("boss");
     this.flowT = 0;
     this.onUi("room");
@@ -246,8 +319,11 @@ export class Game {
       { id: "cube", name: "算力方块", price: 25, x: c.x + s * 1.6, y: c.y - 20 },
     ];
     this.shop = items.map((it) => ({ ...it, id2: nid() }));
-    this.portal = { x: c.x, y: c.y + 110, t: 0 };
-    this.fx.spawn("arcane/portal", this.portal.x, this.portal.y + 8, { layer: "back" });
+    if (this.routeNext().length > 1) this.openForkPortals(c.x, c.y + 110);
+    else {
+      this.portal = { x: c.x, y: c.y + 110, t: 0 };
+      this.fx.spawn("arcane/portal", this.portal.x, this.portal.y + 8, { layer: "back" });
+    }
     // a free supply chest
     this.chest = { x: c.x, y: c.y + 40, opened: false };
   }
@@ -273,7 +349,7 @@ export class Game {
     });
     // now and then the map's rare monster joins the first wave of a combat room (twice per chapter / ten endless floors)
     const rare = !this.pvp && this.host && this.wave === 0 && this.room.kind === "combat" && this.raresSeen < 2 && rareOf(this.roomMap(this.roomIdx).id);
-    if (rare && rr() < (this.endless ? 0.05 : 0.08)) {
+    if (rare && (this.room.treasure || rr() < (this.endless ? 0.05 : 0.08))) {
       const s = spots[list.length % spots.length] || this.map.center;
       this.spawnEnemy(rare, s.x, s.y, false, 1);
       this.raresSeen++;
@@ -295,6 +371,7 @@ export class Game {
       marks: {}, tide: 0, tideBy: null, sun: 0, bubble: 0, inkMark: 0, inkCd: 0, burnT: 0, burnDps: 0, slowT: 0, slowK: 0, stunT: 0, freezeT: 0, vulnT: 0, burnTick: 0,
       spawnT: delay, wob: Math.random() * 6, lastBy: null,
     };
+    e.hp *= this.curseHp || 1; // 诅咒宝箱
     e.maxHp = e.hp;
     this.seen[type] = 1;
     this.enemies.push(e);
@@ -1018,6 +1095,18 @@ export class Game {
   }
 
   updateFlow(dt) {
+    if (this.phase === "fight" && this.room.timeLimit && !this.room.failed) {
+      this.roomT = (this.roomT || 0) + dt;
+      if (this.roomT >= this.room.timeLimit) {
+        // time's up: the rest fade away, the room still clears but without the bonus pick
+        this.room.failed = true;
+        for (const e of this.enemies) this.vfx("spawn/poof", e.x, e.y + 2, {});
+        this.enemies.length = 0;
+        this.wave = (this.room.waves || []).length;
+        this.waveDelay = 0.4;
+        this.banner = { text: "超时！", sub: "敌人消散，没有额外选卡", t: 2 };
+      }
+    }
     if (this.phase === "fight") {
       const alive = this.enemies.length;
       const more = !this.room.boss && this.wave >= 0 && this.wave < (this.room.waves || []).length - 1;
@@ -1088,6 +1177,24 @@ export class Game {
       this.cardsT = (this.cardsT || 0) + dt;
       if (this.cardsT > 30) for (const pid of Object.keys(this.cardOffers)) this.pickCard(+pid, this.cardOffers[pid][0]);
     } else this.cardsT = 0;
+    // fork portals: everyone alive standing in the same one takes that way
+    if (this.portals && this.phase !== "cards" && this.phase !== "win" && this.phase !== "over") {
+      const ps = this.alivePlayers();
+      for (const q of this.portals) {
+        q.t += dt;
+        if (!ps.length || q.t <= 0.8 || this.leaving || !ps.every((p) => dist(p.x, p.y, q.x, q.y) < 24)) continue;
+        this.leaving = true;
+        this.sound("portal");
+        this.onUi("transition");
+        this.after(0.7, () => {
+          this.leaving = false;
+          this.runStats.rooms = Math.max(this.runStats.rooms, this.roomIdx + 1);
+          for (const p of this.players) if (p.downed) this.revive(p, 0.5);
+          this.advance(q.to);
+        });
+        break;
+      }
+    }
     if (this.portal && this.phase !== "cards" && this.phase !== "win" && this.phase !== "over") {
       this.portal.t += dt;
       const ps = this.alivePlayers();
@@ -1102,7 +1209,7 @@ export class Game {
           this.runStats.rooms = Math.max(this.runStats.rooms, this.roomIdx + 1);
           // revive downed players between rooms
           for (const p of this.players) if (p.downed) this.revive(p, 0.5);
-          this.nextRoom();
+          this.advance();
         });
       }
     }
@@ -1160,6 +1267,12 @@ export class Game {
       return;
     }
     this.banner = { text: "清场完成！", sub: "打开补给箱选择技能卡", t: 2 };
+    if (this.room.challenge && !this.room.failed) {
+      // a challenge pays a second pick (SR or better), chained after the first like a start card
+      for (const p of rewardPlayers) p.startCards = (p.startCards || 0) + 1;
+      this.runStats.challenges = (this.runStats.challenges || 0) + 1;
+      this.banner = { text: "挑战成功！", sub: "打开补给箱，额外再选一次卡", t: 2.4 };
+    }
     const c = this.map.center;
     this.chest = { x: c.x, y: c.y + 38, opened: false };
     this.vfx("pickups/loot-beam", c.x, c.y + 44, { layer: "back", life: 2.5, opts: { item: false } });
@@ -1202,6 +1315,58 @@ export class Game {
     // Shop slots remain stable for network price snapshots; hide the depleted
     // machine per player without taking remaining cards away from teammates.
     return item.id !== "gacha" || this.cardPool(p).length > 0;
+  }
+  /** 事件房：玩家做出选择（host） */
+  resolveEvent(pid, k) {
+    const p = this.player(pid), ev = this.room && EVENTS[this.room.event], opt = ev && ev.options[k];
+    if (!p || !opt || this.eventDone) return;
+    this.eventDone = true;
+    const msg = opt.apply(this, p);
+    if (msg) this.text(p.x, p.y - 60, msg, "#ffe14a", 1.6);
+    if (this.npc) {
+      this.npc.open = false;
+      this.npc.done = true;
+      this.text(this.npc.x, this.npc.y - 70, NPCS[this.npc.id].bye, "#e8dcff", 1, 1.6);
+    }
+    this.runStats.events = (this.runStats.events || 0) + 1;
+    this.sound("card");
+    this.onUi("hud");
+    // a card offer from the event: the portal opens once it is picked
+    if (this.cardOffers[p.id]) this.phase = "cards";
+    else this.openPortal();
+  }
+  /** 骰子狐: roll the die for a bet on odd (true) or even, staking a share of the coins (30%~80%, 10% steps);
+   *  the dialog animates it, then calls settleDice */
+  rollDice(pid, odd, ratio = 0.5) {
+    const p = this.player(pid), nv = this.npc, ev = this.room && EVENTS[this.room.event];
+    if (!p || !nv || !ev?.dice || (nv.rounds || 0) >= ev.dice.rounds || p.coins <= 0 || nv.roll) return null;
+    const share = Math.min(0.8, Math.max(0.3, Math.round((+ratio || 0.5) * 10) / 10));
+    const face = 1 + Math.floor(Math.random() * 6);
+    nv.rounds = (nv.rounds || 0) + 1;
+    nv.roll = { face, odd, win: (face % 2 === 1) === odd, stake: Math.max(1, Math.round(p.coins * share)), share };
+    return nv.roll;
+  }
+  settleDice(pid) {
+    const p = this.player(pid), nv = this.npc, r = nv && nv.roll;
+    if (!p || !r) return;
+    nv.roll = null;
+    p.coins = Math.max(0, r.win ? p.coins + r.stake : p.coins - r.stake);
+    this.text(p.x, p.y - 60, `${r.win ? "+" : "-"}${r.stake} 金币`, r.win ? "#ffe14a" : "#ff8080", 1.4);
+    this.sound(r.win ? "coin" : "hurt");
+    if (nv.rounds === 1) this.runStats.events = (this.runStats.events || 0) + 1;
+    this.onUi("hud");
+  }
+  /** the event dialog closed without a final choice (骰子狐's 离开): the way on opens, the visitor stays until its rounds run out */
+  closeEvent() {
+    const nv = this.npc, ev = this.room && EVENTS[this.room.event];
+    if (!nv || this.eventDone) return;
+    nv.open = false;
+    if (ev?.dice && (nv.rounds || 0) >= ev.dice.rounds) {
+      this.eventDone = true;
+      nv.done = true;
+      this.text(nv.x, nv.y - 70, NPCS[nv.id].bye, "#e8dcff", 1, 1.6);
+    }
+    if (this.phase === "event") this.openPortal();
   }
   /** roll 3 card offers for a player (host) */
   offerCards(p, n = 3, rarityFloor = null) {
@@ -1246,6 +1411,12 @@ export class Game {
     }
     this.phase = "portal";
     const c = this.map.center;
+    // a fork on the route: one portal per way on, each in its room's colour
+    if (this.routeNext().length > 1) {
+      this.openForkPortals(c.x, c.y - 14);
+      this.banner = { text: "选择一扇传送门", sub: "颜色不同，通往的房间也不同", t: 2.4 };
+      return;
+    }
     // portal above, the (opened) chest below, so they never overlap
     this.portal = { x: c.x, y: c.y - 14, t: 0 };
     this.vfx("arcane/portal", this.portal.x, this.portal.y + 8, { layer: "back" });
@@ -1344,7 +1515,7 @@ export class Game {
     // shield regen
     p.lastHit += dt;
     if (p.lastHit > BAL.shieldDelay && p.shield < p.maxShield) {
-      p.shieldT += dt * p.st.shieldRegen;
+      p.shieldT += this.room && this.room.noShield ? 0 : dt * p.st.shieldRegen;
       if (p.shieldT >= BAL.shieldTick) (p.shieldT = 0), p.shield++;
     }
     // lava floor
@@ -1390,7 +1561,8 @@ export class Game {
 
     // attack
     p.atkCd -= dt;
-    if (inp.atk) {
+    // next to an event visitor the attack button talks instead of shooting
+    if (inp.atk && !(p.nearNpc && this.npc && !this.eventDone)) {
       p.idleFire = 0;
       if (p.cid === "grok") p.rampT = Math.min(2, p.rampT + dt);
       if (p.atkCd <= 0) {
@@ -1457,6 +1629,19 @@ export class Game {
     }
     // chest & shop interaction
     if (this.chest && !this.chest.opened && dist(p.x, p.y, this.chest.x, this.chest.y) < 30) this.openChest(p);
+    // event visitor: press attack next to it to talk (once per room)
+    const nv = this.npc;
+    if (nv && !this.eventDone && p.local) {
+      const near = dist(p.x, p.y, nv.x, nv.y + 6) < 34;
+      p.nearNpc = near;
+      if (near && inp.atk && !p.talkLock && !nv.open) {
+        nv.open = true;
+        nv.talked = true;
+        p.face = angTo(p.x, p.y, nv.x, nv.y);
+        this.onUi("event");
+      }
+      p.talkLock = !!inp.atk;
+    }
     if (this.shop && this.room.kind === "shop") {
       for (const it of this.shop) {
         if (!this.shopAvailable(p, it)) continue;

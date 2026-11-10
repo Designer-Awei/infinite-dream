@@ -15,9 +15,12 @@ import { T } from "./data.js";
 import { btn, toast, clear, showNet, showHelp, showUnlock, uiRoot } from "./ui.js";
 import { app, playMode, mapUnlocked, endlessUnlocked } from "./main.js";
 import { showPets } from "./petui.js";
+import { drawEgg } from "./petwh.js";
 import { petPortrait } from "./petdata.js";
 import { petState } from './petsave.js';
-import { petPreview } from './petpreview.js';
+import { petPreview, setPetPreview } from './petpreview.js';
+import { EGGS, PET_ITEMS, eggCount } from './petdata.js';
+import { stashExchange, readySlots } from './petsave.js';
 
 const q = (s, r) => r.querySelector(s);
 let entered = false; // full entrance animation only the first time per session
@@ -118,11 +121,14 @@ export function showLobby() {
   q(".pname", s).textContent = m.name;
   q(".name-pill", s).onclick = () => (sfx("click"), showRename(s));
   q(".set-btn", s).onclick = () => (sfx("click"), showSettings());
-  const pets=petState(),petId=pets.equipped||Object.keys(pets.owned)[0];
-  if(petId){
+  // the partner entry (宠物仓库): the carried pet (with its 异色), else the most grown one; an egg when there are only eggs
+  const pets=petState(),pet=pets.list.find((p)=>p.uid===pets.equipped)||pets.list[0];
+  const eggs=eggCount(pets)+pets.slots.filter(Boolean).length,eggKind=['hur','ur','base'].find((k)=>pets.eggs[k]>0)||'base';
+  if(pet||eggs){
     const entry=el('button','lb-pet pet-entry','<span class="lb-pet-preview"></span>');
-    entry.title='梦境伙伴';entry.setAttribute('aria-label','梦境伙伴');q('.lb-right',s).appendChild(entry);
-    petPreview(entry.querySelector('span'),petId,pets.owned[petId].stage,'lobby',true,false,true);
+    entry.title='宠物仓库';entry.setAttribute('aria-label','宠物仓库');q('.lb-right',s).appendChild(entry);
+    if(pet)setPetPreview(petPreview(entry.querySelector('span'),pet.id,pet.stage,'lobby',true,false,true),{skin:pet.skin});
+    else{const c=document.createElement('canvas');c.className='lb-pet-egg';drawEgg(c,0,eggKind);entry.querySelector('span').appendChild(c);}
     entry.onclick=()=>{sfx('click');showPets(()=>showLobby());};
   }
   wireCurrency(s);
@@ -171,7 +177,44 @@ export function showLobby() {
     const u = UNLOCKS[next], pr = unlockProgress(next);
     goal.innerHTML = `<img src="assets/portrait_${next}.png" alt=""><div class="g-tx"><b>下一个目标：解锁 ${CHARS[next].short}</b><div class="g-bar"><i style="width:${Math.round(pr * 100)}%"></i></div></div><small>${Math.min(m.stats[u.stat] || 0, u.need)}/${u.need}</small>`;
     goal.title = u.text;
-  } else goal.innerHTML = `<div class="g-tx"><b>全部角色已解锁 🎉</b><span>最远 ${m.stats.best}/7 · 通关 ${m.stats.bossKills} 次</span></div>`;
+  } else goal.innerHTML = `<div class="g-tx"><b>全部角色已解锁 🎉</b></div><small>通关 ${m.stats.bossKills} 次</small>`;
+  // the notice bar: eggs to hatch come first; otherwise it rotates the goal above with short tips, each a shortcut
+  {
+    const ps = petState(), ready = readySlots(ps), stock = eggCount(ps), free = ps.slots.some((x) => !x);
+    const msg = ready ? `${ready} 颗蛋可以孵化了` : stock && free ? `${stock} 颗宠物蛋待孵化` : "";
+    if (msg) {
+      const egg = document.createElement("canvas");
+      const readyKind = ps.slots.find((x) => x && x.t0 + x.dur <= Date.now())?.kind;
+      drawEgg(egg, ready ? 1 : 0, readyKind || ["hur", "ur", "base"].find((k) => ps.eggs[k] > 0) || "base");
+      goal.innerHTML = `<div class="g-tx"><b>${msg}</b></div><small class="g-go">去仓库 ▶</small>`;
+      goal.prepend(egg);
+      goal.classList.add("egg-note");
+      goal.title = "宠物仓库";
+      goal.onclick = () => (sfx("click"), showPets(() => showLobby()));
+    } else {
+      const first = goal.innerHTML, firstTitle = goal.title;
+      const slides = [{ html: first, title: firstTitle }, ...TIPS.map((t) => ({ tip: t }))];
+      let k = 0;
+      const show = () => {
+        const sl = slides[k];
+        goal.classList.toggle("tip-note", !!sl.tip);
+        goal.innerHTML = sl.tip ? `<i class="g-tag o1">小知识</i><div class="g-tx"><b>${sl.tip[0]}</b></div><small class="g-go"><span class="g-gl">${sl.tip[1]} </span>▶</small>` : sl.html;
+        goal.title = sl.tip ? sl.tip[1] : sl.title;
+        goal.onclick = sl.tip ? () => (sfx("click"), sl.tip[2]()) : null;
+        goal.classList.remove("g-in");
+        void goal.offsetWidth;
+        goal.classList.add("g-in");
+      };
+      // the goal first, then one random tip after another, every 6 s while the lobby is up
+      const order = TIPS.map((_, n) => n + 1).sort(() => Math.random() - 0.5);
+      let n = 0;
+      const tick = setInterval(() => {
+        if (!goal.isConnected) return clearInterval(tick);
+        k = k === 0 ? order[n++ % order.length] : 0;
+        show();
+      }, 6000);
+    }
+  }
   renderModes(s);
   renderRoster(s);
   renderHero(s, m.sel, false);
@@ -207,7 +250,9 @@ function lbSheet(id) {
   }
   return lbSheets[id];
 }
-/** the hero on the island plays her idle loop; a reaction clip plays once, then back to idle */
+/** the hero on the island plays her idle loop; a reaction clip plays once, then back to idle. Every 6~11 s one
+ *  reaction clip also plays by itself, without sound (an idle carousel) */
+const nextAuto = (now) => now + 6000 + Math.random() * 5000;
 function heroAnim(s, id) {
   const h = q(".lb-hero", s);
   let cv = q("canvas.lb-anim", h);
@@ -218,7 +263,7 @@ function heroAnim(s, id) {
     h.appendChild(cv);
   }
   const g = cv.getContext("2d");
-  const st = (h.__anim = { id, clip: "idle", t0: performance.now(), sheet: null, seq: idleSeq(id), last: "" });
+  const st = (h.__anim = { id, clip: "idle", t0: performance.now(), sheet: null, seq: idleSeq(id), last: "", next: nextAuto(performance.now()) });
   h.classList.remove("anim");
   lbSheet(id).then((sheet) => {
     if (h.__anim !== st || !sheet) return;
@@ -227,7 +272,8 @@ function heroAnim(s, id) {
     const frame = (now) => {
       if (h.__anim !== st || !cv.isConnected) return;
       const fps = LB_FPS[st.clip], k = Math.floor(((now - st.t0) / 1000) * fps);
-      if (st.clip !== "idle" && k >= 8) (st.clip = "idle"), (st.t0 = now);
+      if (st.clip !== "idle" && k >= 8) (st.clip = "idle"), (st.t0 = now), (st.next = nextAuto(now));
+      else if (st.clip === "idle" && now >= st.next && !document.hidden && !h.dataset.busy) heroReact(s, false);
       const f = st.clip === "idle" ? st.seq[k % st.seq.length] : Math.min(7, k), row = LB_CLIPS.indexOf(st.clip), key = row * 8 + f;
       requestAnimationFrame(frame);
       if (key === st.last) return; // the canvas only changes 6-10 times a second
@@ -276,7 +322,7 @@ function heroSummon(s, quick) {
   h.classList.add("ready"); // past the pre-entrance hide
   playAnim(h, "summon" + (quick ? "q" : ""), quick ? 700 : 1300);
 }
-function heroReact(s) {
+function heroReact(s, loud = true) {
   const h = q(".lb-hero", s), stage = q(".lb-center", s), st = h.__anim;
   if (!st || !st.sheet || st.clip !== "idle") return;
   const m = load(), id = m.sel;
@@ -287,8 +333,8 @@ function heroReact(s) {
   st.clip = ["wave", "joy", "cast"][k];
   st.t0 = performance.now();
   if (st.clip === "cast") {
-    setTimeout(() => (fx(stage, "lb-wave", 800), burst(stage, 14, "spark", 50, 50, 1.1), sfx("skill")), 300);
-  } else sfx(st.clip === "wave" ? "card" : "pickup");
+    setTimeout(() => stage.isConnected && (fx(stage, "lb-wave", 800), burst(stage, 14, "spark", 50, 50, 1.1), loud && sfx("skill")), 300);
+  } else if (loud) sfx(st.clip === "wave" ? "card" : "pickup");
 }
 
 function renderRoster(s) {
@@ -317,7 +363,15 @@ function renderRoster(s) {
     };
     r.appendChild(d);
   });
+  // characters in the works: placeholder cards after the last girl (the roster scrolls sideways to them)
+  for (const name of SOON_CHARS) {
+    const d = el("div", "rcard soon", `<div class="rq outline">?</div><div class="nm o1">${name}</div>`);
+    d.title = name + " · 筹备中";
+    d.onclick = () => (sfx("click"), toast(`${name} · 新角色筹备中，敬请期待`));
+    r.appendChild(d);
+  }
 }
+const SOON_CHARS = ["双子星", "九千问"];
 
 function bar(label, v, max, col) {
   const pct = Math.max(6, Math.min(100, (v / max) * 100));
@@ -976,7 +1030,7 @@ function showPool() {
 /** SSR 兑换卡 (bought in 梦境工坊 with 星砂): same card grid as the pool; tap → effect preview with the 兑换 button */
 export function showExchange(after) {
   const m = load(), ms = mineState();
-  const stash={...STASH_ITEM,desc:"消耗1张兑换卡，获得1积攒点；可用于兑换梦境伙伴。",exchangeStash:true};
+  const stash={...STASH_ITEM,desc:"消耗1张兑换卡，获得1积攒点；可用于兑换梦境宠物。",exchangeStash:true};
   const list = [...GACHA.pool.filter((it) => it.r === "SSR"),stash];
   const md = el("div", "modal pool-modal ex-modal");
   const full = it => !it.exchangeStash && (m.talents[it.id] || 0) >= it.max;
@@ -1332,17 +1386,42 @@ const ssrOwned = () => {
   const m = load(), list = GACHA.pool.filter((it) => it.r === "SSR");
   return `${list.filter((it) => (m.talents[it.id] || 0) >= it.max).length} / ${list.length}`;
 };
+// 主页通知条的小知识：[一句话, 跳转按钮文字, 跳转]
+export const TIPS = [
+  ["矿场撤离能挖到宠物蛋", "去矿场", () => import("./mineui.js").then((M) => M.showMineHub())],
+  ["梦境藏品提供永久加成", "看藏品", () => import("./codex.js").then((C) => (C.showCodex(), document.querySelector(".cdx-md .cdx-tab:last-child")?.click()))],
+  ["积攒点可换 HUR 宠物蛋", "去兑换", () => (showGacha(), showStash())],
+  ["同种宠物融合词条更好", "去仓库", () => showPets(() => showLobby())],
+  ["孵化越多流彩概率越高", "去仓库", () => showPets(() => showLobby())],
+  ["宠物图鉴收集有奖励", "去仓库", () => showPets(() => showLobby())],
+  ["高品质宠物放生经验多", "去仓库", () => showPets(() => showLobby())],
+  ["传送门颜色代表房间类型", "看说明", () => showHelp()],
+  ["矿场每日委托送星砂", "去矿场", () => import("./mineui.js").then((M) => M.showMineHub())],
+];
+// 积攒兑换：[what, rarity, name, one line, cost, egg kind]
+const STASH_ROWS = [
+  ["egg_ur", "UR", EGGS.ur.name, "孵化必出稀有或更高品质", EGGS.ur.cost, "ur"],
+  ["egg_hur", "HUR", EGGS.hur.name, "孵化必出史诗或更高品质", EGGS.hur.cost, "hur"],
+  ["item_ur", "UR", PET_ITEMS.ur.name, PET_ITEMS.ur.desc, PET_ITEMS.ur.cost, null],
+  ["item_hur", "HUR", PET_ITEMS.hur.name, PET_ITEMS.hur.desc, PET_ITEMS.hur.cost, null],
+];
 function showStash() {
   const m = load(), n = m.stash || 0;
   const md = el("div", "modal stash-md");
   md.innerHTML = `<div class="panel stash-p"><h2 class="outline">积攒兑换</h2>
-    <div class="st-sub o1">SSR 全部收齐后，每抽到 1 张 SSR 积攒 1 点（当前 ${n} 点）。点数可兑换梦境伙伴，首次获得后解锁出战。${ssrDone() ? "" : `<br><b class="st-prog">SSR 收集进度 ${ssrOwned()}，收齐后开始积攒</b>`}</div>
-    <div class="st-list">
-      <div class="st-it ur"><div class="st-r o1">UR</div><div class="st-tx"><b class="outline">幼年伙伴</b><span>三选一 · 自动助战，可养成进化</span></div><button class="btn small"><span>选择伙伴</span><small>积攒 10</small></button></div>
-      <div class="st-it hur"><div class="st-r o1">HUR</div><div class="st-tx"><b class="outline">兑换内容待定</b><span>暂未开放</span></div><button class="btn small" disabled>敬请期待</button></div>
-    </div></div>`;
-
+    <div class="st-sub o1">SSR 全部收齐后，每抽到 1 张 SSR 积攒 1 点（当前 <b class="st-n">${n}</b> 点）。兑换的宠物蛋与道具放进宠物仓库。${ssrDone() ? "" : `<br><b class="st-prog">SSR 收集进度 ${ssrOwned()}，收齐后开始积攒</b>`}</div>
+    <div class="st-list">${STASH_ROWS.map(([what, r, name, desc, cost, kind]) => `<div class="st-it ${r.toLowerCase()}" data-w="${what}"><div class="st-r o1">${r}</div>${kind ? `<canvas class="st-egg" data-k="${kind}"></canvas>` : `<i class="st-ico ${r.toLowerCase()}"></i>`}<div class="st-tx"><b class="outline">${name}</b><span>${desc}</span></div><button class="btn small"><span>兑换</span><small>积攒 ${cost}</small></button></div>`).join("")}</div></div>`;
   md.onclick = (e) => e.target === md && md.remove();
-  md.querySelector('.st-it.ur button').onclick=()=>{md.remove();showPets(()=>showGacha());};
+  md.querySelectorAll(".st-egg").forEach((c) => drawEgg(c, 0, c.dataset.k));
+  const sync = () => md.querySelectorAll(".st-it").forEach((it) => (it.querySelector("button").disabled = (load().stash || 0) < STASH_ROWS.find((r) => r[0] === it.dataset.w)[4]));
+  md.querySelectorAll(".st-it").forEach((it) => (it.querySelector("button").onclick = () => {
+    const r = stashExchange(it.dataset.w);
+    if (!r.ok) return toast(r.reason);
+    sfx("ssr");
+    toast(`获得${r.name}，在宠物仓库使用`);
+    md.querySelector(".st-n").textContent = load().stash || 0;
+    sync();
+  }));
+  sync();
   uiRoot().appendChild(md);
 }

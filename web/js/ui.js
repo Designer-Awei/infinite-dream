@@ -9,6 +9,7 @@ import { ORES, ZONES, CHEST_STARS, oreIcon, chestIcon } from "./minedata.js";
 import { LEVEL_REWARDS } from "./progression.js";
 import { PETS, PET_COST, PET_EVOLVE, PET_MAX_XP, PET_ATTACK_RANGE, FOX_RIDE_RANGE, petPortrait } from "./petdata.js";
 import { input } from "./input.js";
+import { NPCS } from "./route.js";
 
 let root, app;
 export const $ = (s, r = root) => r.querySelector(s);
@@ -78,7 +79,7 @@ export function showHelp() {
   const SECS = [
     ["闯关基础", `${H("电脑操作")}WASD 移动 · <b>J</b> 攻击（自动锁定范围内最近的敌人）· <b>K</b> 小技能 · <b>L</b> 大招 · 空格 闪避 · Esc 暂停
       ${H("手机操作")}左侧拖动摇杆移动 · 按住攻击键自动锁敌连射，拖动攻击键手动瞄准 · 技能 / 大招键轻点自动释放，拖动瞄准后松手释放
-      ${H("闯关循环")}每局 7 个房间：战斗 → 战斗 → 补给站 → 精英战 → 战斗 → 补给站 → 首领。
+      ${H("闯关循环")}每局 7 层，单人主线走「梦境航线」：清场后常会同时出现 2～3 扇不同颜色的传送门，走进哪扇就去哪种房间——战斗、精英、补给站、事件（走近访客按攻击键交谈，做一次有代价的选择）、挑战（战斗加一条规则，成功多选一次卡）、宝藏（必出稀有怪）——第 7 层是首领。合作模式仍为固定顺序：战斗 → 战斗 → 补给站 → 精英战 → 战斗 → 补给站 → 首领。
       ${H("技能卡")}清场后开箱三选一技能卡，构筑你的流派。
       ${H("生存")}护盾受击后几秒自动回复，生命不会。
       ${H("首领与裂隙")}首领倒下时地上会掉一把梦境矿场的铲子（带光柱），捡没捡都会在结算时计入。偶尔还会撕开「梦境裂隙」：90 秒限时挖宝，电量无限；无尽模式挖宝后返回原进度继续，放弃进入则在本局结算额外获得 200 晶石。
@@ -99,10 +100,10 @@ export function showHelp() {
       ${H("矿物")}矿物带出后按价值换成晶石，同时得到矿石；带星砂图标的矿物挖到时额外给星砂。图标依次是：晶石、矿石、星砂。${Object.entries(ORES).map(([id, o]) => `<div class="hp-orow"><img src="${oreIcon(id)}" alt=""><b>${o.name}</b><em><i class="cur gem"></i>${o.v}</em><em>${o.m ? `<img class="cur" src="${iconURL("ore", 1)}" alt="矿石">${o.m}` : ""}</em><em>${o.s ? `<img class="cur" src="${oreIcon("star")}" alt="星砂">${o.s}` : ""}</em><span>${Object.keys(o.zones).map((z) => ZONES.find((q) => q.id === z).name).join("、")}${o.light ? " · 会发光" : ""}</span></div>`).join("")}
       ${H("宝箱")}<div class="hp-orow"><img src="${chestIcon("plain")}" alt=""><b>普通宝箱</b><span>2～4 个本层矿物，50% 多掉星砂金矿，星砂 ${CHEST_STARS[ZONES[0].id][0]}～${CHEST_STARS[ZONES[ZONES.length - 1].id][1]}</span></div><div class="hp-orow"><img src="${chestIcon("relic")}" alt=""><b>紫色遗物箱</b><span>每层一个，三选一本次下潜的遗物增益</span></div><div class="hp-orow"><img src="${chestIcon("star")}" alt=""><b>星图宝箱</b><span>遗迹深处，金铲开启：4 个遗迹矿物 + 星砂 ${CHEST_STARS.star.join("～")}</span></div>
       ${H("梦境工坊")}最终减伤（矿场里每次受伤 -1，最多 2 级）、SSR 兑换卡、角色专属梦核（强化该角色的大招）。`],
-    ["梦境伙伴", `${H("兑换与解锁")}SSR 全部收齐后，每再抽到一张 SSR 获得 1 积攒点；兑换卡也可每张换1点。在扭蛋机点「积攒」进入兑换，自选火龙、灵狐或冰凰：UR 消耗 ${PET_COST.UR} 点获得幼年；不是随机抽取。宠物只能积累经验后进化，不能直接兑换或直升终极；HUR 兑换内容暂定、尚未开放。已拥有的宠物不可重复兑换。
-      ${H("大厅入口")}首次获得后自动携带，大厅人物右上方出现当前阶段的动画，点击进入面板；首次兑换前不显示这个入口。每次携带一只，可更换或取消。左侧点宠物，右侧切换三阶段及待机 / 行走 / 技能；预览未解锁形态不会获得它。
-      ${H("跟随助战")}主线、无尽与合作模式中，伙伴会靠近附近敌人，到攻击距离后停步普攻并自动释放技能；火龙攻击距离 ${PET_ATTACK_RANGE.dragon}、灵狐 ${PET_ATTACK_RANGE.fox}、冰凰 ${PET_ATTACK_RANGE.phoenix}。没有敌人且离主人较远时自动回跟，到身边停下，小范围移动不会反复踱步；伙伴不承受伤害、不占传送人数。携带加成进入下一局生效，竞技场和矿场不出战、不提供加成。
-      ${H("经验与进化")}携带出战的伙伴在正常结算时获得经验：有效游玩每 6 秒 +1，清理战斗房 +4，首领 +8；暂停和长时间无操作不计。幼年 → 成长需要累计 ${PET_EVOLVE[2].xp} 经验 + ${PET_EVOLVE[2].stars} 星砂，成长 → 终极需要累计 ${PET_EVOLVE[3].xp} 经验 + ${PET_EVOLVE[3].stars} 星砂。达到条件后在面板手动「进化」，只扣星砂、不扣累计经验；经验上限 ${PET_MAX_XP}，进度随存档保留。
+    ["梦境宠物", `${H("获得宠物")}击败首领获得宠物蛋（每个首领 1 颗，一局最多 3 颗），矿场安全撤离也有 35% 概率挖到一颗。在宠物仓库把蛋放进孵化槽（3 个），宠物蛋 3 分钟、UR 5 分钟、HUR 8 分钟后可孵化，可花星砂加速（每分钟 4 星砂）；孵出随机种类的幼年体，可以拥有多只同种宠物。宠物图鉴每收集 3 种左右可领一次奖励（蛋、道具、经验池）。SSR 全部收齐后，每再抽到一张 SSR 获得 1 积攒点（兑换卡也可每张换 1 点）；在扭蛋机点「积攒」兑换：UR 宠物蛋 10 点（必出稀有及以上）、HUR 宠物蛋 20 点（必出史诗及以上）、淬灵露 10 点、流彩晶 20 点。${H("品质与词条")}每只宠物有两条随机词条，按数值高低分普通 / 优秀 / 稀有 / 史诗 / 传说；流彩有三条顶级词条，概率 0.2% 起，每次没出 +0.05%，最高 5%。孵化有 6% 概率是异色。品质决定词条范围，例如灵动：普通 2~8%、优秀 4~11%、稀有 6~14%、史诗 9~17%、传说 12~20%、流彩 18~20%。淬灵露给传说及以下宠物随机一条词条 +2~5%（不超过该品质上限），流彩晶只给流彩宠物用，可突破上限到 150%。${H("养成")}放生按品质给经验池 100~1000，经验池可注入任意宠物；两只同种宠物可融合成一只词条更好的幼年体。${H("评分")}评分综合成长阶段与经验、词条数值、品质和异色：完美满词条的传说终极约 2000，流彩可以更高。
+      ${H("宠物仓库")}大厅人物右上方是出战宠物（有蛋时显示数量），点击进入宠物仓库：右侧是蛋和全部宠物，上锁的排在前面；左侧是选中宠物的词条、经验和操作（出战、进化、注入经验、淬炼、融合、详情、放生）。“详情”可看技能演示和试用，切到其他种类时作为图鉴浏览。
+      ${H("跟随助战")}主线、无尽与合作模式中，宠物会靠近附近敌人，到攻击距离后停步普攻并自动释放技能；火龙攻击距离 ${PET_ATTACK_RANGE.dragon}、灵狐 ${PET_ATTACK_RANGE.fox}、冰凰 ${PET_ATTACK_RANGE.phoenix}。没有敌人且离主人较远时自动回跟，到身边停下，小范围移动不会反复踱步；宠物不承受伤害、不占传送人数。携带加成进入下一局生效，竞技场和矿场不出战、不提供加成。
+      ${H("经验与进化")}携带出战的宠物获得经验：有效游玩每 6 秒 +1，清理战斗房 +4，首领 +8；暂停和长时间无操作不计。累计 ${PET_EVOLVE[2].xp} 经验进化为成长、${PET_EVOLVE[3].xp} 经验进化为终极，不需要其他材料：局内一达到就当场进化（光柱 + 提示），从经验池注入经验达到时也立即进化。
       ${H("终极骑乘")}只有终极可骑乘。电脑按 <b>R</b>，手机点右上角暂停旁的「骑乘」，再次操作下骑。骑乘移速 +25%，普攻与大招换成坐骑能力，角色小技能与闪避保留；下骑恢复自动助战。
       ${Object.values(PETS).map(d => `${H(d.name)}携带${d.passive} +${d.bonus.map(n => Math.round(n * 100) + "%").join(" / ")}（幼年 / 成长 / 终极）。助战：${d.attack}、${d.skill}。${d.trait}<br>骑乘：${d.rideDesc}`).join("")}
       ${H("能力边界")}火龙骑乘普攻从龙嘴发射大火球，点按或长按每0.5秒一发，命中爆炸造成范围伤害，瞄准也从龙嘴开始；大招召出一道大型自动追敌火龙卷。两者可烧毁内墙和草丛，墙体耐久为箱子的两倍，房间外边界保留。宠物范围技能可伤害木箱、火药桶，保留物品掉落和爆炸连锁；大招伤害不会为自身大招充能。灵狐助战连锁限制在 ${FOX_RIDE_RANGE} 范围内；骑乘普攻发射电弧，最多弹射3次，可指向木箱与火药桶，索敌半径 ${FOX_RIDE_RANGE}；大招只攻击释放位置周围同样范围内的敌人，无有效目标时立即结束，不会原地等待；不会连续跳到全图；10 秒光环仍清除全图敌方弹幕，保留友方。冰凰的穿障碍和地面免伤仅骑乘时生效，仍受房间边界限制、仍会被直接攻击命中；下骑会寻找安全地面。
@@ -250,7 +251,7 @@ export function showHud(game, me) {
     hud.querySelector('.tr').insertBefore(ride,hud.querySelector('.pausebtn'));
     hud.querySelector('.keys').textContent+=' · R 骑乘';
   }
-  if(game.petTrial)hud.appendChild(el('div','pet-trial-tag o1','伙伴试用 · 大招10秒恢复 · 收益不保存'));
+  if(game.petTrial)hud.appendChild(el('div','pet-trial-tag o1','宠物试用 · 大招10秒恢复 · 收益不保存'));
   hud.querySelector(".pausebtn").onclick = () => app.pause();
   document.querySelectorAll(".touch .empty, .b-skill.empty, .b-ult.empty").forEach(n => n.classList.remove("empty"));
   document.querySelectorAll(".b-skill .cnt, .b-ult .cnt").forEach(n => n.remove());
@@ -265,9 +266,11 @@ export function showHud(game, me) {
   const tips = { skill: CHARS[me.cid].skill.name, ult: CHARS[me.cid].ult.name, atk: CHARS[me.cid].atk.name };
   for (const k in tips) document.querySelectorAll(`.b-${k} .lb`).forEach((n) => (n.textContent = tips[k]));
   const pips = hud.querySelector(".pips");
-  if (!game.pvp) RUN.forEach((r, i) => pips.appendChild(el("div", "pip o1", r.kind === "shop" ? "🛒" : r.kind === "boss" ? "👑" : "⚔")));
+  if (!game.pvp) RUN.forEach((r, i) => pips.appendChild(el("div", "pip o1", pipIcon(game.route ? (i === RUN.length - 1 ? "boss" : "?") : r.kind))));
   hudCache = {};
 }
+const PIP = { combat: "⚔", elite: "🔥", shop: "🛒", event: "💬", challenge: "⚡", treasure: "💎", boss: "👑", "?": "?" };
+const pipIcon = (kind) => PIP[kind] || "⚔";
 export function updateHud(game, me) {
   if (!hud || !me) return;
   const set = (k, v, fn) => {
@@ -294,7 +297,11 @@ export function updateHud(game, me) {
   });
   set("coins", me.coins, (v) => (hud.querySelector(".coins").textContent = v));
   set("cubes", me.cubes, (v) => (hud.querySelector(".cubes").textContent = v));
-  set("room", game.roomIdx, (v) => hud.querySelectorAll(".pip").forEach((p, i) => (p.className = "pip o1" + (i < v ? " done" : i === v ? " cur" : ""))));
+  set("room", game.roomIdx, (v) => hud.querySelectorAll(".pip").forEach((p, i) => {
+    p.className = "pip o1" + (i < v ? " done" : i === v ? " cur" : "");
+    // 梦境航线: the rooms walked so far show their kind, the ones ahead stay a question mark (the boss is always last)
+    if (game.route) p.textContent = pipIcon(i <= game.route.step ? game.route.cols[i][game.route.path[i]].kind : i === game.route.cols.length - 1 ? "boss" : "?");
+  }));
   const boss = game.enemies.find((e) => e.boss);
   set("boss", boss ? Math.ceil((boss.hp / boss.maxHp) * 200) : -1, (v) => {
     const bb = hud.querySelector(".bossbar");
@@ -362,7 +369,8 @@ export function updateHud(game, me) {
   let tip = "";
   if (game.room && game.room.kind === "shop" && me.nearShop) tip = `${me.nearShop.name}：◎${me.nearShop.price}（${load().sel && "按攻击键购买"}）`;
   if (me.downed && !game.pvp) tip = "倒地了！等待队友靠近救援…";
-  if (game.phase === "portal") tip = "前往传送门 ↓";
+  if (game.phase === "portal") tip = game.portals ? "走进一扇传送门，选择下一个房间" : "前往传送门 ↓";
+  if (game.npc && !game.eventDone && !game.npc.open && game.phase === "event") tip = `走近${NPCS[game.npc.id]?.name || "访客"}，按攻击键交谈`;
   set("tip", tip, (v) => {
     const t = hud.querySelector(".tipline");
     t.style.display = v ? "" : "none";
