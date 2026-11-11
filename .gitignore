@@ -5,3 +5,7 @@ package-lock.json
 /android/
 /out/
 test/--*/
+
+# Python bytecode caches
+__pycache__/
+*.pyc
