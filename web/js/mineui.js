@@ -265,9 +265,10 @@ export function showMineHub() {
   qdot();
   const draw = () => (ups.classList.toggle("fill", tab === "shop"), tab === "ups" ? drawUps() : tab === "quest" ? drawQuests() : drawShop());
   s.addEventListener("currencychange", () => { pills(); draw(); });
-  s.querySelectorAll(".mh-tab").forEach((b) => (b.onclick = () => {
+  import("./titles.js").then((Tt) => { const f = Tt.checkTitles(); if (f.length) import("./titleui.js").then((U) => s.isConnected && U.announceTitles(f)); });
+  s.querySelectorAll(".mh-tab[data-t]").forEach((b) => (b.onclick = () => {
     tab = b.dataset.t;
-    s.querySelectorAll(".mh-tab").forEach((x) => x.classList.toggle("on", x === b));
+    s.querySelectorAll(".mh-tab[data-t]").forEach((x) => x.classList.toggle("on", x === b));
     sfx("click");
     draw();
   }));

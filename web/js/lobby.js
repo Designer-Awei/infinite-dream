@@ -1,6 +1,6 @@
 // Lobby (Brawl Stars-style home: hero on a stage in the middle, info on the left, play button bottom-right)
 // and the capsule gacha with a staged pull sequence (crank → capsule → open → card flips → summary).
-import { CHARS, CHAR_ORDER, ELEM, UNLOCKS, GACHA, RARITY, REACTIONS, MAPS, MAP_ORDER, LOADOUT_SLOTS, CORE_FX, CORE_DETAIL } from "./data.js";
+import { CHARS, CHAR_ORDER, ELEM, UNLOCKS, GACHA, RARITY, REACTIONS, MAPS, MAP_ORDER, LOADOUT_SLOTS, CORE_FX, CORE_DETAIL, pactLevel } from "./data.js";
 import { STASH_ITEM, redeemExchangeCard } from "./save.js";
 import { characterProgress } from "./save.js";
 import { claimable } from "./minequests.js";
@@ -12,6 +12,9 @@ import { mountItemDemo, hasLiveDemo } from "./itemdemo.js";
 import { localVersion, nativeInfo } from "./updater.js";
 import { bushSprite, crateSprite, generateRoom, renderGround, wallSprite, wallMask, WALL, BUSH, CRATE, BARREL, LIFT } from "./map.js";
 import { T } from "./data.js";
+import { loadRun, offerResume } from "./runsave.js";
+import { checkTitles, titleState, titleHTML, TITLE_ORDER, TITLES } from "./titles.js";
+import { showTitles, announceTitles } from "./titleui.js";
 import { btn, toast, clear, showNet, showHelp, showUnlock, uiRoot } from "./ui.js";
 import { app, playMode, mapUnlocked, endlessUnlocked } from "./main.js";
 import { showPets } from "./petui.js";
@@ -107,8 +110,9 @@ export function showLobby() {
     <button class="btn small tb-ico codex-btn t-codex" title="怪物图鉴"><span>👾</span></button>
     <button class="btn small tb-ico help-btn t-help" title="玩法说明"><span>📖</span></button>
     <button class="btn gray small fs-btn" title="全屏">⛶</button>
-    <button class="btn gray small set-btn" title="设置">⚙</button>
+    <button class="btn gray small set-btn" title="设置"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M19.97 10.09 L22.90 10.54 L22.90 13.46 L19.97 13.91 L18.99 16.28 L20.74 18.67 L18.67 20.74 L16.28 18.99 L13.91 19.97 L13.46 22.90 L10.54 22.90 L10.09 19.97 L7.72 18.99 L5.33 20.74 L3.26 18.67 L5.01 16.28 L4.03 13.91 L1.10 13.46 L1.10 10.54 L4.03 10.09 L5.01 7.72 L3.26 5.33 L5.33 3.26 L7.72 5.01 L10.09 4.03 L10.54 1.10 L13.46 1.10 L13.91 4.03 L16.28 5.01 L18.67 3.26 L20.74 5.33 L18.99 7.72Z M15.6 12 A3.6 3.6 0 1 0 8.4 12 A3.6 3.6 0 1 0 15.6 12Z"/></svg></button>
   </div>
+  <button class="ttl-entry" title="称号"></button>
   <div class="lb-left"><div class="lb-info"></div><div class="lb-roster"></div></div>
   <div class="lb-center"><div class="lb-rays"></div><div class="lb-motes">${Array.from({ length: 14 }, (_, i) => `<i style="left:${8 + ((i * 37) % 84)}%;animation-delay:${(i * 0.53) % 4}s;animation-duration:${3 + (i % 4) * 0.7}s"></i>`).join("")}</div><div class="lb-island"></div><div class="lb-hero"><img alt=""></div><div class="lb-name outline"></div></div>
   <div class="lb-right">
@@ -119,6 +123,17 @@ export function showLobby() {
   </div>`;
   root.appendChild(s);
   q(".pname", s).textContent = m.name;
+  // 称号 entry beside the logo: the worn title's plate (or a plain 称号 tag with how many are owned)
+  const te = q(".ttl-entry", s);
+  const drawTtl = () => {
+    const t = titleState(), n = Object.keys(t.own).filter((id) => TITLES[id]).length;
+    te.innerHTML = t.eq ? titleHTML(t.eq) : `<span class="ttl t-c te-none"><i class="tt-sh"></i><b>称号 ${n}/${TITLE_ORDER.length}</b></span>`;
+    te.classList.toggle("winged", !!te.querySelector(".hex"));
+  };
+  te.onclick = () => (sfx("click"), showTitles("adv", drawTtl));
+  const freshTitles = checkTitles();
+  drawTtl();
+  if (freshTitles.length) setTimeout(() => s.isConnected && announceTitles(freshTitles, drawTtl), 700);
   q(".name-pill", s).onclick = () => (sfx("click"), showRename(s));
   q(".set-btn", s).onclick = () => (sfx("click"), showSettings());
   // the partner entry (宠物仓库): the carried pet (with its 异色), else the most grown one; an egg when there are only eggs
@@ -163,12 +178,21 @@ export function showLobby() {
   q(".help-btn", s).onclick = () => (sfx("click"), showHelp());
   q(".codex-btn", s).onclick = () => (sfx("click"), import("./codex.js").then((C) => C.showCodex()));
   const play = q(".lb-play", s);
-  const pb = btn(`<span class="pt">开始冒险</span>`, "big play-btn", () => {
+  // 冒险续玩: an unfinished solo run turns the button into 继续冒险 (asks 继续 / 放弃 first)
+  const saved = loadRun();
+  const pb = btn(`<span class="pt">${saved ? "继续冒险" : "开始冒险"}</span>`, "big play-btn" + (saved ? " resume" : ""), () => {
+    if (loadRun()) return offerResume(app, () => updatePlay(s));
     // launch: the hero leaps off the island while two doors slide shut, then the run starts behind them
     s.classList.add("launch");
     app.closeDoors().then(() => app.startSolo());
   });
-  play.appendChild(pb);
+  // 噩梦契约 chip beside the play button: shows the level, opens the terms
+  const prow = el("div", "lb-playrow");
+  const plv = pactLevel(m.pact || {});
+  const pk = el("button", "pact-chip" + (plv ? " on" : ""), `<span class="pc-t outline">噩梦</span><span class="pc-n outline">${plv}</span>`);
+  pk.onclick = () => (sfx("click"), import("./pactui.js").then((P) => P.showPacts(() => { const v = pactLevel(load().pact || {}); pk.classList.toggle("on", !!v); pk.querySelector(".pc-n").textContent = v; })));
+  prow.append(pk, pb);
+  play.appendChild(prow);
   play.appendChild(el("div", "lb-stats o1", `击败 ${m.stats.kills} · 反应 ${m.stats.reactions} · 通关 ${m.stats.bossKills} · 最远 ${m.stats.best}/7`));
   // next goal (like Brawl Stars' trophy road progress): one slim line
   const next = CHAR_ORDER.find((id) => !m.chars.includes(id));
@@ -706,8 +730,11 @@ function updatePlay(s, cid) {
   if (cid) s.dataset.cid = cid;
   const pm = m.playMode || {}, id = pm.endless ? "endless" : pm.map || "grass";
   const charOk = m.chars.includes(s.dataset.cid || m.sel), mOk = modeOpen(id);
-  pb.disabled = !charOk || !mOk;
-  q(".pt", pb).textContent = !charOk ? "未解锁" : !mOk ? "模式未解锁" : "开始冒险";
+  const saved = loadRun(); // 冒险续玩 takes the button over whatever is selected
+  pb.disabled = !saved && (!charOk || !mOk);
+  pb.classList.toggle("resume", !!saved);
+  q(".pt", pb).textContent = saved ? "继续冒险" : !charOk ? "未解锁" : !mOk ? "模式未解锁" : "开始冒险";
+
 }
 
 function showSettings() {

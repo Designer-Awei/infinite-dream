@@ -1,7 +1,8 @@
 // Enemy behaviours and the boss.
 import { dist, angTo, TAU, R } from "./util.js";
 const CHARS_SPEED = 110;
-import { moveCircle, flowDir, los, tileAt, BUSH } from "./map.js";
+import { moveCircle, flowDir, los, tileAt, BUSH, WALL } from "./map.js";
+import { T } from "./data.js";
 
 function nearestPlayer(g, e) {
   let best = null, bd = 1e9, hidden = true;
@@ -42,6 +43,9 @@ export function updateEnemy(g, e, dt) {
   }
   e.slowT -= dt;
   e.vulnT -= dt;
+  // 精英词缀
+  if (e.affix === "regen" && g.host && g.time - (e.hitAt ?? -9) > 2 && e.hp < e.maxHp) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.05 * dt);
+  if (e.affix === "frost" && g.host) for (const q of g.alivePlayers()) if (dist(q.x, q.y, e.x, e.y) < 72) q.buff.slow = Math.max(q.buff.slow || 0, 0.25);
   // knockback
   if (e.kbx || e.kby) {
     moveCircle(g.map, e, e.kbx * dt, e.kby * dt, e.def.fly, e.def.phase);
@@ -211,6 +215,50 @@ export function updateEnemy(g, e, dt) {
     case "boss_core":
       bossCore(g, e, p, d, dt);
       break;
+    case "boss_root":
+      bossRoot(g, e, p, d, dt);
+      break;
+    case "boss_witch":
+      bossWitch(g, e, p, d, dt);
+      break;
+    case "witch_clone":
+      witchClone(g, e, p, d, dt);
+      break;
+    case "boss_worm":
+      bossWorm(g, e, p, d, dt);
+      break;
+    case "boss_judge":
+      bossJudge(g, e, p, d, dt);
+      break;
+    case "storm_core":
+      // 雷霆审判者's storm core: hangs still, arcs to its judge (the arc hurts), fires a slow volt shot now and then
+      e.face = 1;
+      if (g.host) {
+        const judge = g.enemies.find((q) => q.id === e.coreId && !q.dead);
+        if (!judge) e.hp = 0, e.dead = true, e.silent = true;
+        else {
+          e.shotT = (e.shotT ?? 2 + Math.random()) - dt;
+          if (e.shotT <= 0) (e.shotT = 3.2), shoot(g, e, angTo(e.x, e.y - 20, p.x, p.y), { spd: 110, h: 20, r: 5, kind: "volt" });
+          if ((e.beamT = (e.beamT || 0) - dt) <= 0) {
+            e.beamT = 0.3;
+            const x0 = e.x, y0 = e.y - 22, x1 = judge.x, y1 = judge.y - 50;
+            g.line(x0, y0, x1, y1, "#8ad8ff", 3, 0.32, "zap");
+            for (const q of g.alivePlayers()) if (segDist(q.x, q.y - 12, x0, y0, x1, y1) < 12) if (g.hurt(q, 1, { src: e, x: q.x, y: q.y })) q.buff.slow = 1;
+          }
+        }
+      }
+      break;
+    case "pylon":
+      // 过热核心's coolant pylon: stands still, beams cold light to its core, pulses a slowing shot now and then
+      e.face = 1;
+      if (g.host) {
+        e.shotT = (e.shotT ?? 1.5) - dt;
+        if (e.shotT <= 0) (e.shotT = 2.6), shoot(g, e, angTo(e.x, e.y, p.x, p.y), { spd: 120, h: 20, r: 5, slow: true, kind: "ghost" });
+        const core = g.enemies.find((q) => q.id === e.coreId && !q.dead);
+        if (!core) e.hp = 0, e.dead = true;
+        else if ((e.beamT = (e.beamT || 0) - dt) <= 0) (e.beamT = 0.5), g.line(e.x, e.y - 14, core.x, core.y - 56, "#7fd0ff", 2, 0.5, "zap");
+      }
+      break;
   }
 }
 
@@ -263,9 +311,28 @@ function bossEye(g, e, p, d, dt) {
   const opts = ["burst", "aimed", "burst", "aimed"];
   if (phase >= 2) opts.push("spiral", "dash");
   if (phase >= 3) opts.push("spiral", "summon");
-  const k = opts[(Math.random() * opts.length) | 0];
+  if (phase >= 2) opts.push("gaze");
+  let k = opts[(Math.random() * opts.length) | 0];
+  if (e.forcePick) (k = e.forcePick), (e.forcePick = null); // tests
   g.sound("laser", 0.2);
   switch (k) {
+    case "gaze": {
+      // 凝视光束: a red line locks on, then a beam sweeps across the player's side of the room
+      const q = g.alivePlayers()[0] || p, a0 = angTo(e.x, e.y - H, q.x, q.y), dir = Math.random() < 0.5 ? -1 : 1;
+      g.addZone({ kind: "gazebeam", x: e.x, y: e.y - H, r: 460, life: 2.7, side: "e", a0: a0 - dir * 0.9, dir, update: (z) => {
+        z.x = e.x; z.y = e.y - H;
+        if (z.t < 0.7 || e.dead) return;
+        const a = gazeAngle(z);
+        for (const qq of g.alivePlayers()) {
+          const dd = dist(qq.x, qq.y - 16, z.x, z.y), qa = angTo(z.x, z.y, qq.x, qq.y - 16);
+          const diff = Math.abs(((qa - a + Math.PI * 3) % TAU) - Math.PI);
+          if (dd < z.r && diff * dd < 10) g.hurt(qq, 1, { src: e, x: z.x, y: z.y });
+        }
+      } });
+      g.text(e.x, e.y - 100, "凝视！", "#ff6a8a", 1.3, 0.9);
+      e.cd = 3.4 / speedK;
+      break;
+    }
     case "burst": {
       const waves = phase === 1 ? 3 : 4, n = phase === 3 ? 22 : 16;
       for (let w = 0; w < waves; w++)
@@ -317,6 +384,18 @@ export function spawnBossAdds(g, e, list) {
 // ----------------------------------------------------------------- 显存冰原 boss: 冰封史莱姆王
 // slow and heavy: leaps onto you (ice ring on landing), sprays slowing shards, calls in slimes; below 1/3 it hurries
 function bossFrost(g, e, p, d, dt) {
+  // 分裂: at half health the king bursts into two smaller kings, each with the health it had left
+  if (g.host && !e.splitDone && !e.sizeK && e.hp <= e.maxHp * 0.5) {
+    e.splitDone = true;
+    e.sizeK = 0.72;
+    e.r *= 0.72;
+    g.vfx("ice/ice-shatter", e.x, e.y - 30, {});
+    g.text(e.x, e.y - 90, "分裂！", "#a8e0ff", 1.6, 1.3);
+    g.sound("boss");
+    const twin = g.spawnEnemy("boss_frost", e.x + 50, e.y + 10, false, 0.2);
+    twin.sizeK = 0.72; twin.r = e.r; twin.splitDone = true; twin.maxHp = e.maxHp; twin.hp = e.hp; twin.phase = e.phase;
+    e.x -= 30;
+  }
   const frac = e.hp / e.maxHp, phase = frac > 0.66 ? 1 : frac > 0.33 ? 2 : 3;
   if (e.phase !== phase) {
     e.phase = phase;
@@ -382,6 +461,21 @@ function bossFrost(g, e, p, d, dt) {
 // ----------------------------------------------------------------- 算力熔炉 boss: 过热核心
 // floats around the furnace: burning rings, meteor strikes on marked spots, fire bats; below 1/3 a spinning flame spiral
 function bossCore(g, e, p, d, dt) {
+  // shielded while its coolant pylons stand; when the last one falls it overheats: stalls 3 s, takes +50%
+  const pylons = g.enemies.filter((q) => q.type === "core_pylon" && !q.dead && q.coreId === e.id).length;
+  e.guardT = pylons ? 1 : 0;
+  if (e.hadPylons && !pylons) {
+    e.overheat = 3;
+    g.text(e.x, e.y - 110, "过热宕机！", "#ffd84a", 1.6, 1.4);
+    g.vfx("explosions/plasma-explosion", e.x, e.y - 40, {});
+  }
+  e.hadPylons = pylons > 0;
+  if (e.overheat > 0) {
+    e.overheat -= dt;
+    e.vulnT = Math.max(e.vulnT || 0, 0.2);
+    e.flash = Math.max(e.flash || 0, Math.sin(e.t * 30) > 0 ? 0.05 : 0);
+    return;
+  }
   const frac = e.hp / e.maxHp, phase = frac > 0.66 ? 1 : frac > 0.33 ? 2 : 3;
   if (e.phase !== phase) {
     e.phase = phase;
@@ -412,7 +506,26 @@ function bossCore(g, e, p, d, dt) {
   const opts = ["ring", "meteor", "ring", "meteor"];
   if (phase >= 2) opts.push("summon");
   if (phase >= 3) opts.push("spiral", "spiral");
-  const pick = opts[(Math.random() * opts.length) | 0];
+  let pick = opts[(Math.random() * opts.length) | 0];
+  // 冷却塔: entering phase 2 (and again in 3) it raises coolant pylons; while any stand it shrugs off damage
+  if ((phase >= 2 && !e.pylons2) || (phase >= 3 && !e.pylons3)) {
+    if (phase >= 3) e.pylons3 = true;
+    e.pylons2 = true;
+    pick = "pylons";
+  }
+  if (e.forcePick) (pick = e.forcePick), (e.forcePick = null);
+  if (pick === "pylons") {
+    const n = phase >= 3 ? 4 : 3;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * TAU + 0.4, x = c.x + Math.cos(a) * 170, y = c.y + Math.sin(a) * 95;
+      const py = g.spawnEnemy("core_pylon", x, y, false, 0.5);
+      py.coreId = e.id;
+    }
+    g.text(e.x, e.y - 120, "冷却塔启动！打掉它们！", "#7fd0ff", 1.4, 1.6);
+    g.sound("boss", 0.5);
+    e.cd = 1.2;
+    return;
+  }
   if (pick === "ring") {
     for (let w = 0; w < 3; w++)
       g.after(w * 0.4, () => {
@@ -443,5 +556,516 @@ function bossCore(g, e, p, d, dt) {
     e.dt = 2.4;
     e.ang = Math.random() * TAU;
     e.cd = 1;
+  }
+}
+
+// ----------------------------------------------------------------- 数据草原 boss: 根须之心
+// rooted in place (never moves or flinches). Root spikes rip along marked lines toward each player; spore pods are
+// lobbed out and sprout into spore nodes; from phase 2 a thorn cage closes in round a player; from phase 3 two
+// thorny vines sweep round it. On every phase change it shuts itself in bark for 2.5 s (takes 20% damage) and calls
+// in vine snakes.
+function bossRoot(g, e, p, d, dt) {
+  const frac = e.hp / e.maxHp, phase = frac > 0.66 ? 1 : frac > 0.33 ? 2 : 3;
+  e.face = 1;
+  e.guardT = Math.max(0, (e.guardT || 0) - dt);
+  if (e.phase !== phase) {
+    const first = e.phase == null;
+    e.phase = phase;
+    if (!first) {
+      g.text(e.x, e.y - 120, phase === 2 ? "根须护体！" : "千根齐发！", "#a6f05a", 1.6, 1.5);
+      g.vfx("nature/root-snare", e.x, e.y, { opts: { size: 1.4 } });
+      g.sound("boss");
+      e.guardT = 2.5;
+      spawnBossAdds(g, e, phase === 2 ? ["snake_vine", "snake_vine", "mushroom"] : ["snake_vine", "snake_vine", "mushroom", "mushroom"]);
+    }
+  }
+  const k = phase === 3 ? 1.3 : phase === 2 ? 1.12 : 1;
+  for (const q of g.alivePlayers()) if (dist(q.x, q.y, e.x, e.y) < e.r + 14) g.hurt(q, 1, e);
+  if (e.cd > 0 || !g.host) return;
+  const opts = ["roots", "spores", "roots"];
+  if (phase >= 2) opts.push("cage", "roots");
+  if (phase >= 3) opts.push("sweep", "cage");
+  // never the same special twice in a row
+  let pick = opts[(Math.random() * opts.length) | 0];
+  if (pick === e.lastPick && pick !== "roots") pick = "roots";
+  if (e.forcePick) (pick = e.forcePick), (e.forcePick = null); // tests
+  e.lastPick = pick;
+  if (pick === "roots") {
+    // a crack runs from the heart toward each player (and, later, fans out to the sides); spikes erupt along it
+    const lines = [];
+    for (const q of g.alivePlayers()) {
+      const a = angTo(e.x, e.y, q.x, q.y);
+      lines.push(a);
+      if (phase >= 2) lines.push(a + 0.55, a - 0.55);
+    }
+    for (const a of lines) {
+      const len = 360;
+      g.line(e.x, e.y, e.x + Math.cos(a) * len, e.y + Math.sin(a) * len, "#a6f05a", 16, 0.75, "warn");
+      for (let s = 40, i = 0; s <= len; s += 26, i++) {
+        const x = e.x + Math.cos(a) * s, y = e.y + Math.sin(a) * s;
+        if (tileAt(g.map, x, y) === WALL) break;
+        g.after(0.75 + i * 0.045, () => {
+          if (e.dead) return;
+          g.vfx("nature/earth-spike", x, y + 6, { opts: { size: 0.7 } });
+          for (const q of g.alivePlayers()) if (dist(q.x, q.y, x, y) < 20) g.hurt(q, 1, { src: e, x, y, groundHazard: true });
+        });
+      }
+    }
+    g.sound("explode", 0.2);
+    e.cd = 2.1 / k;
+  } else if (pick === "spores") {
+    // pods arc out and land round the players; each sprouts a spore node (left alone, they pile up)
+    const n = phase === 1 ? 3 : 4;
+    for (let i = 0; i < n; i++) {
+      const q = g.alivePlayers()[i % Math.max(1, g.alivePlayers().length)] || p;
+      const tx = q.x + (Math.random() - 0.5) * 160, ty = q.y + (Math.random() - 0.5) * 110;
+      const b = g.mkBullet(null, { side: "e", x: e.x, y: e.y - 50, h: 0, a: 0, spd: 0, dmg: 1, kind: "orb", r: 6, life: 3, elem: null, big: true,
+        arcTo: { x0: e.x, y0: e.y - 50, x: tx, y: ty, dur: 0.9 + i * 0.12 }, onLand: (bb) => {
+          g.vfx("nature/spore-burst", bb.x, bb.y, {});
+          for (const qq of g.alivePlayers()) if (dist(qq.x, qq.y, bb.x, bb.y) < 26) g.hurt(qq, 1, { src: e, x: bb.x, y: bb.y, groundHazard: true });
+          if (g.enemies.length < 9 && Math.random() < 0.5 && tileAt(g.map, bb.x, bb.y) !== WALL) g.spawnEnemy("mushroom", bb.x, bb.y, false, 0.6); // some pods sprout
+        } });
+      b.src = e;
+      g.bullets.push(b);
+      g.vfx("arcane/rune-circle", tx, ty, { life: 0.9 + i * 0.12, palette: ["#0a1a08", "#2f6a1e", "#6fd23a", "#d8ffa0"] });
+    }
+    g.sound("shoot_water", 0.25);
+    e.cd = 2.4 / k;
+  } else if (pick === "cage") {
+    // thorns ring a player and close in; dodge out through the ring before it shuts
+    const q = g.alivePlayers()[(Math.random() * g.alivePlayers().length) | 0] || p;
+    const dur = 1.8;
+    g.addZone({ kind: "thorncage", x: q.x, y: q.y, r: 92, life: dur + 0.5, side: "e", update: (z) => {
+      z.r = z.t < dur ? 92 - (92 - 18) * Math.min(1, z.t / dur) ** 1.6 : 18;
+      if (z.t < 0.45) return; // the ring appears, then starts to bite
+      z.hitT = (z.hitT || 0) - 1 / 60;
+      for (const qq of g.alivePlayers()) {
+        const dd = dist(qq.x, qq.y, z.x, z.y);
+        if (Math.abs(dd - z.r) < 9 || (z.t >= dur && dd < z.r + 6)) if (g.hurt(qq, 1, { src: e, x: z.x, y: z.y, groundHazard: true })) qq.buff.slow = 1.2;
+      }
+    } });
+    g.text(q.x, q.y - 54, "荆棘囚笼！", "#a6f05a", 1.2, 0.9);
+    g.sound("boss", 0.4);
+    e.cd = 2.6 / k;
+  } else if (pick === "sweep") {
+    // two thorny vines sweep a full turn round the heart; jump them with a dodge or stay out of reach
+    g.addZone({ kind: "vinesweep", x: e.x, y: e.y - 20, r: 170, life: 3.6, side: "e", update: (z) => {
+      if (z.t < 0.6) return; // wind-up: the vines rise
+      const a = vineAngle(z);
+      for (const qq of g.alivePlayers()) {
+        const dd = dist(qq.x, qq.y, z.x, z.y);
+        if (dd > z.r || dd < 20) continue;
+        const qa = angTo(z.x, z.y, qq.x, qq.y);
+        for (const arm of [a, a + Math.PI]) {
+          const diff = Math.abs(((qa - arm + Math.PI * 3) % TAU) - Math.PI);
+          if (diff * dd < 12) g.hurt(qq, 1, { src: e, x: z.x, y: z.y });
+        }
+      }
+    } });
+    g.text(e.x, e.y - 120, "藤鞭横扫！", "#a6f05a", 1.3, 1);
+    e.cd = 4.2 / k;
+  }
+}
+/** where the 藤鞭横扫 vines point at zone time z.t (same on host and clients) */
+export const vineAngle = (z) => (z.id % 7) * 0.9 + Math.max(0, z.t - 0.6) * 2.1;
+
+// ----------------------------------------------------------------- 显存冰原 boss: 霜镜女巫
+// floats about the room. Mirror trick: she blinks out and reappears among ice copies of herself (one hit shatters a
+// copy; only the real one, the one with a shadow, takes damage from the fight). Ice lances fly down marked lines;
+// a frost ring spreads out from her (dodge through it); from phase 3, icicles drop on marked spots.
+function bossWitch(g, e, p, d, dt) {
+  const frac = e.hp / e.maxHp, phase = frac > 0.66 ? 1 : frac > 0.33 ? 2 : 3;
+  const c = g.map.center;
+  if (e.phase !== phase) {
+    const first = e.phase == null;
+    e.phase = phase;
+    if (!first) {
+      g.text(e.x, e.y - 110, phase === 2 ? "镜中之镜！" : "永冻之夜！", "#a8e0ff", 1.6, 1.5);
+      g.vfx("ice/frost-nova", e.x, e.y, {});
+      g.sound("boss");
+      spawnBossAdds(g, e, phase === 2 ? ["frostling", "frostling"] : ["frostling", "frostling", "eye_ice"]);
+      e.cd = 0.4;
+      e.forcePick = "mirror";
+    }
+  }
+  const k = phase === 3 ? 1.3 : phase === 2 ? 1.12 : 1;
+  // drift toward her chosen spot, swaying
+  if (e.tx == null) (e.tx = c.x), (e.ty = c.y - 40);
+  const sx = e.tx + Math.sin(e.t * 0.9) * 26, sy = e.ty + Math.cos(e.t * 1.3) * 12;
+  if (dist(e.x, e.y, sx, sy) > 4) {
+    const a = angTo(e.x, e.y, sx, sy);
+    moveCircle(g.map, e, Math.cos(a) * d.spd * dt, Math.sin(a) * d.spd * dt, true);
+  }
+  e.face = p.x < e.x ? -1 : 1;
+  for (const q of g.alivePlayers()) if (dist(q.x, q.y, e.x, e.y) < e.r + 10) if (g.hurt(q, 1, e)) q.buff.slow = 1.5;
+  if (e.cd > 0 || !g.host) return;
+  const opts = ["lances", "ring", "lances", "mirror"];
+  if (phase >= 2) opts.push("mirror", "ring");
+  if (phase >= 3) opts.push("icicles", "icicles");
+  let pick = opts[(Math.random() * opts.length) | 0];
+  if (pick === e.lastPick && pick !== "lances") pick = "lances";
+  if (e.forcePick) (pick = e.forcePick), (e.forcePick = null);
+  e.lastPick = pick;
+  if (pick === "mirror") {
+    // blink out; she and her copies reappear spread round the room
+    const n = phase === 1 ? 2 : 3, spots = [];
+    const a0 = Math.random() * TAU;
+    for (let i = 0; i <= n; i++) {
+      const a = a0 + (i / (n + 1)) * TAU;
+      spots.push([c.x + Math.cos(a) * 150, c.y - 20 + Math.sin(a) * 80]);
+    }
+    for (const q of g.enemies) if (q.type === "witch_clone") q.hp = 0, q.dead = true;
+    g.vfx("arcane/blink-out", e.x, e.y - 40, { palette: ["#0a1020", "#2e4c8a", "#8cc0ec", "#ffffff"] });
+    const real = (Math.random() * spots.length) | 0;
+    spots.forEach(([x, y], i) => {
+      g.vfx("arcane/blink-in", x, y - 40, { palette: ["#0a1020", "#2e4c8a", "#8cc0ec", "#ffffff"] });
+      if (i === real) {
+        e.x = e.tx = x;
+        e.y = e.ty = y;
+      } else if (g.enemies.length < 18) {
+        const cl = g.spawnEnemy("witch_clone", x, y, false, 0.05);
+        cl.tx = x; cl.ty = y; cl.life = 9; cl.face = e.face;
+      }
+    });
+    g.text(c.x, c.y - 90, "哪个是真身？", "#a8e0ff", 1.3, 1.2);
+    g.sound("portal", 0.5);
+    e.cd = 1.6 / k;
+  } else if (pick === "lances") {
+    // three marked lines toward a player, then fast ice lances down them
+    const q = g.alivePlayers()[(Math.random() * g.alivePlayers().length) | 0] || p;
+    const base = angTo(e.x, e.y - 40, q.x, q.y - 16), n = phase === 1 ? 3 : 5;
+    for (let i = 0; i < n; i++) {
+      const a = base + (i - (n - 1) / 2) * 0.22;
+      g.line(e.x, e.y - 40, e.x + Math.cos(a) * 420, e.y - 40 + Math.sin(a) * 420, "#a8e0ff", 8, 0.6, "warn");
+      g.after(0.6, () => {
+        if (e.dead) return;
+        const b = shoot(g, e, a, { spd: 380, h: 40, r: 5, slow: true, kind: "ghost" });
+        b.life = 1.4;
+      });
+    }
+    g.sound("shoot_water", 0.3);
+    e.cd = 1.7 / k;
+  } else if (pick === "ring") {
+    // a frost ring spreads from her; standing on its edge chills and hurts (dodge through it)
+    g.addZone({ kind: "frostring", x: e.x, y: e.y, r: 8, life: 1.6, side: "e", update: (z) => {
+      z.r = 8 + 230 * Math.min(1, z.t / 1.5);
+      for (const q of g.alivePlayers()) if (Math.abs(dist(q.x, q.y, z.x, z.y) - z.r) < 10) if (g.hurt(q, 1, { src: e, x: z.x, y: z.y })) q.buff.slow = 1.8;
+    } });
+    g.vfx("ice/frost-nova", e.x, e.y, { opts: { reach: 50 } });
+    g.sound("shoot_water", 0.3);
+    e.cd = 1.9 / k;
+  } else if (pick === "icicles") {
+    const spots = [];
+    for (const q of g.alivePlayers()) for (let i = 0; i < 5; i++) spots.push([q.x + (Math.random() - 0.5) * 150, q.y + (Math.random() - 0.5) * 100]);
+    spots.push(...g.alivePlayers().map((q) => [q.x, q.y]));
+    for (const [x, y] of spots) g.vfx("arcane/rune-circle", x, y, { life: 1, palette: ["#0a1a30", "#4a9ad8", "#a8e0ff", "#ffffff"] });
+    g.after(0.85, () => {
+      for (const [x, y] of spots) {
+        g.vfx("ice/icicle-fall", x, y, {});
+        g.after(0.15, () => {
+          for (const q of g.alivePlayers()) if (dist(q.x, q.y, x, y) < 24) if (g.hurt(q, 1, { src: e, x, y, groundHazard: true })) q.buff.slow = 1.5;
+        });
+      }
+      g.sound("explode", 0.3);
+    });
+    e.cd = 2.2 / k;
+  }
+}
+// a mirror copy: hangs where it appeared, flings a slow shard now and then, melts away after a while
+function witchClone(g, e, p, d, dt) {
+  e.life = (e.life ?? 9) - dt;
+  e.face = p.x < e.x ? -1 : 1;
+  if (e.tx != null) moveCircle(g.map, e, (e.tx + Math.sin(e.t * 0.9 + e.id) * 20 - e.x) * dt, (e.ty + Math.cos(e.t * 1.3) * 10 - e.y) * dt, true);
+  if (e.life <= 0) {
+    g.vfx("spawn/poof", e.x, e.y - 30, {});
+    e.hp = 0;
+    e.dead = true;
+    e.silent = true;
+    return;
+  }
+  if (!g.host) return;
+  e.shotT = (e.shotT ?? 1 + Math.random()) - dt;
+  if (e.shotT <= 0) {
+    e.shotT = 2.4;
+    shoot(g, e, angTo(e.x, e.y - 40, p.x, p.y - 16), { spd: 150, h: 40, r: 5, slow: true, kind: "ghost" });
+  }
+}
+
+// ----------------------------------------------------------------- 算力熔炉 boss: 熔岩巨蠕
+// rears out of a lava pool and spits molten globs; then dives (can't be hit), tunnels toward a player leaving a
+// burning trail, a ring marks where it will burst out, and it erupts there. From phase 2 a fire ring as it surfaces;
+// from phase 3 it dives twice in a row.
+function bossWorm(g, e, p, d, dt) {
+  const frac = e.hp / e.maxHp, phase = frac > 0.66 ? 1 : frac > 0.33 ? 2 : 3;
+  e.face = 1;
+  if (e.phase !== phase) {
+    const first = e.phase == null;
+    e.phase = phase;
+    if (!first) {
+      g.text(e.x, e.y - 130, phase === 2 ? "地心沸腾！" : "熔岩奔涌！", "#ff8a4a", 1.6, 1.5);
+      g.sound("boss");
+      spawnBossAdds(g, e, phase === 2 ? ["salamander", "bat_fire"] : ["salamander", "salamander", "bat_fire"]);
+    }
+  }
+  const k = phase === 3 ? 1.3 : phase === 2 ? 1.12 : 1;
+  if (e.st === "tunnel") {
+    // underground: no hits either way; head for the mark, leave a burning trail
+    e.dt -= dt;
+    const a = angTo(e.x, e.y, e.lx, e.ly), dd = dist(e.x, e.y, e.lx, e.ly);
+    if (dd > 4) moveCircle(g.map, e, Math.cos(a) * Math.min(dd, 260 * dt), Math.sin(a) * Math.min(dd, 260 * dt), true);
+    e.trailT = (e.trailT || 0) - dt;
+    if (g.host && e.trailT <= 0) (e.trailT = 0.18), g.addZone({ kind: "poison", fire: true, x: e.x, y: e.y, r: 16, life: phase >= 3 ? 4 : 2.6, side: "neutral" });
+    if (e.dt <= 0) erupt(g, e, phase);
+    return;
+  }
+  if (e.st === "mark") {
+    e.dt -= dt;
+    if (e.dt <= 0) (e.st = "tunnel"), (e.dt = 0.7);
+    return;
+  }
+  for (const q of g.alivePlayers()) if (dist(q.x, q.y, e.x, e.y) < e.r + 14) if (g.hurt(q, 1, e)) q.buff.burn = 2.1;
+  if (e.cd > 0 || !g.host) return;
+  const opts = ["spit", "dive", "spit", "dive"];
+  if (phase >= 2) opts.push("spray");
+  let pick = opts[(Math.random() * opts.length) | 0];
+  if (e.forcePick) (pick = e.forcePick), (e.forcePick = null);
+  if (pick === "dive") dive(g, e, p, phase);
+  else if (pick === "spit") {
+    // molten globs lobbed at and around the players; each leaves a burning puddle
+    const n = phase === 1 ? 4 : 6;
+    for (let i = 0; i < n; i++) {
+      const q = g.alivePlayers()[i % Math.max(1, g.alivePlayers().length)] || p;
+      const tx = q.x + (i ? (Math.random() - 0.5) * 150 : 0), ty = q.y + (i ? (Math.random() - 0.5) * 100 : 0);
+      const b = g.mkBullet(null, { side: "e", x: e.x, y: e.y - 96, h: 0, a: 0, spd: 0, dmg: 1, kind: "fire", r: 7, life: 3, elem: null, big: true,
+        arcTo: { x0: e.x, y0: e.y - 96, x: tx, y: ty, dur: 0.8 + i * 0.1 }, onLand: (bb) => {
+          g.vfx("explosions/small-explosion", bb.x, bb.y, { opts: { size: 0.5 } });
+          for (const qq of g.alivePlayers()) if (dist(qq.x, qq.y, bb.x, bb.y) < 24) if (g.hurt(qq, 1, { src: e, x: bb.x, y: bb.y, groundHazard: true })) qq.buff.burn = 2.1;
+          g.addZone({ kind: "poison", fire: true, x: bb.x, y: bb.y, r: 18, life: 3, side: "neutral" });
+        } });
+      b.src = e;
+      g.bullets.push(b);
+      g.vfx("arcane/rune-circle", tx, ty, { life: 0.8 + i * 0.1, palette: ["#1a0600", "#d8481c", "#ffa030", "#fff0a0"] });
+    }
+    g.sound("shoot_dragon", 0.3);
+    e.cd = 1.8 / k;
+  } else {
+    // a sweeping spray of fire from the maw
+    const base = angTo(e.x, e.y - 90, p.x, p.y - 16);
+    for (let w = 0; w < 10; w++) g.after(w * 0.08, () => {
+      if (e.dead || e.st) return;
+      const a = base - 0.8 + (w / 9) * 1.6;
+      shoot(g, e, a, { spd: 190, h: 90, r: 6, burn: true, kind: "fire" });
+      shoot(g, e, a + 0.08, { spd: 160, h: 90, r: 5, burn: true, kind: "fire" });
+    });
+    g.sound("shoot_dragon", 0.3);
+    e.cd = 1.9 / k;
+  }
+}
+function dive(g, e, p, phase) {
+  // sink into the floor, mark a player's spot, tunnel there
+  const q = g.alivePlayers()[(Math.random() * g.alivePlayers().length) | 0] || p;
+  e.st = "mark";
+  e.hidden = true;
+  e.dt = 0.35;
+  e.lx = q.x;
+  e.ly = q.y;
+  e.dives = (e.dives || 0) + 1;
+  g.vfx("explosions/dirt-explosion", e.x, e.y, { palette: ["#1a0600", "#5a1a06", "#d8481c", "#ffa030"] });
+  g.sound("explode", 0.3);
+  g.vfx("arcane/rune-circle", q.x, q.y, { life: 1.15, palette: ["#1a0600", "#d8481c", "#ffa030", "#fff0a0"] });
+  g.text(q.x, q.y - 46, "！", "#ff8a4a", 1.4, 0.8);
+  e.cd = 99;
+}
+function erupt(g, e, phase) {
+  e.st = null;
+  e.hidden = false;
+  g.vfx("explosions/big-explosion", e.x, e.y, { opts: { size: 0.7 } });
+  g.shake = Math.max(g.shake, 10);
+  g.sound("explode", 0.6);
+  for (const q of g.alivePlayers()) if (dist(q.x, q.y, e.x, e.y) < 52) if (g.hurt(q, 2, { src: e, x: e.x, y: e.y, groundHazard: true })) q.buff.burn = 2.1;
+  if (phase >= 2) for (let i = 0; i < 16; i++) shoot(g, e, (i / 16) * TAU, { spd: 130, h: 20, r: 6, burn: true, kind: "fire" });
+  // phase 3: straight back under for a second strike
+  if (phase >= 3 && e.dives % 2 === 1) {
+    e.cd = 0.5;
+    e.forcePick = "dive";
+  } else e.cd = 1.6;
+}
+
+/** 幻觉之眼's 凝视光束 angle at zone time z.t (z.a0 / z.dir travel with the zone; clients read the same) */
+export const gazeAngle = (z) => (z.a0 ?? 0) + (z.dir ?? 1) * Math.min(1.8, Math.max(0, z.t - 0.7) * 0.95);
+
+// ----------------------------------------------------------------- 无尽回廊 boss: 雷霆审判者
+// floats round the hall. 网格落雷: the floor splits into a 6×4 grid, marked cells are struck 1.3 s later (stand in a
+// safe cell); 连锁闪电: strikes walk from a player's spot in a chain; 雷光突进: a marked line, then it blinks along it
+// in a bolt; 雷弹: a fan of volt shots. On reaching phase 2 and 3 it raises storm cores: while any stands it takes 20%
+// damage, arcs run from every core to it (crossing one hurts) and 终审 charges; break them all in 12 s or the whole
+// hall is struck for 2. Breaking the last core stuns it for 3 s (takes +50%).
+const segDist = (px, py, x0, y0, x1, y1) => {
+  const dx = x1 - x0, dy = y1 - y0, L = dx * dx + dy * dy || 1, u = Math.max(0, Math.min(1, ((px - x0) * dx + (py - y0) * dy) / L));
+  return Math.hypot(px - x0 - dx * u, py - y0 - dy * u);
+};
+/** the 6×4 cells of a 网格落雷 (same on host and clients): mode 0 random (≥3 safe), 1 checker, 2 stripes; +10 inverts */
+export function verdictCells(map, seed, mode) {
+  const cols = 6, rows = 4, cw = ((map.W - 2) * T) / cols, ch = ((map.H - 2) * T) / rows, out = [], m = mode % 10;
+  let s = (seed >>> 0) || 1;
+  const rnd = () => (s = (Math.imul(s, 1103515245) + 12345) >>> 0) / 4294967296;
+  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+    const hit = m === 1 ? (i + j + seed) % 2 === 0 : m === 2 ? (i + seed) % 2 === 0 : rnd() > 0.3;
+    out.push({ x: T + i * cw, y: T + j * ch, w: cw, h: ch, hit });
+  }
+  if (m === 0) for (let k = 0; out.filter((c) => !c.hit).length < 3 && k < 40; k++) out[(seed * 7 + k * 5) % out.length].hit = false;
+  if (mode >= 10) for (const c of out) c.hit = !c.hit;
+  return out;
+}
+function bossJudge(g, e, p, d, dt) {
+  const c = g.map.center, cores = g.enemies.filter((q) => q.type === "judge_core" && !q.dead && q.coreId === e.id).length;
+  e.guardT = cores ? 1 : 0;
+  if (e.hadCores && !cores && !e.verdictFired) {
+    e.overheat = 3;
+    g.text(e.x, e.y - 120, "审判中断！", "#ffe060", 1.6, 1.4);
+    g.vfx("lightning/thunderclap", e.x, e.y - 40, {});
+  }
+  e.hadCores = cores > 0;
+  if (cores) {
+    e.charge = (e.charge || 0) + dt;
+    const pct = Math.floor((e.charge / 12) * 4);
+    if (pct !== e.chargeShown && pct > 0 && pct < 4) (e.chargeShown = pct), g.text(e.x, e.y - 130, `终审充能 ${pct * 25}%`, "#8ad8ff", 1.2, 1);
+    if (e.charge >= 12 && g.host) {
+      // 雷霆终审: the whole hall is struck; the cores burn out
+      e.verdictFired = true;
+      g.text(c.x, c.y - 120, "雷霆终审！", "#ffe060", 2, 1.6);
+      g.vfx("lightning/thunderclap", e.x, e.y - 40, {});
+      for (const q of g.alivePlayers()) {
+        g.line(q.x, q.y - 300, q.x, q.y, "#d8f4ff", 4, 0.4, "bolt", null, 0.08);
+        g.vfx("lightning/zap-hit", q.x, q.y - 10, {});
+        g.hurt(q, 2, { src: e, x: q.x, y: q.y, groundHazard: true });
+      }
+      for (const q of g.enemies) if (q.type === "judge_core" && q.coreId === e.id) (q.hp = 0), (q.dead = true), (q.silent = true);
+      g.sound("explode", 0.6);
+      e.charge = 0;
+    }
+  } else (e.charge = 0), (e.chargeShown = 0), (e.verdictFired = false);
+  if (e.overheat > 0) {
+    e.overheat -= dt;
+    e.vulnT = Math.max(e.vulnT || 0, 0.2);
+    e.flash = Math.max(e.flash || 0, Math.sin(e.t * 30) > 0 ? 0.05 : 0);
+    return;
+  }
+  const frac = e.hp / e.maxHp, phase = frac > 0.66 ? 1 : frac > 0.33 ? 2 : 3;
+  if (e.phase !== phase) {
+    const first = e.phase == null;
+    e.phase = phase;
+    if (!first) {
+      g.text(e.x, e.y - 120, phase === 2 ? "法庭肃静！" : "终审判决！", "#ffe060", 1.6, 1.5);
+      g.vfx("lightning/thunderclap", e.x, e.y - 40, {});
+      g.sound("boss");
+      e.forcePick = "cores";
+      e.cd = 0.3;
+    }
+  }
+  const k = phase === 3 ? 1.3 : phase === 2 ? 1.12 : 1, H = 50;
+  // drift round the hall on a slow figure-eight
+  if (e.st !== "blink") {
+    const tx = c.x + Math.sin(e.t * 0.4) * 170, ty = c.y - 20 + Math.sin(e.t * 0.8) * 60, a0 = angTo(e.x, e.y, tx, ty);
+    if (dist(e.x, e.y, tx, ty) > 6) moveCircle(g.map, e, Math.cos(a0) * d.spd * dt, Math.sin(a0) * d.spd * dt, true);
+  }
+  e.face = p.x < e.x ? -1 : 1;
+  for (const q of g.alivePlayers()) if (dist(q.x, q.y, e.x, e.y) < e.r + 10) if (g.hurt(q, 1, e)) q.buff.slow = 1;
+  if (e.cd > 0 || !g.host) return;
+  const opts = ["verdict", "volley", "chain", "verdict", "blink"];
+  if (phase >= 2) opts.push("chain", "blink");
+  if (phase >= 3) opts.push("verdict2", "verdict2");
+  let pick = opts[(Math.random() * opts.length) | 0];
+  if (pick === e.lastPick && pick !== "volley") pick = "volley";
+  if (e.forcePick) (pick = e.forcePick), (e.forcePick = null);
+  e.lastPick = pick;
+  const verdict = (seed, mode) => {
+    g.addZone({ kind: "verdict", x: c.x, y: c.y, r: 0, life: 1.75, side: "e", a0: seed, dir: mode, update: (z) => {
+      if (z.struck || z.t < 1.3) return;
+      z.struck = true;
+      const cells = verdictCells(g.map, seed, mode);
+      let n = 0;
+      for (const cl of cells) if (cl.hit) {
+        const x = cl.x + cl.w / 2, y = cl.y + cl.h / 2;
+        g.line(x + (Math.random() - 0.5) * 30, y - 320, x, y, "#c8f0ff", 3, 0.3, "bolt", null, 0.06);
+        if (n++ % 3 === 0) g.vfx("lightning/zap-hit", x, y, {});
+        for (const q of g.alivePlayers()) if (q.x > cl.x && q.x < cl.x + cl.w && q.y > cl.y && q.y < cl.y + cl.h) if (g.hurt(q, 1, { src: e, x, y, groundHazard: true })) q.buff.slow = 1.2;
+      }
+      g.sound("explode", 0.45);
+    } });
+  };
+  if (pick === "cores") {
+    const n = phase >= 3 ? 4 : 3;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * TAU + 0.6, x = c.x + Math.cos(a) * 190, y = c.y + Math.sin(a) * 105;
+      const q = g.spawnEnemy("judge_core", x, y, false, 0.5);
+      q.coreId = e.id;
+    }
+    e.charge = 0;
+    g.text(e.x, e.y - 100, "雷暴核心！12 秒内打掉它们！", "#8ad8ff", 1.4, 1.8);
+    g.sound("boss", 0.5);
+    e.cd = 1.4;
+  } else if (pick === "verdict" || pick === "verdict2") {
+    const seed = 1 + ((Math.random() * 9000) | 0), mode = phase === 1 ? 0 : [0, 1, 2][(Math.random() * 3) | 0];
+    verdict(seed, mode);
+    if (pick === "verdict2") g.after(1.45, () => !e.dead && verdict(seed, mode + 10)); // then the other half
+    g.text(e.x, e.y - 120, pick === "verdict2" ? "反转判决！" : "落雷审判！", "#ffe060", 1.2, 1);
+    g.vfx("lightning/charge-up", e.x, e.y - 40, {});
+    g.sound("portal", 0.4);
+    e.cd = (pick === "verdict2" ? 3.4 : 2.3) / k;
+  } else if (pick === "volley") {
+    const n = phase === 1 ? 5 : 7, base = angTo(e.x, e.y - H, p.x, p.y - 12);
+    for (let w = 0; w < (phase >= 3 ? 2 : 1); w++)
+      g.after(w * 0.35, () => {
+        if (e.dead) return;
+        for (let i = 0; i < n; i++) shoot(g, e, base + (i - (n - 1) / 2) * 0.17 + w * 0.085, { spd: 175 * k, h: H, r: 5, kind: "volt" });
+      });
+    g.sound("shoot_water", 0.3);
+    e.cd = 1.5 / k;
+  } else if (pick === "chain") {
+    // strikes walk from a player's spot: each lands 0.28 s after the last, a short hop on
+    for (const q of g.alivePlayers()) {
+      let x = q.x, y = q.y, a = Math.random() * TAU;
+      const hops = phase === 1 ? 4 : 6;
+      for (let i = 0; i < hops; i++) {
+        const sx = x, sy = y;
+        g.vfx("arcane/rune-circle", sx, sy, { life: 0.7 + i * 0.28, palette: ["#0a1030", "#3a64ff", "#8ad8ff", "#ffffff"] });
+        g.after(0.7 + i * 0.28, () => {
+          g.line(sx, sy - 300, sx, sy, "#d8f4ff", 3, 0.28, "bolt", null, 0.05);
+          for (const o of g.alivePlayers()) if (dist(o.x, o.y, sx, sy) < 26) if (g.hurt(o, 1, { src: e, x: sx, y: sy, groundHazard: true })) o.buff.slow = 1;
+          g.sound("shoot_water", 0.15);
+        });
+        a += (Math.random() - 0.5) * 1.6;
+        x = Math.max(T * 2, Math.min((g.map.W - 2) * T, x + Math.cos(a) * 48));
+        y = Math.max(T * 2, Math.min((g.map.H - 2) * T, y + Math.sin(a) * 40));
+      }
+    }
+    e.cd = 2.2 / k;
+  } else if (pick === "blink") {
+    // a marked line through a player; it blinks to the far end in a bolt, hurting anyone on the line
+    const times = phase >= 3 ? 2 : 1;
+    for (let w = 0; w < times; w++)
+      g.after(w * 1.1, () => {
+        if (e.dead) return;
+        const q = g.alivePlayers()[(Math.random() * g.alivePlayers().length) | 0] || p, a = angTo(e.x, e.y, q.x, q.y);
+        let ex = Math.max(T * 3, Math.min((g.map.W - 3) * T, q.x + Math.cos(a) * 90)), ey = Math.max(T * 3, Math.min((g.map.H - 3) * T, q.y + Math.sin(a) * 90));
+        // never end inside a pillar: pull back along the line until the spot is clear
+        for (let i = 0; i < 12 && tileAt(g.map, ex, ey) === WALL; i++) (ex += (e.x - ex) * 0.15), (ey += (e.y - ey) * 0.15);
+        const x0 = e.x, y0 = e.y;
+        g.line(x0, y0, ex, ey, "#ffe060", 10, 0.65, "warn");
+        e.st = "blink";
+        g.after(0.65, () => {
+          if (e.dead) return;
+          g.vfx("arcane/blink-out", e.x, e.y - 40, { palette: ["#0a1030", "#3a64ff", "#8ad8ff", "#ffffff"] });
+          e.x = ex;
+          e.y = ey;
+          g.line(x0, y0 - 30, ex, ey - 30, "#c8f0ff", 4, 0.35, "bolt", null, 0.08);
+          g.vfx("arcane/blink-in", ex, ey - 40, { palette: ["#0a1030", "#3a64ff", "#8ad8ff", "#ffffff"] });
+          for (const o of g.alivePlayers()) if (segDist(o.x, o.y, x0, y0, ex, ey) < 22) if (g.hurt(o, 1, { src: e, x: o.x, y: o.y })) o.buff.slow = 1;
+          g.sound("explode", 0.3);
+          e.st = "idle";
+        });
+      });
+    e.cd = (times === 2 ? 3 : 1.9) / k;
   }
 }

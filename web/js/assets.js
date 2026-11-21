@@ -105,8 +105,8 @@ export async function loadAll(progress = () => {}) {
   const petImages=await Promise.all((petMeta.pages||[{file:'pets.png'}]).map((page,i)=>i===0?petImage:img(base+'pets/'+page.file)));
   A.pets = { meta: petMeta, image: petImage, images:petImages };
   await Promise.all(['fox','dragon','phoenix'].map(async id=>{
-    const [meta,image]=await Promise.all([json(base+'pets/'+id+'-mounted.json'),img(base+'pets/'+id+'-mounted.png')]);
-    A.mounts[id]={meta,image};
+    const [meta,image,mask]=await Promise.all([json(base+'pets/'+id+'-mounted.json'),img(base+'pets/'+id+'-mounted.png'),img(base+'pets/'+id+'-mounted-mask.png').catch(()=>null)]);
+    A.mounts[id]={meta,image,mask}; // mask: which pixels of a mounted frame are the pet (异色 recolour)
   }));
   // event visitors (梦境航线): one row of idle frames each
   try {
@@ -115,6 +115,13 @@ export async function loadAll(progress = () => {}) {
     const files = [...new Set(Object.values(meta.npcs).map((m) => m.file).filter(Boolean))];
     const sheets = Object.fromEntries(await Promise.all(files.map(async (f) => [f, await img(base + "npc/" + f)])));
     A.npc = { meta, image, sheets };
+    // 宝箱怪 as a monster (诅咒宝箱's 宝箱怪 fate): the visitor's idle row as a critter strip
+    const mm = meta.npcs.curse, cs = meta.cell;
+    if (mm && mm.row != null) {
+      const st = canvas(cs * mm.n, cs);
+      st.getContext("2d").drawImage(image, 0, mm.row * cs, cs * mm.n, cs, 0, 0, cs * mm.n, cs);
+      A.critters.mimic = { img: st, w: cs, h: cs, n: mm.n, fps: 8, ox: mm.ox, oy: mm.oy, white: silhouette(st, "#ffffff"), red: silhouette(st, "#ff5050"), blue: silhouette(st, "#bfefff") };
+    }
   } catch {}
   try {
     await document.fonts.load("12px Cubic");

@@ -1,5 +1,5 @@
 // Boot, the frame loop, and the app controller tying UI, game and network together.
-import { VIEW_H, VIEW_W, setViewW, CHARS, REWARD, ELEM, RS, setRS, MAPS, MAP_ORDER, PVP_MODES, ENEMIES } from "./data.js";
+import { VIEW_H, VIEW_W, setViewW, CHARS, REWARD, ELEM, RS, setRS, MAPS, MAP_ORDER, PVP_MODES, ENEMIES, PACTS, pactLevel, PACT_MILESTONES } from "./data.js";
 import { loadAll, A } from "./assets.js";
 import { loadFx, FxLayer } from "./fx.js";
 import { Renderer } from "./render.js";
@@ -17,6 +17,8 @@ import * as UI from "./ui.js";
 import { showLobby, showGacha } from "./lobby.js";
 import { Net } from "./net.js";
 import { initUpdater } from "./updater.js";
+import { saveRun, clearRun, restoreRun, canCheckpoint } from "./runsave.js";
+import { grantTitle } from "./titles.js";
 import { PETS, PET_EVOLVE, MINE_EGG_CHANCE, petExperience } from "./petdata.js";
 import { grantPetXP, grantEggs, petState, findPet, addPool } from "./petsave.js";
 import { showEvent } from "./routeui.js";
@@ -55,7 +57,7 @@ function resize() {
 export function playMode() {
   const m = load(), pm = m.playMode || {};
   const map = MAPS[pm.map] && mapUnlocked(pm.map) ? pm.map : "grass";
-  return { map, endless: !!pm.endless && endlessUnlocked() };
+  return { map, endless: !!pm.endless && endlessUnlocked(), pact: m.pact || {} };
 }
 export function mapUnlocked(id) {
   const need = MAPS[id] && MAPS[id].need, m = load();
@@ -159,12 +161,23 @@ export const app = {
     this.petGranted = 0; // pet xp already saved during this run (live evolution)
     this.petCheckT = 0;
     g.onUi = (k, pid) => this.onGameUi(k, pid);
-    if (cfg.mode !== "client") g.startRun();
+    if (cfg.mode !== "client") cfg.resume ? restoreRun(this, cfg.resume) : g.startRun();
     UI.showHud(g, this.me);
     playMusic(cfg.pvp ? "boss" : "battle");
     renderer.follow(g, this.me, 0, true);
     // equipped SSR talents of every player (host / solo simulates them)
-    if (cfg.mode !== "client") g.applyLoadouts();
+    if (cfg.mode !== "client" && !cfg.resume) g.applyLoadouts();
+  },
+  /** 冒险续玩: rebuild the saved solo run and drop the player at the start of its room */
+  resumeRun(d) {
+    try {
+      this.begin({ ...d.cfg, resume: d });
+    } catch (e) {
+      console.error(e);
+      clearRun();
+      UI.toast("存档的冒险无法继续，已清除");
+      this.toLobby();
+    }
   },
   onGameUi(kind, pid) {
     const g = this.game;
@@ -200,6 +213,10 @@ export const app = {
         coins: () => me.coins,
         roll: (odd, ratio) => (this.game === g ? g.rollDice(me.id, odd, ratio) : null),
         settle: () => this.game === g && g.settleDice(me.id),
+        spin: () => (this.game === g ? g.spinSlot(me.id) : null),
+        deal: (id) => (this.game === g ? g.bloodDeal(me.id, id) : null),
+        openChest: () => (this.game === g ? g.openCurseChest(me.id) : null),
+        settleSlot: () => this.game === g && g.settleSlot(me.id),
         // 奇遇商人: what the account holds, and a purchase paid from it (金铲 / 晶石), goods straight into the account
         wallet: () => ({ au: mineState().shovels.au || 0, gem: load().tokens || 0 }),
         bought: () => (this.game === g && g.npc?.bought) || [],
@@ -230,6 +247,7 @@ export const app = {
     }
     else if (kind === "room") {
       renderer.follow(g, this.me, 0, true);
+      saveRun(this); // 冒险续玩 checkpoint
       if (g.room && g.room.kind === "boss") playMusic("boss");
       else if (!g.pvp) playMusic("battle");
     }
@@ -237,6 +255,7 @@ export const app = {
   endRun(win) {
     if (this.ended) return;
     this.ended = true;
+    clearRun();
     if (this.petTrial) {
       const id = this.petTrial, rs = this.game.runStats;
       UI.showResult({title:"宠物试炼结束",sub:`${PETS[id].name} · 试用收益不保存`,rows:[["清理房间",rs.rooms],["击败敌人",rs.kills],["造成伤害",Math.round(rs.dmg)]],extras:[["宠物试用","未消耗货币，不保存收益"]],tokens:0,win,cid:this.me.cid},()=>this.startPetTrial(id),()=>this.toLobby());
@@ -249,12 +268,15 @@ export const app = {
     const mul = endless ? 1 : md.reward || 1;
     const riftBonus = (rs.riftDeclines || 0) * REWARD.riftSkip;
     // 双首领 pays its boss reward twice
-    const tokens = Math.round((rs.rooms * REWARD.room + rs.kills * REWARD.kill + rs.elites * REWARD.elite + (rs.boss ? REWARD.boss : 0) + (rs.twinBosses || 0) * REWARD.boss) * mul) + (first ? REWARD.firstBoss : 0) + riftBonus;
+    // 噩梦契约: +8% 晶石 a level on the run's own earnings
+    const plv = pactLevel(g.pact), pmul = 1 + 0.08 * plv;
+    const tokens = Math.round((rs.rooms * REWARD.room + rs.kills * REWARD.kill + rs.elites * REWARD.elite + (rs.boss ? REWARD.boss : 0) + (rs.twinBosses || 0) * REWARD.boss) * mul * pmul) + (first ? REWARD.firstBoss : 0) + riftBonus;
     if (win && !endless) m.maps[o.map] = (m.maps[o.map] || 0) + 1;
     const prevBest = m.stats.endlessBest || 0;
     if (endless) m.stats.endlessBest = Math.max(prevBest, rs.rooms);
     m.tokens += tokens;
     m.stats.kills += rs.kills;
+    m.stats.perfect = (m.stats.perfect || 0) + (rs.perfect || 0); // 称号·幻影舞者
     m.stats.reactions += rs.reactions;
     m.stats.runs++;
     if (!endless) m.stats.best = Math.max(m.stats.best, rs.rooms);
@@ -279,7 +301,29 @@ export const app = {
     // 双首领 counts as two bosses and lifts the cap by one; a declined 梦境裂隙 sometimes leaves one more
     const eggs = grantEggs(Math.min(3 + (rs.twinBosses || 0), rs.xpBosses || 0) + (rs.riftEggs || 0));
     if (eggs) extras.push(["宠物蛋", `+${eggs}（宠物仓库孵化）`]);
+    if (rs.perfect) extras.push(["完美闪避", `${rs.perfect} 次`]);
     if (rs.twinBosses) extras.push(["双首领", `${rs.twinBosses} 次 · 首领奖励翻倍`]);
+    if (plv) {
+      // a clear (a won chapter, or ten endless floors) records the level per map and pays new milestones once
+      const cleared = endless ? rs.rooms >= 10 : win, key = endless ? "endless" : o.map;
+      m.pactBest = m.pactBest || {};
+      m.pactClaim = m.pactClaim || [];
+      let note = `等级 ${plv} · 晶石 ×${pmul.toFixed(2)}`;
+      if (cleared) {
+        if (plv > (m.pactBest[key] || 0)) (m.pactBest[key] = plv), (note += " · 新纪录");
+        for (const ms of PACT_MILESTONES) if (plv >= ms.lv && !m.pactClaim.includes(ms.lv)) {
+          m.pactClaim.push(ms.lv);
+          if (ms.gems) m.tokens += ms.gems;
+          if (ms.cards) { const ms2 = mineState(); ms2.cards = (ms2.cards || 0) + ms.cards; }
+          if (ms.title) grantTitle("nightmare");
+          save();
+          for (const [kind, n] of ms.eggs || []) grantEggs(n, kind);
+          extras.push(["契约里程碑", `噩梦 ${ms.lv} · ${ms.name}`]);
+        }
+      }
+      save();
+      extras.push(["噩梦契约", note]);
+    }
     if (xp.gained) extras.push([xp.after.level > xp.before.level ? "角色升级" : "角色经验", `+${xp.gained} · Lv.${xp.after.level}`]);
     if (first) extras.push([`首通 ${md.name}`, "+" + REWARD.firstBoss + '<i class="cur gem"></i>']);
     if (first) {
@@ -290,6 +334,13 @@ export const app = {
     if (!endless && mul > 1) extras.push(["地图加成", "×" + mul]);
     if (unl.length) extras.push(["🔓 新角色解锁", unl.map((id) => CHARS[id].short).join("、")]);
     if (drops.length) extras.push(["梦境矿场", Object.keys(SHOVELS).filter(k => drops.includes(k)).map(k => `${SHOVELS[k].name}×${drops.filter(d => d === k).length}`).join("、")]);
+    // 诅咒宝箱: 淬灵露 found this run go into the 宠物仓库
+    if (rs.eventItems) {
+      const ps = petState(); // (one read: petState() re-normalizes the save object each call)
+      ps.items.ur = (ps.items.ur || 0) + rs.eventItems;
+      save();
+      extras.push(["淬灵露", `+${rs.eventItems}（宠物仓库使用）`]);
+    }
     if (rs.eventStars) {
       // 星砂泉: star sand carried out of the run
       mineState().stars += rs.eventStars;
@@ -413,6 +464,7 @@ export const app = {
     ms.stars += res.stars;
     res.record = res.depth > ms.best;
     ms.best = Math.max(ms.best, res.depth);
+    ms.kills = (ms.kills || 0) + (res.kills || 0);
     save();
     res.questsDone = progressQuests(res).map(questText);
     // 矿场掉蛋：a safe extraction with something dug or fought finds a 宠物蛋 now and then
@@ -449,6 +501,13 @@ export const app = {
     this.pauseMd = UI.showPause(this.game, {
       me: this.me,
       resume: () => ((this.paused = false), (this.pauseMd = null)),
+      // 冒险续玩: back to the lobby keeping the checkpoint taken when this room was entered
+      saveQuit: canCheckpoint(this) ? () => {
+        this.paused = false;
+        this.pauseMd = null;
+        UI.closeCards();
+        this.toLobby();
+      } : null,
       quit: () => {
         this.paused = false;
         this.pauseMd = null;

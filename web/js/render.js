@@ -1,15 +1,17 @@
 // Draws the world: ground, y-sorted blocks/bushes/characters, pixelfx layers, bullets, overlays.
-import { T, VIEW_W, VIEW_H, CHARS, ELEM, ITEMS, ENEMIES, RS } from "./data.js";
+import { T, VIEW_W, VIEW_H, CHARS, ELEM, ITEMS, ENEMIES, RS, AFFIXES } from "./data.js";
 import { A, silhouette } from "./assets.js";
 import { WALL, WATER, BUSH, CRATE, BARREL, wallSprite, wallMask, crateSprite, bushSprite, drawSpikes, tileAt, THEMES, LIFT, renderGround, DRAGON_WALL_HP } from "./map.js";
 import { clamp, TAU, dist } from "./util.js";
 import { input } from "./input.js";
 import { hex } from "../pixelfx/core/index.js";
 import { icon } from "./icons.js";
-import { drawPet, drawMountedPet, mountedHeadHeight, mountedAttackOrigin, mountedAimOrigin, drawPetFields, drawPetAfterimages, petLine } from "./pets.js";
+import { drawPet, drawMountedPet, warmMount, mountedHeadHeight, mountedAttackOrigin, mountedAimOrigin, drawPetFields, drawPetAfterimages, petLine } from "./pets.js";
 import { DRAGON_FIREBALL, FOX_RIDE_RANGE } from './petdata.js';
 import { flyingMount } from './petcombat.js';
 import { NPCS } from "./route.js";
+import { verdictCells } from "./enemies.js";
+import { drawTitlePlate } from "./titles.js";
 
 const shovelIcon = (k) => icon("shovel_" + k);
 const HC = new Map();
@@ -113,6 +115,8 @@ export class Renderer {
     if (me && me.target && !me.target.dead && !me.target.downed) this.drawReticle(g, me.target);
     for (const e of game.enemies) this.drawTelegraph(g, e);
 
+    // 骑乘 frames are cut and recoloured ahead of the first mount (idle slices)
+    for (const p of game.players) if (p.pet && p.pet.stage === 3) warmMount(p);
     // pixelfx: back layer
     g.setTransform(RS, 0, 0, RS, 0, 0);
     this.fx.syncPetFields(game);
@@ -232,6 +236,22 @@ export class Renderer {
       this.vig = v;
     }
     // (vignette is a CSS overlay: cheaper than a full-screen blend every frame)
+    if (game.witchT > 0) {
+      // 子弹时间 (完美闪避): the world goes violet and slow, a pulsing frame and a ripple from the start
+      const k = Math.min(1, game.witchT * 3, (1.6 - game.witchT) * 8);
+      g.fillStyle = `rgba(70,30,140,${0.22 * k})`;
+      g.fillRect(0, 0, VIEW_W, VIEW_H);
+      g.strokeStyle = `rgba(200,170,255,${(0.35 + 0.15 * Math.sin(this.t * 10)) * k})`;
+      g.lineWidth = 6;
+      g.strokeRect(3, 3, VIEW_W - 6, VIEW_H - 6);
+      if (game.witchT > 1.2 && me) {
+        const u = (1.6 - game.witchT) / 0.4, sx = me.x - cx, sy = me.y - 20 - cy;
+        g.strokeStyle = `rgba(230,210,255,${1 - u})`;
+        g.lineWidth = 3;
+        g.beginPath(); g.arc(sx, sy, 20 + u * 260, 0, TAU); g.stroke();
+      }
+      this.text(g, "子弹时间", VIEW_W / 2, 80, "#d8c8ff", 13);
+    }
     if (me && me.hurtT > 0) {
       g.fillStyle = `rgba(255,40,60,${me.hurtT * 0.6})`;
       g.fillRect(0, 0, VIEW_W, VIEW_H);
@@ -453,8 +473,10 @@ export class Renderer {
     if (tileAt(game.map, p.x, p.y) === BUSH && p !== me && p.pvpEnemy) return;
     const y = p.y - (p.mounted ? mountedHeadHeight(p)??68 : (set.foot-(set.top||0))/(set.k||1)) - 8, w = 34, x = p.x - w / 2;
     const col = p === me ? "#5dff7a" : p.pvpEnemy ? "#ff4a5a" : "#4ab8ff";
-    // name
-    if (game.players.length > 1 || p !== me) this.text(g, p.name, p.x, y - 9, col, 10);
+    // name, and the worn 称号 above it (everyone sees everyone's)
+    const named = game.players.length > 1 || p !== me;
+    if (named) this.text(g, p.name, p.x, y - 9, col, 10);
+    if (p.title) drawTitlePlate(g, p.title, p.x, y - (named ? 22 : 10), this.t);
     g.fillStyle = "#14101c";
     g.fillRect(x - 1, y - 1, w + 2, 6);
     g.fillStyle = "#3a1a24";
@@ -527,19 +549,136 @@ export class Renderer {
   drawEnemy(g, e, game) {
     const d = e.def, s = A.critters[d.sprite];
     if (!s) return;
+    if (d.ai === "storm_core") {
+      // 雷霆审判者's storm core, drawn by hand: a dark crystal held in a spinning gold cage, lightning in its heart
+      g.save();
+      const x = Math.round(e.x), y = Math.round(e.y), bob = Math.round(Math.sin(this.t * 3 + e.id) * 2), cy = y - 26 + bob, pul = 0.5 + 0.5 * Math.sin(this.t * 7 + e.id);
+      g.fillStyle = "rgba(10,14,40,0.45)";
+      g.beginPath(); g.ellipse(x, y, 13, 4.5, 0, 0, TAU); g.fill();
+      const dia = (r, col) => { g.fillStyle = col; g.beginPath(); g.moveTo(x, cy - r * 1.5); g.lineTo(x + r, cy); g.lineTo(x, cy + r * 1.5); g.lineTo(x - r, cy); g.closePath(); g.fill(); };
+      dia(10, "#0a0c18"); dia(9, e.flash > 0 ? "#ffffff" : "#2a3a8a"); dia(5, e.flash > 0 ? "#ffffff" : "#5a8aff");
+      g.fillStyle = "#d8f4ff"; g.fillRect(x - 3, cy - 8, 2, 6);
+      // the cage: two gold bands seen edge-on, turning
+      for (let i = 0; i < 2; i++) {
+        const a = this.t * 2 + i * Math.PI / 2, rx = Math.abs(Math.cos(a)) * 13 + 2;
+        g.strokeStyle = "#0a0c18"; g.lineWidth = 3;
+        g.beginPath(); g.ellipse(x, cy, rx, 15, 0, 0, TAU); g.stroke();
+        g.strokeStyle = i ? "#e8be3c" : "#b07c1c"; g.lineWidth = 1.5;
+        g.beginPath(); g.ellipse(x, cy, rx, 15, 0, 0, TAU); g.stroke();
+      }
+      g.globalCompositeOperation = "lighter";
+      g.fillStyle = `rgba(120,204,255,${0.2 + 0.25 * pul})`;
+      g.beginPath(); g.arc(x, cy, 14 + pul * 4, 0, TAU); g.fill();
+      g.strokeStyle = "#c8f0ff"; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(x, cy);
+      for (let i = 1; i <= 3; i++) { const a = this.t * 9 + e.id + i; g.lineTo(x + Math.cos(a) * i * 4, cy + Math.sin(a * 1.3) * i * 4); }
+      g.stroke();
+      g.restore();
+      return;
+    }
+    if (d.ai === "pylon") {
+      // 过热核心's coolant pylon, drawn by hand: a riveted metal tower with a pulsing ice crystal on top
+      g.save();
+      const x = Math.round(e.x), y = Math.round(e.y), pul = 0.5 + 0.5 * Math.sin(this.t * 5 + e.id);
+      g.fillStyle = "rgba(10,20,40,0.45)";
+      g.beginPath(); g.ellipse(x, y, 14, 5, 0, 0, TAU); g.fill();
+      const P = (px, py, w, h, c) => ((g.fillStyle = c), g.fillRect(x + px, y + py, w, h));
+      P(-10, -6, 20, 6, "#14101c"); P(-9, -5, 18, 4, "#4a5468"); P(-9, -5, 18, 1, "#8a96aa");
+      P(-6, -30, 12, 25, "#14101c"); P(-5, -29, 10, 24, "#5a6478"); P(-5, -29, 3, 24, "#9aa6ba"); P(2, -29, 3, 24, "#3a4458");
+      for (let k = 0; k < 3; k++) P(-5, -25 + k * 7, 10, 1, "#2a3040");
+      P(-8, -34, 16, 5, "#14101c"); P(-7, -33, 14, 3, "#6a7488");
+      g.fillStyle = "#14101c";
+      g.beginPath(); g.moveTo(x, y - 52); g.lineTo(x + 7, y - 42); g.lineTo(x, y - 33); g.lineTo(x - 7, y - 42); g.closePath(); g.fill();
+      g.fillStyle = e.flash > 0 ? "#ffffff" : "#5ab8ff";
+      g.beginPath(); g.moveTo(x, y - 50); g.lineTo(x + 5, y - 42); g.lineTo(x, y - 35); g.lineTo(x - 5, y - 42); g.closePath(); g.fill();
+      g.fillStyle = "#d8f4ff";
+      g.fillRect(x - 2, y - 46, 2, 5);
+      g.globalCompositeOperation = "lighter";
+      g.fillStyle = `rgba(90,184,255,${0.18 + 0.2 * pul})`;
+      g.beginPath(); g.arc(x, y - 42, 12 + pul * 3, 0, TAU); g.fill();
+      g.restore();
+      return;
+    }
+    if (e.hidden) {
+      // 熔岩巨蠕 underground: a moving mound with glowing cracks and jumping grit
+      g.save();
+      const x = Math.round(e.x), y = Math.round(e.y), j = Math.sin(this.t * 40);
+      g.fillStyle = "rgba(20,8,4,0.55)";
+      g.beginPath(); g.ellipse(x, y, 20, 8, 0, 0, TAU); g.fill();
+      g.fillStyle = "#4a2a1c";
+      g.beginPath(); g.ellipse(x, y - 2 + j, 15, 6, 0, 0, TAU); g.fill();
+      g.globalCompositeOperation = "lighter";
+      g.strokeStyle = `rgba(255,${140 + 60 * Math.sin(this.t * 12)},40,0.9)`;
+      g.lineWidth = 1;
+      for (let i = 0; i < 4; i++) {
+        const a = i * 1.7 + this.t * 2;
+        g.beginPath(); g.moveTo(x, y - 2); g.lineTo(x + Math.cos(a) * 14, y - 2 + Math.sin(a) * 5); g.stroke();
+      }
+      g.globalCompositeOperation = "source-over";
+      g.fillStyle = "#86644e";
+      for (let i = 0; i < 5; i++) {
+        const ph = (this.t * 3 + i * 0.2) % 1;
+        g.fillRect(x + Math.cos(i * 2.3) * 12, y - 4 - Math.sin(ph * Math.PI) * 10, 2, 2);
+      }
+      g.restore();
+      return;
+    }
     // sprScale: the PixelLab monsters are drawn a bit larger than the original critters; shrink the picture only
-    const sc = (d.scale || 1) * (d.sprScale || 1);
+    const sc = (d.scale || 1) * (d.sprScale || 1) * (e.sizeK || 1); // sizeK: 冰封史莱姆王's split halves
     const fr = Math.floor(e.anim * s.fps * (e.slowT > 0 ? 0.5 : 1)) % s.n;
     const fade = e.spawnT > 0 ? 1 - e.spawnT / 0.25 : 1;
     // shadow (fliers' strips include their own)
     g.save();
     g.globalAlpha = fade;
-    if (e.elite || e.boss) {
+    if (e.elite || e.boss || d.mirror) {
+      // (霜镜女巫's copies wear the boss ring too: only the shadow tells them apart)
       g.globalCompositeOperation = "lighter";
-      g.fillStyle = e.boss ? "rgba(255,60,90,0.25)" : "rgba(255,190,60,0.3)";
+      g.fillStyle = e.boss || d.mirror ? "rgba(255,60,90,0.25)" : "rgba(255,190,60,0.3)";
       g.beginPath();
       g.ellipse(e.x, e.y, e.r * 1.6, e.r * 0.7, 0, 0, TAU);
       g.fill();
+      g.globalCompositeOperation = "source-over";
+    }
+    if (e.affix && e.spawnT <= 0) {
+      // 精英词缀 auras: 霜环 the chill radius, 再生 rising green pluses, 爆裂 a flickering fuse glow, 迅捷 speed streaks,
+      // 坚盾 a bubble, 分裂 a wobbling double outline
+      g.globalCompositeOperation = "lighter";
+      const t = this.t + e.id;
+      if (e.affix === "frost") {
+        g.strokeStyle = `rgba(200,240,255,${0.35 + 0.15 * Math.sin(t * 3)})`;
+        g.lineWidth = 2;
+        g.beginPath(); g.ellipse(e.x, e.y, 72, 40, 0, 0, TAU); g.stroke();
+        g.fillStyle = "rgba(160,220,255,0.08)";
+        g.fill();
+      } else if (e.affix === "regen") {
+        g.fillStyle = "#7aff9a";
+        for (let i = 0; i < 3; i++) {
+          const u = (t * 0.8 + i / 3) % 1, x = Math.round(e.x + Math.sin(i * 2.4 + t) * e.r), y = Math.round(e.y - e.r - u * 26);
+          g.globalAlpha = (1 - u) * fade;
+          g.fillRect(x - 2, y, 5, 1); g.fillRect(x, y - 2, 1, 5);
+        }
+      } else if (e.affix === "volatile") {
+        g.fillStyle = `rgba(255,120,40,${0.18 + 0.18 * (Math.sin(t * 9) > 0 ? 1 : 0)})`;
+        g.beginPath(); g.arc(e.x, e.y - e.r, e.r * 1.5, 0, TAU); g.fill();
+      } else if (e.affix === "swift") {
+        g.strokeStyle = "rgba(127,224,255,0.55)";
+        g.lineWidth = 1;
+        for (let i = 0; i < 3; i++) {
+          const u = (t * 3 + i / 3) % 1, y = Math.round(e.y - e.r * 0.5 - i * 6), x = e.x - e.face * (e.r + 4 + u * 12);
+          g.beginPath(); g.moveTo(x, y); g.lineTo(x - e.face * 8, y); g.stroke();
+        }
+      } else if (e.affix === "shield" && e.shieldHp > 0) {
+        g.strokeStyle = `rgba(138,180,255,${0.5 + 0.2 * Math.sin(t * 4)})`;
+        g.lineWidth = 2;
+        g.beginPath(); g.arc(e.x, e.y - e.r, e.r * 1.7, 0, TAU); g.stroke();
+        g.fillStyle = "rgba(138,180,255,0.1)";
+        g.fill();
+      } else if (e.affix === "split") {
+        g.strokeStyle = "rgba(166,240,106,0.5)";
+        g.lineWidth = 1;
+        for (const sd of [-1, 1]) { g.beginPath(); g.arc(e.x + sd * (3 + Math.sin(t * 5) * 2), e.y - e.r, e.r * 1.3, 0, TAU); g.stroke(); }
+      }
+      g.globalAlpha = fade;
       g.globalCompositeOperation = "source-over";
     }
     if (d.rare) {
@@ -588,7 +727,7 @@ export class Renderer {
     g.restore();
   }
   drawEnemyBar(g, e) {
-    if (e.spawnT > 0 || e.boss) return;
+    if (e.spawnT > 0 || e.boss || e.def.mirror) return;
     const s = A.critters[e.def.sprite];
     const top = e.y - Math.min(s.oy, e.r * 2.6 + 10) - 6 - (e.z || 0);
     // element marks: colored pips (what can react)
@@ -603,7 +742,16 @@ export class Renderer {
       g.fillRect(px + i * 6 + 1, top - 8, 3, 3);
       i++;
     }
-    if (e.elite) this.text(g, "精英", e.x, top - 16, "#ffd84a", 10);
+    const af = e.affix && AFFIXES.find((a) => a.id === e.affix);
+    if (e.elite) this.text(g, af ? `精英·${af.name}` : "精英", e.x, top - 16, af ? af.color : "#ffd84a", 10);
+    if (e.shieldHp > 0) {
+      // 精英词缀·坚盾: a blue barrier bar over the life bar
+      const w = 30, x = e.x - w / 2;
+      g.fillStyle = "#14101c";
+      g.fillRect(x - 1, top - 5, w + 2, 4);
+      g.fillStyle = "#8ab4ff";
+      g.fillRect(x, top - 4, Math.round(w * clamp(e.shieldMax ? e.shieldHp / e.shieldMax : 1)), 2);
+    }
     if (e.hp >= e.maxHp && !e.elite) return;
     const w = e.elite ? 30 : 22, x = e.x - w / 2;
     g.fillStyle = e.elite ? "#ffcf4a" : "#14101c";
@@ -650,6 +798,131 @@ export class Renderer {
       g.beginPath();
       g.ellipse(z.x, z.y, z.r, z.r * 0.55, 0, 0, TAU);
       g.fill();
+    } else if (z.kind === "thorncage") {
+      // 根须之心: a ring of thorns closing in (red-tinted while it is still harmless, then green and biting)
+      const n = 18, bite = z.t >= 0.45, fade = clamp(z.life * 3) * clamp(z.t * 5);
+      g.globalAlpha = 0.35 * fade;
+      g.strokeStyle = bite ? "#3a8a2a" : "#ff6060";
+      g.lineWidth = 2;
+      g.beginPath();
+      g.ellipse(z.x, z.y, z.r, z.r * 0.62, 0, 0, TAU);
+      g.stroke();
+      g.globalAlpha = fade;
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * TAU + z.t * 0.6, x = z.x + Math.cos(a) * z.r, y = z.y + Math.sin(a) * z.r * 0.62, h = bite ? 13 : 7;
+        g.fillStyle = "#14281a";
+        g.beginPath(); g.moveTo(x - 4, y + 2); g.lineTo(x + 4, y + 2); g.lineTo(x, y - h - 1); g.closePath(); g.fill();
+        g.fillStyle = bite ? "#4f9e40" : "#7a5a3a";
+        g.beginPath(); g.moveTo(x - 3, y + 1); g.lineTo(x + 3, y + 1); g.lineTo(x, y - h); g.closePath(); g.fill();
+        g.fillStyle = "#d8ffa0";
+        g.fillRect(Math.round(x), Math.round(y - h), 1, 2);
+      }
+    } else if (z.kind === "vinesweep") {
+      // 根须之心: two thorny vines swing round (same angle formula as enemies.js vineAngle)
+      const a = (z.id % 7) * 0.9 + Math.max(0, z.t - 0.6) * 2.1, wind = z.t < 0.6, fade = clamp(z.life * 3);
+      for (const arm of [a, a + Math.PI]) {
+        const ex = z.x + Math.cos(arm) * z.r, ey = z.y + Math.sin(arm) * z.r * 0.7;
+        if (wind) {
+          g.globalAlpha = 0.25 + 0.25 * Math.sin(this.t * 30);
+          g.strokeStyle = "#ff6060";
+          g.lineWidth = 10;
+          g.beginPath(); g.moveTo(z.x, z.y); g.lineTo(ex, ey); g.stroke();
+          continue;
+        }
+        g.globalAlpha = fade;
+        for (const [w, col] of [[13, "#0e2412"], [9, "#2e7232"], [3, "#7fc85a"]]) {
+          g.strokeStyle = col;
+          g.lineWidth = w;
+          g.beginPath();
+          for (let k = 0; k <= 12; k++) {
+            const u = 0.12 + (k / 12) * 0.88, wob = Math.sin(u * 9 + this.t * 8) * 5 * u, px = z.x + (ex - z.x) * u - Math.sin(arm) * wob, py = z.y + (ey - z.y) * u + Math.cos(arm) * wob;
+            k ? g.lineTo(px, py) : g.moveTo(px, py);
+          }
+          g.stroke();
+        }
+        g.fillStyle = "#d8c08a";
+        for (let k = 2; k <= 11; k += 1.5) {
+          const u = k / 12, px = z.x + (ex - z.x) * u, py = z.y + (ey - z.y) * u, s = k % 3 < 1.5 ? 1 : -1;
+          g.fillRect(Math.round(px - Math.sin(arm) * 7 * s), Math.round(py + Math.cos(arm) * 7 * s), 2, 3);
+        }
+      }
+    } else if (z.kind === "gazebeam") {
+      // 幻觉之眼's 凝视光束: a thin red aim line, then a hot beam sweeping (angle as enemies.js gazeAngle)
+      const a = (z.a0 ?? 0) + (z.dir ?? 1) * Math.min(1.8, Math.max(0, z.t - 0.7) * 0.95), ex = z.x + Math.cos(a) * z.r, ey = z.y + Math.sin(a) * z.r;
+      if (z.t < 0.7) {
+        g.globalAlpha = 0.4 + 0.4 * Math.sin(this.t * 40);
+        g.strokeStyle = "#ff4060";
+        g.lineWidth = 2;
+        g.beginPath(); g.moveTo(z.x, z.y); g.lineTo(ex, ey); g.stroke();
+      } else {
+        g.globalAlpha = clamp(z.life * 4);
+        g.globalCompositeOperation = "lighter";
+        for (const [w, col] of [[16, "rgba(255,40,80,0.35)"], [8, "#ff4a6a"], [3, "#fff0f4"]]) {
+          g.strokeStyle = col;
+          g.lineWidth = w;
+          g.beginPath(); g.moveTo(z.x, z.y); g.lineTo(ex, ey); g.stroke();
+        }
+        g.globalCompositeOperation = "source-over";
+      }
+    } else if (z.kind === "verdict") {
+      // 雷霆审判者's 网格落雷: struck cells glow yellow and pulse faster as the strike nears, safe cells stay dark with a
+      // calm blue frame; at the strike the struck cells flash white
+      const cells = (z._cells && z._seed === z.a0 && z._mode === z.dir) ? z._cells : ((z._seed = z.a0), (z._mode = z.dir), (z._cells = verdictCells(game.map, z.a0, z.dir)));
+      const pre = z.t < 1.3, k = clamp(z.t / 1.3), fade = clamp(z.life * 4);
+      for (const c of cells) {
+        const x = Math.round(c.x) + 2, y = Math.round(c.y) + 2, w = Math.round(c.w) - 4, h = Math.round(c.h) - 4;
+        if (!c.hit) {
+          if (!pre) continue;
+          g.globalAlpha = 0.5 * fade;
+          g.strokeStyle = "#5ab8ff";
+          g.lineWidth = 2;
+          g.strokeRect(x + 4, y + 4, w - 8, h - 8);
+          continue;
+        }
+        if (pre) {
+          const pul = 0.5 + 0.5 * Math.sin(this.t * (8 + k * 22));
+          g.globalAlpha = (0.12 + 0.22 * k) * (0.6 + 0.4 * pul);
+          g.fillStyle = "#ffd84a";
+          g.fillRect(x, y, w, h);
+          g.globalAlpha = 0.5 + 0.4 * pul;
+          g.strokeStyle = "#ffe880";
+          g.lineWidth = 2;
+          g.strokeRect(x, y, w, h);
+          // a shrinking inner frame shows how long is left
+          const s = (1 - k) * Math.min(w, h) * 0.45;
+          g.globalAlpha = 0.6;
+          g.strokeRect(x + s, y + s * (h / w), w - 2 * s, h - 2 * s * (h / w));
+        } else {
+          g.globalAlpha = clamp((z.t - 1.3) * -3 + 1) * fade;
+          g.globalCompositeOperation = "lighter";
+          g.fillStyle = "#c8f0ff";
+          g.fillRect(x, y, w, h);
+          g.globalCompositeOperation = "source-over";
+        }
+      }
+    } else if (z.kind === "frostring") {
+      // 霜镜女巫: a spreading ring of frost (bright rim, frosted band inside it, ice glints)
+      const fade = clamp(z.life * 4);
+      g.globalAlpha = 0.3 * fade;
+      g.fillStyle = "#a8e0ff";
+      g.beginPath();
+      g.ellipse(z.x, z.y, z.r, z.r * 0.6, 0, 0, TAU);
+      g.ellipse(z.x, z.y, Math.max(1, z.r - 14), Math.max(1, (z.r - 14) * 0.6), 0, 0, TAU);
+      g.fill("evenodd");
+      g.globalAlpha = fade;
+      for (const [w, col] of [[5, "#2e6aa8"], [2, "#e8f8ff"]]) {
+        g.strokeStyle = col;
+        g.lineWidth = w;
+        g.beginPath();
+        g.ellipse(z.x, z.y, z.r, z.r * 0.6, 0, 0, TAU);
+        g.stroke();
+      }
+      g.fillStyle = "#ffffff";
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * TAU + z.id, x = z.x + Math.cos(a) * z.r, y = z.y + Math.sin(a) * z.r * 0.6;
+        g.fillRect(Math.round(x), Math.round(y - 4), 1, 4);
+        g.fillRect(Math.round(x) - 1, Math.round(y - 2), 3, 1);
+      }
     } else if (z.kind === "poison") {
       // bubbling toxic pool (drawn by hand, Brawl Stars style poison)
       const fade = clamp(z.life * 2) * clamp(z.t * 3);
@@ -883,7 +1156,7 @@ export class Renderer {
       const x = b.x - 0, y = b.y - (b.z || 0);
       if (b.side === "e") {
         const r = b.r + (b.big ? 1 : 0);
-        const col = b.kind === "fire" ? 0xff8a2a : b.kind === "ghost" ? 0x9ab8ff : 0xff3a6a;
+        const col = b.kind === "fire" ? 0xff8a2a : b.kind === "ghost" ? 0x9ab8ff : b.kind === "volt" ? 0x78d0ff : 0xff3a6a;
         const hex = "#" + col.toString(16).padStart(6, "0");
         P.circle(x, y, r + 1, H("#2a0a14"), 1);
         P.circle(x, y, r, H(hex), 1);

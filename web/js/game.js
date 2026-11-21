@@ -1,6 +1,7 @@
 // The simulation: players, enemies, bullets, zones, pickups, rooms. The host (or solo) runs it; clients mirror it.
-import { T, BAL, CHARS, CHAR_ORDER, ELEM, ELEM_KEYS, REACTIONS, reactionKey, ENEMIES, RUN, ITEMS, ITEM_WEIGHTS, CARDS, fusionCards, RARITY, REWARD, MAPS, endlessRoom, PVP_MODES } from "./data.js";
-import { makeRoute, nodeRoom, EVENTS, CHALLENGES, NODE, PORTAL_PAL, NPCS } from "./route.js";
+import { T, BAL, AFFIXES, CURSES, CURSE_MAX, CHARS, CHAR_ORDER, ELEM, ELEM_KEYS, REACTIONS, reactionKey, ENEMIES, RUN, ITEMS, ITEM_WEIGHTS, CARDS, fusionCards, EVOLUTIONS, evoReady, RARITY, REWARD, MAPS, endlessRoom, PVP_MODES, PACTS } from "./data.js";
+import { applyTitle } from "./titles.js";
+import { makeRoute, nodeRoom, EVENTS, CHALLENGES, NODE, PORTAL_PAL, NPCS, SLOT_SYMS, slotPayout, CHEST_FATES, CHEST_BOONS, MIMIC_DEW } from "./route.js";
 import { clamp, dist, dist2, angTo, R, rng, nid, TAU } from "./util.js";
 import { generateRoom, renderGround, F as FLOOR, tileAt, mudAt, moveCircle, los, flowField, flowDir, WALL, WATER, BUSH, CRATE, BARREL, BLOCKS_SHOT, DRAGON_WALL_HP } from "./map.js";
 import { sfx } from "./audio.js";
@@ -24,7 +25,7 @@ export class Game {
     this.petTrial = !pvp && !!opt.petTrial;
     this.petFields = [];
     // mode options: map (chapter) for PVE, endless corridor, PVP rule set
-    this.opt = { map: MAPS[opt.map] ? opt.map : "grass", endless: !!opt.endless, pvpMode: PVP_MODES[opt.pvpMode] ? opt.pvpMode : "brawl", ...(typeof opt.twinBoss === "boolean" ? { twinBoss: opt.twinBoss } : {}) }; // twinBoss: force 双首领 on/off (tests)
+    this.opt = { map: MAPS[opt.map] ? opt.map : "grass", endless: !!opt.endless, pvpMode: PVP_MODES[opt.pvpMode] ? opt.pvpMode : "brawl", pact: cleanPact(opt.pact), ...(typeof opt.twinBoss === "boolean" ? { twinBoss: opt.twinBoss } : {}) }; // twinBoss: force 双首领 on/off (tests)
     this.endless = !pvp && this.opt.endless;
     this.mapDef = MAPS[this.opt.map];
     this.pvpRule = PVP_MODES[this.opt.pvpMode];
@@ -44,6 +45,7 @@ export class Game {
     this.time = 0;
     this.shake = 0;
     this.runStats = { kills: 0, elites: 0, reactions: 0, rooms: 0, boss: false, dmg: 0, coins: 0, riftDeclines: 0 };
+    this.curses = []; // 诅咒 ids carried this run (see addCurse)
     // 怪物图鉴: what this run met and beat; 藏品 dropped by rare monsters (saved at the end of the run)
     this.seen = {};
     this.killedTypes = {};
@@ -57,6 +59,10 @@ export class Game {
   }
   get host() {
     return this.mode !== "client";
+  }
+  /** the run's 噩梦契约 terms (solo PVE only) */
+  get pact() {
+    return this.mode === "solo" && !this.pvp ? this.opt.pact || {} : {};
   }
 
   // ------------------------------------------------------------ players
@@ -92,6 +98,7 @@ export class Game {
       p.hp += growth.hp;
       p.maxHp += growth.hp;
     }
+    applyTitle(p, kit.title, !this.pvp); // 称号: plate over the head; its effect in PVE
     attachPet(this, p, kit.pet);
     this.players.push(p);
     return p;
@@ -199,15 +206,15 @@ export class Game {
   roomDef(i) {
     if (this.route) return this.mapRoom(nodeRoom(this.route.cols[i][this.route.at], i, this.seed));
     if (this.endless) {
-      const d = endlessRoom(i, this.seed), md = this.roomMap(i);
-      return d && d.kind === "boss" && md.boss ? { ...d, boss: md.boss } : d;
+      return endlessRoom(i, this.seed); // its boss floors cycle through every boss
     }
     return this.mapRoom(RUN[i]);
   }
   /** the map (chapter) swaps some enemies for its own residents */
   mapRoom(def) {
     const md = this.mapDef;
-    if (def && def.kind === "boss" && md.boss) return { ...def, boss: md.boss };
+    // a map with several bosses picks one per run from the seed
+    if (def && def.kind === "boss" && md.boss) return { ...def, boss: md.bosses ? md.bosses[Math.floor(rng(this.seed + 9157)() * md.bosses.length)] : md.boss };
     if (!def || !def.waves || !md.swap) return def;
     const rr = rng(this.seed + 4242 + (def.waves.length || 0));
     const sw = md.swap, el = md.elites || [];
@@ -229,10 +236,12 @@ export class Game {
     return MAPS[ids[Math.floor(idx / 10) % ids.length]];
   }
   loadRoom(idx, def) {
+    // 诅咒·失血: every new room costs a life point (never the last one)
+    if (this.curses?.includes("bleed") && idx > 0) for (const p of this.players) if (!p.dead && p.hp > 1) (p.hp--), (p.hurtT = 0.3);
     if (this.endless && idx % 10 === 0) this.raresSeen = 0;
     this.room = def;
     const kind = def.kind;
-    this.twinBoss = kind === "boss" && !this.pvp && !this.petTrial && (this.opt.twinBoss ?? rng(this.seed + idx * 577 + 13)() < TWIN_BOSS_CHANCE);
+    this.twinBoss = kind === "boss" && !this.pvp && !this.petTrial && (this.opt.twinBoss ?? rng(this.seed + idx * 577 + 13)() < (this.pact.boss ? 0.3 : TWIN_BOSS_CHANCE));
     const md = this.roomMap(idx);
     // every room uses its own map's look and floor hazard (the boss fights on home ground); shops have no hazard patches
     this.hazard = md.hazard;
@@ -305,7 +314,9 @@ export class Game {
     if (kind === "event") this.npc = { x: this.map.center.x - 5 * T, y: this.map.center.y - 20, id: NPCS[def.event] ? def.event : "altar", talked: false };
     const floor = this.endless ? `无尽回廊 · 第 ${idx + 1} 层` : `第 ${idx + 1} 层 · ${md.name}`;
     this.banner = { text: this.pvp ? `竞技场 · ${this.pvpRule.name}` : kind === "boss" ? (this.endless ? `第 ${idx + 1} 层 · 首领` : `首领 · ${(ENEMIES[def.boss] || ENEMIES.boss_eye).name}`) : kind === "shop" ? "补给站" : floor, sub: this.pvp ? this.pvpRule.goalText : kind === "shop" ? "扭蛋机 / 补给 · 准备好后进入传送门" : kind === "boss" ? "击败它！" : md.hazardText || "清除所有敌人", t: 2.4 };
-    if (this.twinBoss) this.banner = { text: `双首领 · ${(ENEMIES[def.boss] || ENEMIES.boss_eye).name} ×2`, sub: "击败两只首领 · 奖励翻倍", t: 2.8 };
+    // a boss arrives with a name card: letterbox bars, its name and title
+    if (kind === "boss" && !this.pvp) { const bd = ENEMIES[def.boss] || ENEMIES.boss_eye; this.banner = { text: bd.name, sub: (this.endless ? `第 ${idx + 1} 层 · ` : "") + (bd.title || "首领"), t: 3, boss: true }; }
+    if (this.twinBoss) this.banner = { text: `${(ENEMIES[def.boss] || ENEMIES.boss_eye).name} ×2`, sub: "双首领 · 击败两只首领 · 奖励翻倍", t: 3, boss: true };
     if (def.event) this.banner = { text: EVENTS[def.event].name, sub: `走近${NPCS[def.event].name}，按攻击键交谈`, t: 2.4 };
     else if (def.challenge) this.banner = { text: `挑战 · ${CHALLENGES[def.challenge].name}`, sub: CHALLENGES[def.challenge].desc + " · 清场额外选一次卡", t: 3 };
     else if (def.treasure) this.banner = { text: "宝藏房", sub: "稀有怪物出没，道具更多", t: 2.4 };
@@ -348,7 +359,7 @@ export class Game {
     for (let i = 0; i < extra; i++) list.push(rr.pick(waves[this.wave]).replace("*", ""));
     const spots = rr.shuffle([...this.map.spots]).filter((s) => this.players.every((p) => dist(s.x, s.y, p.x, p.y) > 150));
     list.forEach((k, i) => {
-      const elite = k.endsWith("*");
+      const elite = k.endsWith("*") || (!!this.pact.elite && !ENEMIES[k.replace("*", "")]?.boss && rr() < 0.15); // 噩梦契约·精英泛滥
       const s = spots[i % spots.length];
       this.spawnEnemy(k.replace("*", ""), s.x, s.y, elite, 0.6 + i * 0.12);
     });
@@ -376,8 +387,18 @@ export class Game {
       marks: {}, tide: 0, tideBy: null, sun: 0, bubble: 0, inkMark: 0, inkCd: 0, burnT: 0, burnDps: 0, slowT: 0, slowK: 0, stunT: 0, freezeT: 0, vulnT: 0, burnTick: 0,
       spawnT: delay, wob: Math.random() * 6, lastBy: null,
     };
-    e.hp *= this.curseHp || 1; // 诅咒宝箱
+    e.hp *= (this.curseHp || 1) * (this.curses.includes("hostile") ? 1.15 : 1); // 诅咒宝箱 / 诅咒·敌意
+    // 噩梦契约
+    if (this.pact.hp) e.hp *= 1 + 0.25 * this.pact.hp;
+    if (this.pact.boss && d.boss) e.hp *= 1.5;
+    if (this.pact.speed && d.spd) e.def = { ...d, spd: d.spd * 1.2 };
+    // 精英词缀
+    if (elite && !d.boss && !d.mirror && this.host) {
+      e.affix = AFFIXES[(Math.random() * AFFIXES.length) | 0].id;
+      if (e.affix === "swift" && e.def.spd) e.def = { ...e.def, spd: e.def.spd * 1.45 };
+    }
     e.maxHp = e.hp;
+    if (e.affix === "shield") e.shieldHp = e.shieldMax = e.hp * 0.5;
     this.seen[type] = 1;
     this.enemies.push(e);
     if (delay > 0) this.fx.spawn("spawn/spawn-portal", x, y + 4, { layer: "back", speed2: 1.6, life: delay + 0.4, palette: elite ? ["#1a0800", "#4a1a00", "#8a3a00", "#c86a10", "#ffa030", "#ffd070", "#fff0c0", "#ffffff"] : undefined });
@@ -423,13 +444,13 @@ export class Game {
   }
   enemiesNear(x, y, r, filter) {
     const out = [];
-    for (const e of this.enemies) if (e.spawnT <= 0 && !e.dead && dist2(x, y, e.x, e.y) <= (r + e.r) * (r + e.r) && (!filter || filter(e))) out.push(e);
+    for (const e of this.enemies) if (e.spawnT <= 0 && !e.hidden && !e.dead && dist2(x, y, e.x, e.y) <= (r + e.r) * (r + e.r) && (!filter || filter(e))) out.push(e);
     return out;
   }
   nearestEnemy(x, y, r, exclude) {
     let best = null, bd = r * r;
     for (const e of this.enemies) {
-      if (e.spawnT > 0 || e.dead || (exclude && exclude.has(e.id))) continue;
+      if (e.spawnT > 0 || e.hidden || e.dead || (exclude && exclude.has(e.id))) continue;
       const d = dist2(x, y, e.x, e.y);
       if (d < bd) (bd = d), (best = e);
     }
@@ -444,7 +465,7 @@ export class Game {
     const range = CHARS[p.cid].atk.range * p.st.range;
     const cand = [];
     for (const e of this.enemies) {
-      if (e.spawnT > 0 || e.dead) continue;
+      if (e.spawnT > 0 || e.hidden || e.dead) continue;
       const d = dist(p.x, p.y, e.x, e.y);
       if (d > range + e.r) continue;
       const inBush = tileAt(this.map, e.x, e.y) === BUSH && d > 80;
@@ -472,24 +493,54 @@ export class Game {
     let m = p.st.dmg * cubeDamage(p.cubes,this.endless);
     if (p.buff.star > 0) m *= 1.3;
     if (p.cards.low_rage && p.hp <= 2) m *= 1.6;
+    if (p.buff.berserk > 0) m *= 1.8; // 觉醒·狂暴协议
+    if (p.buff.pd > 0) m *= 1.5; // 完美闪避
+    if (p.cards.pain_power) m *= 1 + 0.1 * this.curses.length; // 以痛为力
+    if (p.cards.ev_midas) m *= 1 + Math.min(0.6, Math.floor((p.coins || 0) / 100) * 0.06); // 觉醒·算力印钞机
     if (p.kit && p.kit.eq.t_moe && p.hp * 2 <= p.maxHp) m *= 1.3; // SSR 混合专家
     return m;
   }
   /** damage an enemy (or a PVP player). src: {p, elem, crit?, noReact, kind, noCrit} */
   hit(e, amount, src = {}) {
-    if (!e || e.dead || e.spawnT > 0) return 0;
+    if (!e || e.dead || e.spawnT > 0 || e.hidden) return 0;
     if (e.kind === "player") return this.hitPlayerPvp(e, amount, src);
     const p = src.p;
     let dmg = amount * (p ? this.dmgMul(p) : 1);
     let crit = false;
     if (p && !src.noCrit) {
-      const c = p.dodgeCrit > 0 ? 1 : p.st.crit;
+      const c = p.dodgeCrit > 0 ? 1 : p.st.crit + (p.cards.curse_res ? 0.05 * this.curses.length : 0); // 诅咒共鸣
       if (Math.random() < c) (crit = true), (dmg *= BAL.critMul + (p.st.critX || 0)); // 宠物词条「致命」加暴击倍率
     }
     if (p && (e.elite || e.boss)) dmg *= p.st.elite || 1; // 对抗训练
+    if (p && e.boss && p.tfx?.boss) dmg *= 1 + p.tfx.boss; // 称号·首领猎手
+    if (crit && p.cards.ev_grad && !src.evoBoom && Math.random() < 0.3) {
+      // 觉醒·梯度爆炸: a crit sometimes bursts on the target (half the hit, around it, no further crits)
+      this.vfx("explosions/cartoon-pow", e.x, e.y - 12, { life: 0.45, text: "" });
+      const half = amount * 0.5;
+      this.after(0, () => { for (const o of this.enemiesNear(e.x, e.y, 34)) if (o !== e) this.hit(o, half, { p, noCrit: true, noReact: true, evoBoom: true }); });
+    }
     if (e.vulnT > 0) dmg *= 1.25;
+    if (e.guardT > 0) dmg *= 0.2; // 根须之心 shut in bark / 过热核心 behind its coolant pylons
+    if (e.overheat > 0) dmg *= 1.5; // 过热核心 stalled after its pylons fall
     if (e.freezeT > 0) dmg *= 1.15;
     dmg = Math.max(0.5, dmg);
+    e.hitAt = this.time;
+    if (e.shieldHp > 0) {
+      // 精英词缀·坚盾: the barrier soaks the hit first; breaking it stuns
+      const a = Math.min(e.shieldHp, dmg);
+      e.shieldHp -= a;
+      dmg -= a;
+      if (e.shieldHp <= 0) {
+        e.stunT = Math.max(e.stunT, 1.2);
+        this.text(e.x, e.y - e.r * 2 - 24, "护盾破碎！", "#8ab4ff", 1.1, 0.9);
+        this.vfx("impacts/shield-block", e.x, e.y - e.r, {});
+      }
+      if (dmg <= 0) {
+        e.flash = 0.1;
+        this.text(e.x + (Math.random() - 0.5) * 10, e.y - e.r * 2 - 8, Math.round(a), "#8ab4ff", 1, 0.6);
+        return a;
+      }
+    }
     e.hp -= dmg;
     e.flash = 0.1;
     e.lastBy = p ? p.id : e.lastBy;
@@ -527,7 +578,7 @@ export class Game {
     }
   }
   react(e, key, p, spreadElem) {
-    const R0 = REACTIONS[key], amp = p && p.cards.reaction_amp ? 1 + 0.6 * p.cards.reaction_amp : 1;
+    const R0 = REACTIONS[key], amp = (p && p.cards.reaction_amp ? 1 + 0.6 * p.cards.reaction_amp : 1) * (1 + (p?.tfx?.react || 0)); // 称号·元素指挥家
     const dmg = R0.dmg * amp * (1 + 0.08 * reactionRoom(this.roomIdx,this.endless));
     this.runStats.reactions++;
     if (p) p.reactions = (p.reactions || 0) + 1;
@@ -616,10 +667,156 @@ export class Game {
     }
   }
   knock(e, fx, fy, power) {
-    if (e.boss) return;
+    if (e.boss || e.def.noKnock) return;
     const a = angTo(fx, fy, e.x, e.y);
     e.kbx += Math.cos(a) * power;
     e.kby += Math.sin(a) * power;
+  }
+  /** 诅咒: add one (a given id, or a random one not yet carried); applies its effect to every player. Returns the id. */
+  addCurse(id = null) {
+    if (this.curses.length >= CURSE_MAX) return null;
+    const free = Object.keys(CURSES).filter((k) => !this.curses.includes(k));
+    if (!id) id = free[(Math.random() * free.length) | 0];
+    if (!id || this.curses.includes(id)) return null;
+    this.curses.push(id);
+    for (const p of this.players) this.curseFx(p, id, 1);
+    const p = this.players[0];
+    if (p) {
+      this.text(p.x, p.y - 74, `诅咒·${CURSES[id].name}`, "#c890ff", 1.6, 1.2);
+      this.vfx("arcane/rune-circle", p.x, p.y, { palette: ["#14061e", "#5a1a8a", "#a050e0", "#e0c0ff"] });
+    }
+    this.sound("hurt", 0.4);
+    this.onUi("hud");
+    return id;
+  }
+  removeCurse(id) {
+    const i = this.curses.indexOf(id);
+    if (i < 0) return false;
+    this.curses.splice(i, 1);
+    for (const p of this.players) this.curseFx(p, id, -1);
+    const p = this.players[0];
+    if (p) this.text(p.x, p.y - 74, `解除·${CURSES[id].name}`, "#fff2a8", 1.4, 1.1);
+    this.sound("heal", 0.5);
+    this.onUi("hud");
+    return true;
+  }
+  /** apply (d = 1) or undo (d = -1) a curse's stat side on one player (the rest is read live from this.curses) */
+  curseFx(p, id, d) {
+    const s = p.st;
+    if (id === "weak") s.dmg *= d > 0 ? 0.88 : 1 / 0.88;
+    if (id === "slow") s.speed *= d > 0 ? 0.9 : 1 / 0.9;
+    if (id === "brittle") (p.maxShield = Math.max(1, p.maxShield - d)), (p.shield = Math.min(p.shield, p.maxShield));
+    if (p.cards.curse_res) (p.maxShield += d), d > 0 && (p.shield += 1); // 诅咒共鸣: +1 shield per curse
+  }
+  /** 诅咒宝箱: open the chest (host), once a room. Rolls one of CHEST_FATES and applies what happens now; a card pick
+   *  and the 宝箱怪 fight wait for the dialog to close (closeEvent). Returns { fate, icon, title, text } */
+  openCurseChest(pid) {
+    const p = this.player(pid), nv = this.npc;
+    if (!p || !nv || nv.chest) return null;
+    let fate = R.weighted(CHEST_FATES.map((f) => f.id), (id) => CHEST_FATES.find((f) => f.id === id).w);
+    if (fate === "curse" && this.curses.length >= CURSE_MAX) fate = "boon";
+    let out;
+    if (fate === "boon") {
+      const pool = CHEST_BOONS.filter((b) => b.id !== "card" || this.cardPool(p).length), b = pool[(Math.random() * pool.length) | 0];
+      if (b.id === "hp") (p.maxHp++), (p.hp = p.maxHp);
+      if (b.id === "dmg") p.st.dmg += 0.1;
+      if (b.id === "speed") p.st.speed += 0.08;
+      if (b.id === "coins") p.coins += 60;
+      if (b.id === "card") nv.cardWin = "SR";
+      out = { fate, icon: b.icon, title: "宝箱里是加成！", text: b.text };
+      this.vfx("pickups/loot-beam", nv.x, nv.y + 10, { layer: "back", life: 1.6, opts: { item: false } });
+    } else if (fate === "dew") {
+      this.runStats.eventItems = (this.runStats.eventItems || 0) + 1;
+      out = { fate, icon: "dew", title: "宝箱里有淬灵露！", text: "淬灵露 ×1（结算后放进宠物仓库，能给宠物词条 +2~5%）" };
+      this.vfx("pickups/loot-beam", nv.x, nv.y + 10, { layer: "back", life: 1.6, opts: { item: false } });
+    } else if (fate === "mimic") {
+      out = { fate, icon: "mimic", title: "是宝箱怪！", text: "它现出原形扑了过来！击败它：金币、补给箱选卡，还有机会掉淬灵露" };
+    } else {
+      const c = this.addCurse();
+      nv.cardWin = "R";
+      out = { fate, icon: "curse", title: "宝箱里窜出诅咒！", text: `背上诅咒·${CURSES[c].name}（${CURSES[c].desc}），关上宝箱后挑一张卡` };
+    }
+    nv.chest = out;
+    this.runStats.events = (this.runStats.events || 0) + 1;
+    this.sound(fate === "mimic" || fate === "curse" ? "hurt" : "card", 0.5);
+    this.onUi("hud");
+    return out;
+  }
+  /** the 宝箱怪 fate, after the dialog: the visitor leaves the room and the elite stands where the chest was */
+  startMimic(nv) {
+    this.npc = null;
+    const e = this.spawnEnemy("mimic", nv.x, nv.y + 8, true, 0);
+    e.mimic = true;
+    if (e.affix === "split") e.affix = "regen"; // one chest, one prize: never splits into copies
+    this.vfx("shadow/dark-explosion", nv.x, nv.y + 6, { speed2: 1.4 });
+    this.shake = Math.max(this.shake, 6);
+    this.banner = { text: "宝箱怪现出原形！", sub: "击败它拿走宝藏", t: 2 };
+    this.phase = "fight";
+    this.wave = (this.room.waves || []).length;
+    this.waveDelay = 0.8;
+  }
+  /** 血契商人: make one of the room's deals (host). Returns a result line, or null if it can't be made */
+  bloodDeal(pid, id) {
+    const p = this.player(pid), nv = this.npc;
+    if (!p || !nv || (nv.deals || []).includes(id)) return null;
+    let out = null;
+    if (id === "blood" && p.maxHp > 2) {
+      p.maxHp--;
+      p.hp = Math.min(p.hp, p.maxHp);
+      nv.cardWin = "SSR";
+      out = "生命上限 -1 · 离开时挑一张 SSR 卡";
+    } else if (id === "curse" && this.curses.length < CURSE_MAX) {
+      const c = this.addCurse(nv.curseOffer || null);
+      if (!c) return null;
+      out = `背上诅咒·${CURSES[c].name} · ${this.grantMaterial(p)}`;
+    } else if (id === "atone" && this.curses.length && p.coins >= 40) {
+      p.coins -= 40;
+      const c = this.curses.at(-1);
+      this.removeCurse(c);
+      out = `-40 金币 · 解除诅咒·${CURSES[c].name}`;
+    }
+    if (!out) return null;
+    nv.deals = [...(nv.deals || []), id];
+    if (nv.deals.length === 1) this.runStats.events = (this.runStats.events || 0) + 1;
+    this.sound("card", 0.5);
+    this.onUi("hud");
+    return out;
+  }
+  /** 觉醒材料: one level of a missing ingredient for the 觉醒卡 closest to ready (else 80 coins) */
+  grantMaterial(p) {
+    let best = null;
+    for (const ev of EVOLUTIONS) {
+      if (p.cards[ev.id]) continue;
+      const miss = Object.entries(ev.need).filter(([k, n]) => (p.cards[k] || 0) < n), left = miss.reduce((a, [k, n]) => a + n - (p.cards[k] || 0), 0);
+      if (miss.length && (!best || left < best.left)) best = { ev, card: miss[0][0], left };
+    }
+    const c = best && CARDS.find((q) => q.id === best.card);
+    if (!c || (p.cards[c.id] || 0) >= c.max) {
+      p.coins += 80;
+      return "+80 金币";
+    }
+    applyCard(this, p, c.id);
+    return `觉醒材料：${c.name}${best.left <= 1 ? `（${best.ev.name} 就绪）` : ""}`;
+  }
+  /** 精英词缀 on death: 分裂 two small copies, 爆裂 a bomb */
+  affixDeath(e) {
+    if (e.affix === "split" && this.enemies.length < 40)
+      for (const sd of [-1, 1]) {
+        const q = this.spawnEnemy(e.type, e.x + sd * 14, e.y + 4, false, 0);
+        q.hp = q.maxHp = Math.max(1, e.maxHp * 0.18);
+        q.sizeK = 0.7;
+        q.r *= 0.75;
+        q.kbx = sd * 160;
+      }
+    if (e.affix === "volatile") {
+      const x = e.x, y = e.y;
+      this.vfx("arcane/rune-circle", x, y, { life: 0.8, palette: ["#1a0600", "#d8481c", "#ffa030", "#fff0a0"] });
+      this.after(0.8, () => {
+        this.vfx("explosions/small-explosion", x, y, {});
+        this.sound("explode", 0.3);
+        for (const o of this.alivePlayers()) if (dist(o.x, o.y, x, y) < 52) this.hurt(o, 1, { src: e, x, y, groundHazard: true });
+      });
+    }
   }
   kill(e, p) {
     if (e.dead) return;
@@ -628,6 +825,13 @@ export class Game {
     if (e.elite) this.runStats.elites++;
     if (p) p.kills++;
     if (p && (e.elite || e.boss) && p.st.replay) p.ult = Math.min(1, p.ult + p.st.replay); // 经验回放
+    if (p && p.cards.blood_gift && this.curses.length && Math.random() < 0.06 && p.hp < p.maxHp) (p.hp++), this.text(p.x, p.y - 60, "+1", "#ff6a7a", 1); // 血之馈赠
+    if (e.affix && this.host) this.affixDeath(e);
+    // 诅咒宝箱's 宝箱怪 beaten: a chance of 淬灵露 on top of its coins and the room's supply chest
+    if (e.mimic && Math.random() < MIMIC_DEW) {
+      this.runStats.eventItems = (this.runStats.eventItems || 0) + 1;
+      this.text(e.x, e.y - 50, "淬灵露 +1", "#9ef0ff", 1.3, 1.8);
+    }
     const col = { slime: ["#061412", "#12594a", "#47c752", "#a6f06a", "#f0ffd2"], slime_purple: ["#140a1e", "#4d1f6e", "#b05be0", "#e0a6ff", "#fff0ff"] }[e.type];
     this.vfx("spawn/poof", e.x, e.y + 2, col ? { palette: col } : {});
     this.sound("kill", 0.05);
@@ -639,12 +843,13 @@ export class Game {
     const [c0, c1] = e.def.coin;
     const n = c0 + Math.floor(Math.random() * (c1 - c0 + 1)) + (e.elite ? 4 : 0);
     for (let i = 0; i < n; i++) this.spawnCoin(e.x, e.y);
-    if (e.elite || Math.random() < 0.06) {
+    if (e.def.mirror) this.vfx("ice/ice-shatter", e.x, e.y - 34, {}); // 霜镜女巫's copy shatters
+    if (!e.def.mirror && (e.elite || Math.random() < 0.06)) {
       const k = R.weighted(Object.keys(ITEM_WEIGHTS), (k) => ITEM_WEIGHTS[k]);
       this.spawnItem(e.elite ? R.pick(["cube", "star", "rage", "infuse"]) : k, e.x, e.y);
     }
     if (p) {
-      if (p.cards.vamp && Math.random() < 0.08 * p.cards.vamp && p.hp < p.maxHp) (p.hp++), this.text(p.x, p.y - 60, "+1", "#ff6a8a");
+      if ((p.cards.vamp || p.cards.ev_undying) && Math.random() < 0.08 * ((p.cards.vamp || 0) + (p.cards.ev_undying ? 2 : 0)) && p.hp < p.maxHp) (p.hp++), this.text(p.x, p.y - 60, "+1", "#ff6a8a");
       if (p.cards.kill_boom) {
         this.vfx("explosions/cartoon-pow", e.x, e.y - 10, { life: 0.5, text: "" });
         for (const o of this.enemiesNear(e.x, e.y, 46)) if (o !== e) this.hit(o, 10 * p.cards.kill_boom, { p, noReact: true });
@@ -760,10 +965,27 @@ export class Game {
     return w + (Math.random() < v - w ? 1 : 0);
   }
   /** hurt a player by n points */
+  /** 完美闪避: an attack met the player inside the dash window. Solo: 子弹时间 (enemies, their shots and their zones run
+   *  at 30% for 1.6 s); everyone: the dash comes back at once, +50% damage for 3 s, a little ult. 2 s cooldown. */
+  perfectDodge(p) {
+    p.pdDone = true;
+    p.pdCd = this.time + 2;
+    p.dashCd = 0;
+    p.buff.pd = 3;
+    p.ult = Math.min(1, p.ult + 0.06);
+    this.runStats.perfect = (this.runStats.perfect || 0) + 1;
+    if (this.mode === "solo") this.witchT = 1.6;
+    this.text(p.x, p.y - 64, "完美闪避！", "#ffe36a", 1.4, 1.1);
+    this.vfx("arcane/blink-in", p.x, p.y - 20, { palette: ["#1a1030", "#7a5aff", "#c8b0ff", "#ffffff"] });
+    this.sound("portal", 0.35);
+  }
   hurt(p, n, src = {}) {
     if (!p || p.dead || p.downed) return false;
     if ((p.mounted&&p.pet?.id==='fox'&&p.pet.blinkT>0)||(flyingMount(p)&&(src.groundHazard||src.kind==='poison'))) return false;
-    if (p.invuln > 0 || p.dashT > 0 || p.buff.star > 0) return false;
+    if (p.invuln > 0 || p.dashT > 0 || p.buff.star > 0) {
+      if ((p.pdWin || 0) > this.time && !p.pdDone && src && (src.side === "e" || src.src || src.def)) this.perfectDodge(p); // 完美闪避: dodged right through it
+      return false;
+    }
     if (p.barrier > 0) {
       p.barrier = 0;
       this.vfx("impacts/shield-block", p.x, p.y, { palette: ELEM.sun.ramp, flip: (src.x ?? p.x) < p.x });
@@ -776,10 +998,16 @@ export class Game {
       p.invuln = 0.3;
       return false;
     }
-    n = this.scaleHurt(n, src);
+    if (p.tfx?.guard && Math.random() < p.tfx.guard) {
+      // 称号·噩梦主宰: the blow is shrugged off whole
+      this.text(p.x, p.y - 60, "免伤", "#ff8ad8", 1.1);
+      p.invuln = 0.4;
+      return false;
+    }
+    n = this.scaleHurt(n, src) + (this.pact.dmg ? 1 : 0); // 噩梦契约·凶猛噩梦
     p.lastHit = 0;
     this.runStats.hurt = (this.runStats.hurt || 0) + n;
-    p.invuln = BAL.hurtInvuln;
+    p.invuln = BAL.hurtInvuln + (p.tfx?.inv || 0); // 称号·地心之王
     p.hurtT = 0.3;
     this.shake = Math.max(this.shake, p.local ? 6 : 2);
     let left = n;
@@ -790,6 +1018,13 @@ export class Game {
       if (p.shield <= 0) {
         this.sound("shieldbreak");
         if (p.kit.eq.t_firewall && p.fwCd <= this.time) this.firewall(p);
+        if (p.cards.ev_berserk && (p.berserkCd || 0) <= this.time) {
+          // 觉醒·狂暴协议
+          p.buff.berserk = 4;
+          p.berserkCd = this.time + 10;
+          this.text(p.x, p.y - 70, "狂暴！", "#ff4a6a", 1.3, 1.2);
+          this.vfx("fire/fire-ring", p.x, p.y, { life: 0.7 });
+        }
         if (p.cards.shield_nova) {
           this.vfx("ice/frost-nova", p.x, p.y, { palette: ["#06101e", "#10284a", "#20508a", "#4a90d0", "#8ac8ff", "#c0e4ff", "#eef8ff", "#ffffff"], speed2: 2, opts: { reach: 70 } });
           for (const o of this.enemiesNear(p.x, p.y, 80)) (this.hit(o, 18, { p, noReact: true })), this.knock(o, p.x, p.y, 300);
@@ -909,7 +1144,7 @@ export class Game {
   // ------------------------------------------------------------ bullets
   mkBullet(p, o) {
     return {
-      id: nid(), side: o.side || "p", owner: p ? p.id : null, x: o.x, y: o.y, vx: Math.cos(o.a) * o.spd, vy: Math.sin(o.a) * o.spd,
+      id: nid(), side: o.side || "p", owner: p ? p.id : null, x: o.x, y: o.y, vx: Math.cos(o.a) * o.spd * (o.side === "e" && this.pact.bullet ? 1 + 0.2 * this.pact.bullet : 1), vy: Math.sin(o.a) * o.spd * (o.side === "e" && this.pact.bullet ? 1 + 0.2 * this.pact.bullet : 1), // 噩梦契约·弹幕加速
       r: o.r || 4, dmg: o.dmg, elem: o.elem, kind: o.kind, life: o.life ?? 1.2, pierce: o.pierce || 0, bounce: o.bounce || 0, hits: new Set(),
       splash: o.splash || 0, splashDmg: o.splashDmg || 0, slow: o.slow, burn: o.burn, knock: o.knock || 0, fusion: o.fusion, from: o.from, t: 0,
       h: o.h || 0, wave: o.wave, shieldGive: o.shieldGive, noReact: o.noReact, big: o.big, arcTo: o.arcTo, onLand: o.onLand,
@@ -946,10 +1181,10 @@ export class Game {
     }
     return b.life<=0;
   }
-  updateBullets(dt) {
+  updateBullets(dt0) {
     const m = this.map;
     for (let i = this.bullets.length - 1; i >= 0; i--) {
-      const b = this.bullets[i];
+      const b = this.bullets[i], dt = this.witchT > 0 && b.side === "e" ? dt0 * 0.3 : dt0;
       b.t += dt;
       b.life -= dt;
       if (b.arcTo) {
@@ -993,7 +1228,7 @@ export class Game {
       if (!gone && !this.host && b.pred) {
         // client-side predicted shots: purely visual, vanish where they meet an enemy (the host deals the damage)
         for (const e of this.enemies) {
-          if (e.spawnT > 0 || b.hits.has(e.id) || dist2(b.x, b.y, e.x, e.y - e.r) > (b.r + e.r + 2) ** 2) continue;
+          if (e.spawnT > 0 || e.hidden || b.hits.has(e.id) || dist2(b.x, b.y, e.x, e.y - e.r) > (b.r + e.r + 2) ** 2) continue;
           b.hits.add(e.id);
           this.fx.spawn("impacts/hit-spark", b.x, b.y, { angle: Math.atan2(b.vy, b.vx) + Math.PI, palette: ELEM[b.elem]?.ramp?.slice(1, 8), light: 0.6, opts: { height: 0 } });
           if (b.pierce > 0) b.pierce--;
@@ -1011,7 +1246,7 @@ export class Game {
         if (b.side === "p") {
           const owner = this.player(b.owner);
           for (const e of this.enemies) {
-            if (e.dead || e.spawnT > 0 || b.hits.has(e.id)) continue;
+            if (e.dead || e.spawnT > 0 || e.hidden || b.hits.has(e.id)) continue;
             if (dist2(b.x, b.y, e.x, e.y - e.r) > (b.r + e.r + 2) * (b.r + e.r + 2)) continue;
             b.hits.add(e.id);
             if(b.kind==='pet_dragon'&&b.big)this.dragonFireballImpact(b);
@@ -1083,7 +1318,10 @@ export class Game {
     }
     for (const p of this.players) this.updatePlayer(p, dt);
     updatePets(this, dt);
-    for (const e of this.enemies) if (!e.dead) updateEnemy(this, e, dt);
+    // 子弹时间 (完美闪避, solo): enemies, enemy shots and enemy zones run slow; players, pets and their shots don't
+    const edt = this.witchT > 0 ? dt * 0.3 : dt;
+    if (this.witchT > 0) this.witchT -= dt;
+    for (const e of this.enemies) if (!e.dead) updateEnemy(this, e, edt);
     // lava burns walking enemies too
     if (this.hazard === "lava" && this.host)
       for (const e of this.enemies) if (!e.dead && !e.def.fly && e.spawnT <= 0 && mudAt(this.map, e.x, e.y) && (e.lavaCd || 0) < this.time) (e.lavaCd = this.time + 1), this.hit(e, 8, { noReact: true });
@@ -1264,6 +1502,7 @@ export class Game {
     if (this.phase !== "fight") return;
     this.phase = "clear";
     this.sound("clear");
+    for (const p of this.players) if (p.cards.blood_gift && this.curses.length) (p.coins += 15), this.text(p.x, p.y - 70, "血之馈赠 +15", "#ff6a7a", 1.2); // 血之馈赠
     if (this.room.kind === "boss") this.runStats.xpBosses = (this.runStats.xpBosses || 0) + (this.twinBoss ? 2 : 1);
     if (this.room.kind === "boss" && this.twinBoss) this.runStats.twinBosses = (this.runStats.twinBosses || 0) + 1;
     else if (["combat", "elite"].includes(this.room.kind)) this.runStats.xpRooms = (this.runStats.xpRooms || 0) + 1;
@@ -1334,8 +1573,10 @@ export class Game {
   }
   cardPool(p) {
     const meta = { cards: (p.kit && p.kit.cards) || [] };
-    return [...CARDS, ...fusionCards(p.cid)].filter((c) => {
+    // ready 觉醒卡 ride along (weight 0: offerCards puts one first; counted so an "empty" pool still opens the chest)
+    return [...CARDS, ...fusionCards(p.cid), ...EVOLUTIONS.filter((ev) => evoReady(p.cards, ev))].filter((c) => {
       if ((p.cards[c.id] || 0) >= c.max) return false;
+      if (c.curse && !this.curses.length) return false; // 诅咒 cards only while cursed
       if (c.locked) {
         if (c.tag === "混搭" && c.kind === "skill") return meta.cards.includes("links");
         return meta.cards.includes(c.id);
@@ -1408,20 +1649,61 @@ export class Game {
     this.sound("coin");
     this.onUi("hud");
   }
+  /** 老虎机: pay and spin three reels (host); the dialog animates them, then calls settleSlot */
+  spinSlot(pid) {
+    const p = this.player(pid), nv = this.npc, ev = this.room && EVENTS[this.room.event], sl = ev?.slot;
+    if (!p || !nv || !sl || (nv.spins || 0) >= sl.spins || p.coins < sl.cost || nv.spin) return null;
+    const tot = SLOT_SYMS.reduce((a, q) => a + q.w, 0), pick = () => {
+      let r = Math.random() * tot;
+      return SLOT_SYMS.findIndex((q) => (r -= q.w) < 0);
+    };
+    p.coins -= sl.cost;
+    nv.spins = (nv.spins || 0) + 1;
+    const reels = nv.forceReels || [pick(), pick(), pick()];
+    nv.spin = { reels, pay: slotPayout(reels) };
+    this.onUi("hud");
+    return nv.spin;
+  }
+  settleSlot(pid) {
+    const p = this.player(pid), nv = this.npc, r = nv && nv.spin;
+    if (!p || !r) return;
+    nv.spin = null;
+    const q = r.pay;
+    if (q.coins) p.coins = Math.max(0, p.coins + q.coins);
+    if (q.heal) p.hp = Math.min(p.maxHp, p.hp + q.heal);
+    if (q.maxHp) (p.maxHp += q.maxHp), (p.hp = p.maxHp);
+    if (q.hurt) p.hp = Math.max(1, p.hp - q.hurt);
+    if (q.curse) this.addCurse() || (this.curseHp = (this.curseHp || 1) * 1.1); // 三连骷髅: a random curse (all 5 carried: enemies +10%)
+    if (q.card && (!nv.cardWin || q.card === "SSR")) nv.cardWin = q.card;
+    this.text(p.x, p.y - 60, q.kind === "miss" ? "落空" : q.coins ? `${q.coins > 0 ? "+" : ""}${q.coins} 金币` : q.kind === "curse" ? "诅咒" : "中奖！", q.kind === "curse" || q.kind === "miss" ? "#ff8080" : "#ffe14a", 1.4);
+    this.sound(q.kind === "jackpot" || q.kind === "win" ? "card" : q.kind === "small" ? "coin" : "hurt");
+    if (nv.spins === 1) this.runStats.events = (this.runStats.events || 0) + 1;
+    this.onUi("hud");
+  }
   /** the event dialog closed without a final choice (骰子狐's 离开): the way on opens, the visitor stays until its rounds run out */
   closeEvent() {
     const nv = this.npc, ev = this.room && EVENTS[this.room.event];
     if (!nv || this.eventDone) return;
     nv.open = false;
-    if ((ev?.dice && (nv.rounds || 0) >= ev.dice.rounds) || (ev?.shop && (nv.bought || []).length >= ev.shop.buys)) {
+    if ((ev?.dice && (nv.rounds || 0) >= ev.dice.rounds) || (ev?.shop && (nv.bought || []).length >= ev.shop.buys) || (ev?.slot && (nv.spins || 0) >= ev.slot.spins) || (ev?.pact && (nv.deals || []).length >= ev.pact.max) || (ev?.chest && nv.chest)) {
       this.eventDone = true;
       nv.done = true;
-      this.text(nv.x, nv.y - 70, NPCS[nv.id].bye, "#e8dcff", 1, 1.6);
+      if (nv.chest?.fate !== "mimic") this.text(nv.x, nv.y - 70, NPCS[nv.id].bye, "#e8dcff", 1, 1.6);
+    }
+    // 诅咒宝箱 · 宝箱怪: the fight starts as the dialog closes
+    if (nv.chest?.fate === "mimic") return void this.startMimic(nv);
+    // 老虎机: a card won on the reels is offered now (the way on opens after the pick)
+    if (nv.cardWin) {
+      const p = this.players[0], fl = nv.cardWin;
+      nv.cardWin = null;
+      this.offerCards(p, 3, fl);
+      if (this.cardOffers[p.id]) return void (this.phase = "cards");
     }
     if (this.phase === "event") this.openPortal();
   }
   /** roll 3 card offers for a player (host) */
   offerCards(p, n = 3, rarityFloor = null) {
+    if (this.pact.cards) n = Math.min(n, 2); // 噩梦契约·卡池封锁
     const pool = this.cardPool(p);
     if (!pool.length) {
       delete this.cardOffers[p.id];
@@ -1431,10 +1713,15 @@ export class Game {
     }
     const out = [];
     const rr = rng((Math.random() * 1e9) | 0);
+    // a completed recipe is always the first card of the next offer
+    const evos = pool.filter((c) => c.r === "UR");
+    for (const c of evos) pool.splice(pool.indexOf(c), 1);
+    if (evos.length) out.push(rr.pick(evos));
     while (out.length < n && pool.length) {
       let c = rr.weighted(pool, (c) => RARITY[c.r].w * (c.tag === "混搭" ? 1.6 : 1));
-      if (rarityFloor && out.length === 0) {
-        const hi = pool.filter((q) => q.r === "SR" || q.r === "SSR");
+      if (rarityFloor && out.length === 0 && !evos.length) {
+        const ssr = rarityFloor === "SSR" ? pool.filter((q) => q.r === "SSR") : [];
+        const hi = ssr.length ? ssr : pool.filter((q) => q.r === "SR" || q.r === "SSR");
         if (hi.length) c = rr.pick(hi);
       }
       out.push(c);
@@ -1450,6 +1737,11 @@ export class Game {
     delete this.cardOffers[pid];
     if (p.local) this.onUi("cardsClosed");
     applyCard(this, p, cardId);
+    // a recipe just completed: say so (the evolution comes with the next offer)
+    for (const ev of EVOLUTIONS) if (evoReady(p.cards, ev) && !(p.evoHint ||= {})[ev.id]) {
+      p.evoHint[ev.id] = 1;
+      this.after(0.5, () => this.text(p.x, p.y - 78, `觉醒就绪 · ${ev.name}`, "#ff8ae6", 1.3, 1.8));
+    }
     if (p.startCards > 0) (p.startCards--, this.after(0.4, () => this.offerCards(p, 3, "SR")));
     this.sound("card");
     this.vfx("pickups/collect-burst", p.x, p.y - 10, { palette: ELEM[CHARS[p.cid].elem].ramp });
@@ -1530,6 +1822,7 @@ export class Game {
     if (p.mounted) spd *= 1.25;
     if (p.kit && p.kit.eq.t_moe && p.hp * 2 <= p.maxHp) spd *= 1.15; // SSR 混合专家
     if (p.buff.speed > 0) spd *= 1.4;
+    if (p.buff.berserk > 0) spd *= 1.25;
     if (p.buff.ultOn > 0 && p.cid === "grok") spd *= 1.4;
     if (p.buff.inkHaste > 0) spd *= 1.3;
     if (p.buff.slow > 0) spd *= 0.6;
@@ -1567,7 +1860,7 @@ export class Game {
     // shield regen
     p.lastHit += dt;
     if (p.lastHit > BAL.shieldDelay && p.shield < p.maxShield) {
-      p.shieldT += this.room && this.room.noShield ? 0 : dt * p.st.shieldRegen;
+      p.shieldT += (this.room && this.room.noShield) || this.pact.noshield ? 0 : dt * p.st.shieldRegen;
       if (p.shieldT >= BAL.shieldTick) (p.shieldT = 0), p.shield++;
     }
     // lava floor
@@ -1594,9 +1887,17 @@ export class Game {
       p.dashDx = dx / l;
       p.dashDy = dy / l;
       p.dashT = BAL.dashTime;
-      p.invuln = Math.max(p.invuln, BAL.dashInvuln);
-      p.dashCd = BAL.dashCd;
+      p.invuln = Math.max(p.invuln, BAL.dashInvuln + (p.tfx?.pd || 0));
+      p.dashCd = BAL.dashCd * (1 - (p.tfx?.dash || 0)) * (this.curses.includes("heavy") ? 1.4 : 1); // 称号·幻影舞者 / 诅咒·沉重
+      if ((p.pdCd || 0) <= this.time) (p.pdWin = this.time + BAL.dashInvuln + (p.tfx?.pd || 0)), (p.pdDone = false);
       if (p.cards.dodge_crit) p.dodgeCrit = 2.5;
+      if (p.cards.ev_phantom) {
+        // 觉醒·残影闪击: shorter dodge cooldown; the spot left behind bursts a moment later
+        p.dashCd *= 0.7;
+        const gx = p.x, gy = p.y, dmg = CHARS[p.cid].atk.dmg * 4;
+        this.vfx("pickups/collect-burst", gx, gy - 10, { palette: ELEM[CHARS[p.cid].elem].ramp });
+        if (this.host) this.after(0.4, () => this.explodeAt(gx, gy - 8, 56, 0, dmg, p));
+      }
       this.sound("dash");
     }
     inp.dash = false;
@@ -1624,6 +1925,7 @@ export class Game {
         p.castT = 0.25;
         let rate = c.atk.rate * p.st.rate;
         if (p.buff.rage > 0) rate *= 1.6;
+        if (p.buff.berserk > 0) rate *= 1.4;
         if (p.cid === "grok") rate *= 1 + c.atk.ramp * (p.rampT / 2) * (p.buff.ultOn > 0 ? 1 : 1);
         if (p.cid === "grok" && p.buff.ultOn > 0) rate *= 1.6;
         p.atkCd = p.mounted&&p.pet?.id==='dragon'?DRAGON_FIREBALL.interval:1/rate;
@@ -1644,7 +1946,7 @@ export class Game {
         p.skillCd = CHARS[p.cid].skill.cd * p.st.cd;
         // Fixed percentage points per manual cast, never multiplied by ult-gain stats.
         // Echo/linked casts above share this activation and do not grant it again.
-        p.ult = Math.min(1, p.ult + p.growth.skillCharge);
+        p.ult = Math.min(1, p.ult + p.growth.skillCharge + (p.cards.ev_perpetual ? 0.1 : 0)); // 觉醒·永动机 +10%
         p.castT = 0.4;
         this.sound("skill");
       }
@@ -1711,9 +2013,9 @@ export class Game {
     }
   }
 
-  updateZones(dt) {
+  updateZones(dt0) {
     for (let i = this.zones.length - 1; i >= 0; i--) {
-      const z = this.zones[i];
+      const z = this.zones[i], dt = this.witchT > 0 && z.side === "e" ? dt0 * 0.3 : dt0;
       z.t += dt;
       z.life -= dt;
       if (z.update && this.host) z.update(z, dt);
@@ -1766,7 +2068,7 @@ export class Game {
           q.y += Math.sin(a) * 320 * dt;
         }
         if (bd < 16 && q.t > 0.3) {
-          const v = Math.random() < (best.st.coin % 1) ? Math.ceil(best.st.coin) : Math.floor(best.st.coin);
+          const ck = best.st.coin * (this.pact.poor ? 0.5 : 1) * (this.curses.includes("greed") ? 0.65 : 1), v = Math.random() < (ck % 1) ? Math.ceil(ck) : Math.floor(ck); // 噩梦契约·贫瘠噩梦
           best.coins += v;
           this.runStats.coins += v;
           this.sound("coin", 0.05);
@@ -1838,6 +2140,12 @@ export class Game {
 }
 
 /** apply a skill card's effect */
+/** 噩梦契约 terms, clamped to each term's ranks (solo PVE only: PVP and online rooms play without) */
+function cleanPact(pact) {
+  const out = {};
+  if (pact && typeof pact === "object") for (const q of PACTS) { const v = Math.min(q.max, Math.max(0, pact[q.id] | 0)); if (v) out[q.id] = v; }
+  return out;
+}
 export function applyCard(g, p, id) {
   p.cards[id] = (p.cards[id] || 0) + 1;
   const s = p.st;
@@ -1857,6 +2165,16 @@ export function applyCard(g, p, id) {
     case "cd_down": s.cd *= 0.8; break;
     case "ult_charge": s.ultG *= 1.3; break;
     case "vamp": s.vamp++; break;
+    // 血契与诅咒
+    case "curse_res": p.maxShield += g.curses.length; p.shield += g.curses.length; break;
+    case "purify": if (g.curses.length) g.removeCurse(g.curses.at(-1)); p.hp = Math.min(p.maxHp, p.hp + 2); break;
+    // 觉醒卡
+    case "ev_storm": s.multi += 2; s.pierce += 2; break;
+    case "ev_grad": s.critX = (s.critX || 0) + 1; break;
+    case "ev_chain": s.bounce += 3; s.range *= 1.25; break;
+    case "ev_perpetual": s.cd *= 0.7; break;
+    case "ev_undying": p.maxHp += 4; p.hp = p.maxHp; break;
+    case "ev_midas": s.coin *= 1.5; break;
   }
   if (id.startsWith("fa_")) p.fusions.push(id.slice(3));
   if (id.startsWith("fs_")) p.links.push(id.slice(3));

@@ -1,7 +1,7 @@
 // 梦境航线：单人主线每局生成一张 7 步分支路线，每一步在 2～3 个房间里选 1 个。
 // 节点全部复用现有房间：战斗 / 精英 / 补给 / 首领，加上三种轻量新房间：事件（一次选择）、挑战（战斗 + 一条规则，
 // 清场多拿一次选卡）、宝藏（一小波怪，必出本图稀有怪，道具更多）。
-import { RUN } from "./data.js";
+import { RUN, CURSES } from "./data.js";
 import { rng } from "./util.js";
 import { PAL } from "../pixelfx/core/color.js";
 
@@ -112,7 +112,53 @@ export const NPCS = {
   spring: { name: "泉之精灵", bye: "一路顺风～" },
   curse: { name: "宝箱怪", bye: "嘎吱……" },
   merchant: { name: "奇遇商人", bye: "有缘再会，旅人～" },
+  slot: { name: "老虎机", bye: "叮叮当～欢迎下次光临！" },
+  bloodpact: { name: "血契商人", bye: "契约已成……愿你承受得住。" },
 };
+
+// 老虎机: each pull costs coins and stops three reels; weights per reel (of 10)
+export const SLOT_SYMS = [
+  { id: "cherry", name: "樱桃", w: 3 },
+  { id: "seven", name: "7", w: 1 },
+  { id: "star", name: "星星", w: 2 },
+  { id: "heart", name: "爱心", w: 2 },
+  { id: "skull", name: "骷髅", w: 2 },
+];
+/** what three reels pay: { kind, text, coins, card?, heal?, maxHp?, hurt?, curse? } (coins may be negative) */
+export function slotPayout(reels) {
+  const ids = reels.map((i) => SLOT_SYMS[i].id), cnt = {};
+  for (const k of ids) cnt[k] = (cnt[k] || 0) + 1;
+  const three = Object.keys(cnt).find((k) => cnt[k] === 3), two = Object.keys(cnt).find((k) => cnt[k] === 2);
+  if (three === "seven") return { kind: "jackpot", text: "大奖！+100 金币，再挑一张 SSR 卡", coins: 100, card: "SSR" };
+  if (three === "cherry") return { kind: "win", text: "三连樱桃！+60 金币", coins: 60 };
+  if (three === "star") return { kind: "win", text: "三连星星！离开时挑一张卡", coins: 0, card: "SR" };
+  if (three === "heart") return { kind: "win", text: "三连爱心！生命上限 +1 并回满", coins: 0, maxHp: 1 };
+  if (three === "skull") return { kind: "curse", text: "三连骷髅……扣 1 点生命，背上一个随机诅咒", coins: 0, hurt: 1, curse: true };
+  if (two === "seven") return { kind: "small", text: "两个 7！+40 金币", coins: 40 };
+  if (two === "cherry") return { kind: "small", text: "两颗樱桃，+30 金币", coins: 30 };
+  if (two === "star") return { kind: "small", text: "两颗星星，+25 金币", coins: 25 };
+  if (two === "heart") return { kind: "small", text: "两颗爱心，回复 1 点生命", coins: 0, heal: 1 };
+  if (two === "skull") return { kind: "curse", text: "两个骷髅，再被吞掉 15 金币", coins: -15 };
+  return { kind: "miss", text: "落空了……", coins: 0 };
+}
+
+// 诅咒宝箱 fates (weights of 100): 加成 an in-run boon, 淬灵露 an out-of-run pet item (into the 宠物仓库 at the
+// settlement), 宝箱怪 the chest turns into an elite and pays when beaten, 诅咒 a random curse and a card pick
+export const CHEST_FATES = [
+  { id: "boon", w: 35 },
+  { id: "dew", w: 25 },
+  { id: "mimic", w: 25 },
+  { id: "curse", w: 15 },
+];
+export const CHEST_BOONS = [
+  { id: "hp", text: "生命上限 +1，并回满生命", icon: "heart" },
+  { id: "dmg", text: "本局伤害 +10%", icon: "sword" },
+  { id: "speed", text: "本局移速 +8%", icon: "boot" },
+  { id: "coins", text: "+60 金币", icon: "coin" },
+  { id: "card", text: "关上宝箱后挑一张 SR 起的卡", icon: "cardgold" },
+];
+// the chest's reward when beaten as 宝箱怪: its coins, a supply chest (the room's clear), and this chance of 淬灵露
+export const MIMIC_DEW = 0.4;
 
 // events: one choice each. apply(game, p) runs on the host; returns a short result line (shown as floating text)
 export const EVENTS = {
@@ -137,12 +183,29 @@ export const EVENTS = {
       { label: "装星砂", apply: (g) => { g.runStats.eventStars = (g.runStats.eventStars || 0) + 20; return "+20 星砂"; } },
     ],
   },
+  // 诅咒宝箱: open it in the dialog (game.openCurseChest) — the lid rattles, then one of four fates (CHEST_FATES)
   curse: {
-    name: "诅咒宝箱", text: "（宝箱怪咧开嘴，锁链哗啦作响）打开能选一张卡，但之后的敌人生命 +20%。",
-    options: [
-      { label: "打开", apply: (g, p) => { g.curseHp = (g.curseHp || 1) * 1.2; g.offerCards(p, 3); return "诅咒：敌人生命 +20%"; } },
-      { label: "离开", apply: () => "" },
-    ],
+    name: "诅咒宝箱", text: "「打开我呀～可能是宝贝，也可能是……我。」",
+    chest: true,
+    options: [],
+  },
+  // a slot machine instead of a choice: three pulls a room, each costs `cost` coins (game.spinSlot / settleSlot);
+  // card wins are offered when the dialog closes
+  slot: {
+    name: "老虎机", text: "「投 15 金币拉一次杆，三格一样有大奖～小心骷髅哦！」",
+    slot: { spins: 3, cost: 15 },
+    options: [],
+  },
+  // 血契商人: three pacts, sign up to two (game.bloodDeal): 血之契 max life -1 → an SSR pick on leaving; 诅咒契 a named
+  // curse → a 觉醒材料 (a missing ingredient card for the nearest 觉醒卡, else 80 coins); 赎罪契 40 coins → lift a curse
+  bloodpact: {
+    name: "血契商人", text: "「每份契约都有代价，最多签两份。」",
+    pact: { max: 2, deals: [
+      { id: "blood", name: "血之契", cost: "生命上限 -1", gain: "离开时挑一张 SSR 卡" },
+      { id: "curse", name: "诅咒契", cost: "背上诅咒", gain: "获得觉醒材料" },
+      { id: "atone", name: "赎罪契", cost: "40 金币", gain: "解除最近的诅咒" },
+    ] },
+    options: [],
   },
   // a shop instead of a choice: paid with the account's 金铲 (梦境矿场) or 晶石, goods go straight to the account.
   // Two purchases a room, each kind once; 离开 only closes (come back while purchases remain). See game.merchantBuy

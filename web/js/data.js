@@ -139,7 +139,7 @@ export const ENEMIES = {
   jelly: { name: "漏电水母", hp: 34, spd: 36, r: 12, ai: "pulse", sprite: "jelly", coin: [1, 3], fly: true },
   wisp: { name: "游离进程", hp: 10, spd: 70, r: 8, ai: "kamikaze", sprite: "wisp", coin: [0, 1], fly: true },
   snake: { name: "死循环蛇", hp: 22, spd: 72, r: 10, ai: "snake", sprite: "snake", coin: [1, 2], touch: 1 },
-  boss_eye: { name: "幻觉之眼", hp: 3000, spd: 40, r: 16, ai: "boss_eye", sprite: "eyeball", coin: [30, 30], fly: true, boss: true, scale: 2 },
+  boss_eye: { name: "幻觉之眼", title: "幻觉之源", hp: 3000, spd: 40, r: 16, ai: "boss_eye", sprite: "eyeball", coin: [30, 30], fly: true, boss: true, scale: 2 },
   // map residents (recoloured critters) — 数据草原
   snake_vine: { name: "藤蔓蛇", hp: 26, spd: 70, r: 10, ai: "snake", sprite: "snake_vine", coin: [1, 2], touch: 1, chill: true },
   frog_big: { name: "巨型跳转蛙", hp: 80, spd: 44, r: 16, ai: "leap", sprite: "frog_big", coin: [3, 5], touch: 1, scale: 1.5 },
@@ -166,8 +166,17 @@ export const ENEMIES = {
   jelly_aurora: { name: "极光水母", hp: 110, spd: 40, r: 13, ai: "pulse", sprite: "jelly_aurora", coin: [8, 12], fly: true, rare: "ice", scale: 1.2 },
   skull_obsidian: { name: "黑曜骷髅", hp: 130, spd: 32, r: 13, ai: "caster", sprite: "skull_obsidian", coin: [8, 12], fly: true, rare: "lava", scale: 1.2, shot: { cd: 2.4, spd: 130, n: 12, ring: true, burn: true } },
   // bosses of the other two maps
-  boss_frost: { name: "冰封史莱姆王", hp: 3300, spd: 50, r: 22, ai: "boss_frost", sprite: "slime_frost", coin: [30, 30], boss: true, scale: 3 },
-  boss_core: { name: "过热核心", hp: 3600, spd: 36, r: 18, ai: "boss_core", sprite: "skull_core", coin: [30, 30], fly: true, boss: true, scale: 2.4 },
+  boss_frost: { name: "冰封史莱姆王", title: "冻结的缓存", hp: 3300, spd: 50, r: 22, ai: "boss_frost", sprite: "slime_frost", coin: [30, 30], boss: true, scale: 3 },
+  boss_core: { name: "过热核心", title: "熔毁倒计时", hp: 3600, spd: 36, r: 18, ai: "boss_core", sprite: "skull_core", coin: [30, 30], fly: true, boss: true, scale: 2.4 },
+  boss_root: { name: "根须之心", title: "腐化的林心", hp: 3400, spd: 0, r: 24, ai: "boss_root", sprite: "root_heart", coin: [30, 30], boss: true, rooted: true },
+  boss_witch: { name: "霜镜女巫", title: "镜中之冰", hp: 3100, spd: 46, r: 16, ai: "boss_witch", sprite: "frost_witch", coin: [30, 30], fly: true, boss: true },
+  boss_worm: { name: "熔岩巨蠕", title: "地心吞噬者", hp: 3600, spd: 0, r: 22, ai: "boss_worm", sprite: "lava_worm", coin: [30, 30], boss: true, rooted: true },
+  boss_judge: { name: "雷霆审判者", title: "无尽的终审", hp: 3500, spd: 44, r: 18, ai: "boss_judge", sprite: "thunder_judge", coin: [30, 30], fly: true, boss: true },
+  // 诅咒宝箱 turned monster: the event visitor's own strip (npc.png row 3), hops at you like a frog; always spawned elite
+  mimic: { name: "宝箱怪", sprScale: 0.6, hp: 70, spd: 62, r: 13, ai: "leap", sprite: "mimic", coin: [8, 12], touch: 1 },
+  judge_core: { name: "雷暴核心", hp: 150, spd: 0, r: 13, ai: "storm_core", sprite: "wisp", coin: [2, 3], fly: true, noKnock: true },
+  core_pylon: { name: "冷却塔", hp: 140, spd: 0, r: 13, ai: "pylon", sprite: "wisp", coin: [2, 3], fly: true, noKnock: true },
+  witch_clone: { name: "冰镜分身", hp: 1, spd: 0, r: 14, ai: "witch_clone", sprite: "frost_witch_clone", coin: [0, 0], fly: true, mirror: true },
 };
 
 // rooms of one run: the core loop
@@ -188,11 +197,11 @@ export const ROOM_NAMES = { combat: "战斗", shop: "补给站", boss: "首领" 
 // rare: each map's rare monster (ENEMIES[*].rare) shows up in a combat room now and then
 export const MAPS = {
   grass: { name: "数据草原", theme: 0, hazard: "mud", hazardText: "泥沼会减速 · 清除所有敌人", hp: 1, reward: 1, desc: "入门地图：泥沼减速，藤蔓蛇碰到会减速，首领是幻觉之眼。", need: null,
-    swap: { snake: [["snake_vine", 0.5], ["beetle", 0.35]], bat: ["snake_vine", 0.15], slime: ["mushroom", 0.3], frog: ["beetle", 0.25] }, elites: ["frog_big"], boss: "boss_eye" },
+    swap: { snake: [["snake_vine", 0.5], ["beetle", 0.35]], bat: ["snake_vine", 0.15], slime: ["mushroom", 0.3], frog: ["beetle", 0.25] }, elites: ["frog_big"], boss: "boss_eye", bosses: ["boss_eye", "boss_root"] },
   ice: { name: "显存冰原", theme: 2, hazard: "ice", hazardText: "冰面会打滑 · 清除所有敌人", hp: 1.3, reward: 1.35, desc: "冰面会打滑；霜冻爬虫、冰晶眼球会让你减速，首领是冰封史莱姆王。", need: "grass",
-    swap: { slime: [["slime_blue", 0.6], ["hedgehog", 0.25]], slime_purple: ["hedgehog", 0.4], frog: [["hedgehog", 0.4], ["ghost", 0.3]], bat: ["bat_ice", 0.7], eyeball: [["eye_ice", 0.5], ["frostling", 0.35]], snake: [["snake_ice", 0.6], ["bat_ice", 0.3]], jelly: ["jelly_ice", 0.7], wisp: ["frostling", 0.5] }, elites: ["slime_frost"], boss: "boss_frost" },
+    swap: { slime: [["slime_blue", 0.6], ["hedgehog", 0.25]], slime_purple: ["hedgehog", 0.4], frog: [["hedgehog", 0.4], ["ghost", 0.3]], bat: ["bat_ice", 0.7], eyeball: [["eye_ice", 0.5], ["frostling", 0.35]], snake: [["snake_ice", 0.6], ["bat_ice", 0.3]], jelly: ["jelly_ice", 0.7], wisp: ["frostling", 0.5] }, elites: ["slime_frost"], boss: "boss_frost", bosses: ["boss_frost", "boss_witch"] },
   lava: { name: "算力熔炉", theme: 3, hazard: "lava", hazardText: "熔岩会灼烧 · 清除所有敌人", hp: 1.6, reward: 1.7, desc: "熔岩地块持续灼烧（敌人也会）；熔岩史莱姆死后留下火池，炎蝠碰到会着火，首领是过热核心。", need: "ice",
-    swap: { slime: ["slime_lava", 0.75], slime_purple: ["slime_lava", 0.6], eyeball: [["imp", 0.35], ["skull", 0.3]], bat: [["bat_fire", 0.6], ["imp", 0.25]], jelly: ["skull", 0.4], frog: [["salamander", 0.45], ["slime_lava", 0.3]], snake: [["salamander", 0.5], ["snake_lava", 0.5]], wisp: ["imp", 0.5] }, elites: ["skull_core"], boss: "boss_core" },
+    swap: { slime: ["slime_lava", 0.75], slime_purple: ["slime_lava", 0.6], eyeball: [["imp", 0.35], ["skull", 0.3]], bat: [["bat_fire", 0.6], ["imp", 0.25]], jelly: ["skull", 0.4], frog: [["salamander", 0.45], ["slime_lava", 0.3]], snake: [["salamander", 0.5], ["snake_lava", 0.5]], wisp: ["imp", 0.5] }, elites: ["skull_core"], boss: "boss_core", bosses: ["boss_core", "boss_worm"] },
 };
 export const MAP_ORDER = ["grass", "ice", "lava"];
 for (const k in MAPS) MAPS[k].id = k;
@@ -207,8 +216,46 @@ const ENDLESS_POOL = [
   ["ghost", "jelly", "wisp", "skull", "snake", "eyeball"],
   ["skull", "snake", "wisp", "jelly", "ghost", "frog", "eyeball"],
 ];
+// 精英词缀: every elite (not a boss) rolls one. swift moves 45% faster; shield carries a barrier of 50% of its life that
+// takes damage first (breaking it stuns 1.2 s); split bursts into two small copies on death; volatile leaves a bomb
+// that goes off 0.8 s after it dies; regen heals 5%/s once it has not been hit for 2 s; frost chills players nearby.
+export const AFFIXES = [
+  { id: "swift", name: "迅捷", color: "#7fe0ff", desc: "移速 +45%" },
+  { id: "shield", name: "坚盾", color: "#8ab4ff", desc: "带 50% 生命的护盾，先扣护盾，打破后眩晕 1.2 秒" },
+  { id: "split", name: "分裂", color: "#a6f06a", desc: "死后裂成两只小号分身" },
+  { id: "volatile", name: "爆裂", color: "#ff8a3a", desc: "死后原地留下炸弹，0.8 秒后爆炸" },
+  { id: "regen", name: "再生", color: "#ff7ab8", desc: "2 秒没挨打就每秒回 5% 生命" },
+  { id: "frost", name: "霜环", color: "#c8f0ff", desc: "身边一圈寒气，靠近会减速" },
+];
+// 噩梦契约: optional terms picked before a solo run (lobby). Each rank adds `pts` to the 噩梦等级; the level raises the
+// run's 晶石 by 8% a point and clearing a map at a new best level pays the milestones below once each.
+export const PACTS = [
+  { id: "hp", name: "坚韧噩梦", desc: "敌人生命 +25%", max: 3, pts: 1 },
+  { id: "bullet", name: "弹幕加速", desc: "敌方子弹速度 +20%", max: 2, pts: 1 },
+  { id: "speed", name: "狂躁噩梦", desc: "敌人移速 +20%", max: 1, pts: 1 },
+  { id: "poor", name: "贫瘠噩梦", desc: "局内金币 -50%", max: 1, pts: 1 },
+  { id: "elite", name: "精英泛滥", desc: "普通敌人 15% 概率成为精英", max: 1, pts: 2 },
+  { id: "boss", name: "首领觉醒", desc: "首领生命 +50%，双首领概率 30%", max: 1, pts: 2 },
+  { id: "cards", name: "卡池封锁", desc: "开箱只给两张卡", max: 1, pts: 2 },
+  { id: "dmg", name: "凶猛噩梦", desc: "每次受到伤害 +1", max: 1, pts: 3 },
+  { id: "noshield", name: "护盾停转", desc: "护盾不会自动回复", max: 1, pts: 3 },
+];
+export const PACT_MAX = PACTS.reduce((a, q) => a + q.max * q.pts, 0);
+export const pactLevel = (pact = {}) => PACTS.reduce((a, q) => a + Math.min(q.max, Math.max(0, pact[q.id] | 0)) * q.pts, 0);
+export const PACT_MILESTONES = [
+  { lv: 4, name: "UR 宠物蛋 ×1", eggs: [["ur", 1]] },
+  { lv: 8, name: "HUR 宠物蛋 ×1 · 1000 晶石", eggs: [["hur", 1]], gems: 1000 },
+  { lv: 12, name: "兑换卡 ×2 · 2000 晶石", cards: 2, gems: 2000 },
+  { lv: 16, name: "HUR 宠物蛋 ×2 · 3000 晶石", eggs: [["hur", 2]], gems: 3000 },
+  { lv: PACT_MAX, name: "称号「噩梦主宰」· 5000 晶石", title: "噩梦主宰", gems: 5000 },
+];
+// every boss in the game; the endless corridor's boss floors cycle through them in a seeded order
+export const ALL_BOSSES = ["boss_eye", "boss_root", "boss_frost", "boss_witch", "boss_core", "boss_worm", "boss_judge"];
 export function endlessRoom(i, seed) {
-  if (i % 10 === 9) return { kind: "boss", boss: "boss_eye" };
+  if (i % 10 === 9) {
+    const n = ALL_BOSSES.length, k = Math.floor(i / 10), off = (seed >>> 0) % n;
+    return { kind: "boss", boss: ALL_BOSSES[(off + k) % n], anyBoss: true };
+  }
   if (i % 5 === 4) return { kind: "shop" };
   let x = (seed ^ (i * 2654435761)) >>> 0;
   const rnd = () => ((x = (x * 1664525 + 1013904223) >>> 0) / 4294967296);
@@ -262,6 +309,7 @@ export const RARITY = {
   R: { name: "R", color: "#5fb4ff", w: 32 },
   SR: { name: "SR", color: "#c27bff", w: 14 },
   SSR: { name: "SSR", color: "#ffc93a", w: 4 },
+  UR: { name: "UR", color: "#ff5ad8", w: 0 }, // 觉醒卡: never rolled by weight, offered when its recipe is complete
 };
 // tag: what kind of card (shown as chip)
 export const CARDS = [
@@ -288,7 +336,37 @@ export const CARDS = [
   { id: "shield_nova", r: "SR", tag: "机制", name: "防御反制", desc: "护盾破碎时释放冲击波（18伤害并击退）", max: 1, locked: true },
   { id: "echo", r: "SSR", tag: "机制", name: "自洽回声", desc: "小技能有 35% 概率再释放一次", max: 1, locked: true },
   { id: "second_ult", r: "SSR", tag: "机制", name: "持续学习", desc: "释放大招后立即返还 40% 充能", max: 1, locked: true },
+  // 血契与诅咒: only offered while the run carries a curse (curse: true)
+  { id: "pain_power", r: "SR", tag: "诅咒", name: "以痛为力", desc: "每背负 1 个诅咒，伤害 +10%", max: 1, curse: true },
+  { id: "curse_res", r: "SR", tag: "诅咒", name: "诅咒共鸣", desc: "每背负 1 个诅咒，暴击率 +5%、护盾上限 +1", max: 1, curse: true },
+  { id: "blood_gift", r: "SR", tag: "诅咒", name: "血之馈赠", desc: "背负诅咒时击杀 6% 概率回复 1 生命，清空房间额外 +15 金币", max: 1, curse: true },
+  { id: "purify", r: "R", tag: "诅咒", name: "净化之火", desc: "立刻解除 1 个诅咒并回复 2 点生命", max: 2, curse: true },
 ];
+// 诅咒: run-long burdens from the 血契商人, the 诅咒宝箱 and the slot machine's skulls (each once; at most 5).
+// Removed by 净化之火 or the merchant's 赎罪契. Effects are applied/undone in game.addCurse / removeCurse.
+export const CURSES = {
+  weak: { name: "虚弱", desc: "伤害 -12%" },
+  slow: { name: "迟缓", desc: "移速 -10%" },
+  brittle: { name: "易碎", desc: "护盾上限 -1" },
+  greed: { name: "贫穷", desc: "金币获取 -35%" },
+  hostile: { name: "敌意", desc: "敌人生命 +15%" },
+  heavy: { name: "沉重", desc: "闪避冷却 +40%" },
+  bleed: { name: "失血", desc: "每进入新房间失去 1 点生命（不致死）" },
+};
+export const CURSE_MAX = 5;
+// 觉醒卡 (card evolutions): own `need` (card id → count; the first entry is the card to max) and the UR evolution is
+// guaranteed as the first card of the next offer. The ingredients stay; the evolution adds on top (one each per run).
+export const EVOLUTIONS = [
+  { id: "ev_storm", r: "UR", tag: "觉醒", name: "全连接风暴", need: { multishot: 2, pierce: 1 }, icon: "multishot", desc: "普攻再 +2 弹道，穿透 +2", max: 1 },
+  { id: "ev_grad", r: "UR", tag: "觉醒", name: "梯度爆炸", need: { crit: 2, atk_up: 2 }, icon: "crit", desc: "暴击伤害 +100%；暴击时 30% 概率在目标处爆炸（该击 50% 范围伤害）", max: 1 },
+  { id: "ev_chain", r: "UR", tag: "觉醒", name: "链式推理", need: { bounce: 2, range_up: 1 }, icon: "bounce", desc: "普攻弹射 +3 次，锁敌范围 +25%", max: 1 },
+  { id: "ev_perpetual", r: "UR", tag: "觉醒", name: "永动机", need: { cd_down: 2, ult_charge: 1 }, icon: "cd_down", desc: "小技能冷却 -30%；每次释放小技能额外充能大招 10%", max: 1 },
+  { id: "ev_undying", r: "UR", tag: "觉醒", name: "不死模型", need: { vamp: 2, hp_up: 1 }, icon: "vamp", desc: "生命上限 +4 并回满；击杀回血概率 +16%", max: 1 },
+  { id: "ev_phantom", r: "UR", tag: "觉醒", name: "残影闪击", need: { dodge_crit: 1, speed_up: 2 }, icon: "dodge_crit", desc: "闪避冷却 -30%；闪避起点留下残影，0.4 秒后爆炸（普攻 ×4 范围伤害）", max: 1 },
+  { id: "ev_berserk", r: "UR", tag: "觉醒", name: "狂暴协议", need: { low_rage: 1, shield_up: 2 }, icon: "low_rage", desc: "护盾破碎时狂暴 4 秒：伤害 +80%、攻速 +40%、移速 +25%（10 秒冷却）", max: 1 },
+  { id: "ev_midas", r: "UR", tag: "觉醒", name: "算力印钞机", need: { coin_up: 2, big_bullet: 1 }, icon: "coin_up", desc: "金币获取 +50%；每持有 100 金币伤害 +6%（最多 +60%）", max: 1 },
+];
+export const evoReady = (cards, ev) => !cards[ev.id] && Object.entries(ev.need).every(([k, n]) => (cards[k] || 0) >= n);
 // fusion cards are generated per character (the "技能混搭" core): every 3rd attack also fires that girl's bullet,
 // and "skill link" makes your skill also cast hers at reduced power.
 export function fusionCards(selfId) {

@@ -1,5 +1,5 @@
 // HTML overlay: lobby, roster, gacha, net rooms, HUD, card picks, pause, results.
-import { CHARS, CHAR_ORDER, ELEM, UNLOCKS, CARDS, fusionCards, RARITY, GACHA, RUN, STATUS, ITEMS, REACTIONS, MAPS, MAP_ORDER, PVP_MODES, REWARD } from "./data.js";
+import { CHARS, CHAR_ORDER, ELEM, UNLOCKS, CARDS, fusionCards, EVOLUTIONS, PACTS, AFFIXES, CURSES, RARITY, GACHA, RUN, STATUS, ITEMS, REACTIONS, MAPS, MAP_ORDER, PVP_MODES, REWARD } from "./data.js";
 import { load, save, unlockProgress, pull, checkUnlocks } from "./save.js";
 import { A } from "./assets.js";
 import { sfx, setSound, setMusic, playMusic } from "./audio.js";
@@ -11,6 +11,7 @@ import { PETS, PET_COST, PET_EVOLVE, PET_MAX_XP, PET_ATTACK_RANGE, FOX_RIDE_RANG
 import { drawEgg } from "./petwh.js";
 import { input } from "./input.js";
 import { NPCS, NODE, CHALLENGES, EVENTS } from "./route.js";
+import { TITLES, TITLE_ORDER, TITLE_RARITY } from "./titles.js";
 
 let root, app;
 export const $ = (s, r = root) => r.querySelector(s);
@@ -27,7 +28,10 @@ export function toast(msg, ms = 1800) {
   root.appendChild(t);
   setTimeout(() => t.remove(), ms);
 }
-const cardById = (id, cid) => CARDS.find((c) => c.id === id) || fusionCards(cid).find((c) => c.id === id);
+const cardById = (id, cid) => CARDS.find((c) => c.id === id) || EVOLUTIONS.find((c) => c.id === id) || fusionCards(cid).find((c) => c.id === id);
+// small icon for a card in build lists: fusion → that girl's skill, 觉醒 → its main ingredient
+const cardIcon = (id) => (id.startsWith("ev_") ? EVOLUTIONS.find((c) => c.id === id)?.icon || id : id.startsWith("f") ? id.slice(3) + (id[1] === "a" ? "_atk" : "_skill") : id);
+const cardName = (id) => CARDS.find((c) => c.id === id)?.name || id;
 export function spriteCanvas(cid, view = "front") {
   const s = A.girls[cid], c = document.createElement("canvas");
   const top = s.top || 0;
@@ -108,6 +112,9 @@ export function showHelp() {
   const SECS = [
     ["闯关基础", `${H("电脑操作")}WASD 移动 · <b>J</b> 攻击（自动锁定范围内最近的敌人）· <b>K</b> 小技能 · <b>L</b> 大招 · 空格 闪避 · Esc 暂停
       ${H("手机操作")}左侧拖动摇杆移动 · 按住攻击键自动锁敌连射，拖动攻击键手动瞄准 · 技能 / 大招键轻点自动释放，拖动瞄准后松手释放
+      ${H("诅咒")}血契商人的诅咒契、诅咒宝箱的诅咒结果、老虎机三连骷髅会让本局背上诅咒（最多 5 个，同种不重复），名字以紫色标签显示在金币下方，点开看效果：${Object.values(CURSES).map((c) => `${c.name}（${c.desc}）`).join("、")}。背负诅咒时宝箱会出现「诅咒」卡：以痛为力、诅咒共鸣、血之馈赠、净化之火（解除诅咒）；赎罪契也能解除。
+      ${H("精英词缀")}精英怪（不含首领）各带一个词缀，名字写在血条上方「精英·词缀」：${AFFIXES.map((q) => `<span style="color:${q.color}">${q.name}</span>（${q.desc}）`).join("、")}。
+      ${H("完美闪避")}敌人的子弹、撞击或技能即将命中时闪避穿过去，触发「完美闪避」：闪避冷却立刻刷新、3 秒内伤害 +50%、大招充能 +6%；单人时进入 1.6 秒「子弹时间」——敌人、敌弹和敌方技能放慢到 30%，你照常行动（2 秒冷却）。
       ${H("闯关循环")}每局 7 层，单人主线走「梦境航线」：第 1 层固定战斗，第 7 层是首领；中间每层清场后会同时出现 2～3 扇颜色不同的传送门（同一层的门一定是不同房间），走进哪扇就去哪种房间。合作模式仍为固定顺序：战斗 → 战斗 → 补给站 → 精英战 → 战斗 → 补给站 → 首领。
       ${H("房间类型")}${[
         ["combat", "银白门。清掉所有波次，开补给箱三选一技能卡；越往后敌人越多越强。"],
@@ -116,16 +123,21 @@ export function showHelp() {
         ["event", "紫门。没有敌人，房间里站着一位访客，走近按攻击键交谈（每层的门里最多一扇事件）。"],
         ["challenge", "深红门。普通战斗加一条随机规则，清场成功额外再选一次卡（可出 SR 及以上）。"],
         ["treasure", "金门。只有一小波怪，但必出本图稀有怪物（必掉梦境藏品），地上道具更多。"],
-        ["boss", "暗紫门。第 7 层首领战，击败后掉铲子和宠物蛋，偶尔撕开梦境裂隙；10% 概率是双首领，奖励翻倍。"],
+        ["boss", "暗紫门。第 7 层首领战（数据草原：幻觉之眼 / 根须之心；显存冰原：冰封史莱姆王 / 霜镜女巫；算力熔炉：过热核心 / 熔岩巨蠕；无尽回廊每 10 层轮换全部首领，另有无尽专属的雷霆审判者），击败后掉铲子和宠物蛋，偶尔撕开梦境裂隙；10% 概率是双首领，奖励翻倍。"],
       ].map(([k, t]) => `<div class="hp-cur"><span class="chip" style="background:${NODE[k].col};color:#1a1020">${NODE[k].name}</span><span>${t}</span></div>`).join("")}
+      ${H("觉醒卡")}凑齐配方（第一张满到要求的张数、再有第二张）后，下一次开箱或扭蛋的第一张必是 UR 觉醒卡，原卡保留、觉醒效果叠加；卡面上“可觉醒”提示它通往哪张。${EVOLUTIONS.map((ev) => `<div class="hp-cur"><span class="chip w5" style="background:#ff8ae6;color:#1a1020">${ev.name}</span><span><b>${Object.entries(ev.need).map(([k, n]) => cardName(k) + (n > 1 ? "×" + n : "")).join(" + ")}</b>：${ev.desc}</span></div>`).join("")}
+      ${H("称号")}主页标题旁的称号牌打开称号面板。达成冒险、矿场、宠物里的目标自动获得，佩戴后在局内头顶显示（联机队友也能看到），并在闯关中获得它的效果：${TITLE_ORDER.map((id) => `<div class="hp-cur"><span class="chip w4" style="background:${TITLES[id].col || TITLE_RARITY[TITLES[id].r].col};color:#1a1020">${TITLES[id].name}</span><span>${TITLES[id].how} · ${TITLES[id].fxText}</span></div>`).join("")}
+      ${H("噩梦契约")}主页「开始冒险」左边的「噩梦」方块：单人闯关前自选难度条款，每级让本局晶石 +8%；以某个等级通关一张地图（无尽为打到第 10 层）记录该图最高等级，首次达到 4 / 8 / 12 / 16 / 19 级各领一次里程碑奖励（宠物蛋、兑换卡、晶石、称号「噩梦主宰」）。${PACTS.map((q) => `<div class="hp-cur"><span class="chip w4" style="background:#ff6a9a;color:#1a1020">${q.name}</span><span>${q.desc}${q.max > 1 ? `（每级，最多 ${q.max} 级）` : ""}，每级 +${q.pts} 噩梦</span></div>`).join("")}
       ${H("挑战规则")}${Object.values(CHALLENGES).map((c) => `<div class="hp-cur"><span class="chip w4" style="background:${NODE.challenge.col};color:#1a1020">${c.name}</span><span>${c.desc}。</span></div>`).join("")}
       ${H("事件访客")}${[
         ["altar", "献上 1 点生命上限，换一次 SR / SSR 三选一；也可以直接离开。"],
         ["gamble", "押上局内金币的 30%～80% 猜单双，猜中赢一倍、猜错输掉押注；每个房间玩 2 轮，中途离开还能回来接着玩。"],
         ["spring", "二选一：生命和护盾回满，或装走 20 星砂（结算时到账）。"],
-        ["curse", "打开得到一次技能卡三选一，但本局之后的敌人生命 +20%（可叠加）；也可以离开。"],
+        ["curse", "打开后宝箱摇晃一会儿，揭晓四种结果之一：局内加成 35%（生命上限 +1、伤害 +10%、移速 +8%、+60 金币或 SR 起选卡）、淬灵露 25%（结算后进宠物仓库）、宝箱怪 25%（变成精英扑过来，打赢得金币、补给箱选卡，40% 再掉淬灵露）、诅咒 15%（背上随机诅咒并选一张卡）。没打开前可以离开，回来再开。"],
         ["merchant", "用账号里的金铲和晶石买东西，直接进账号：宠物蛋 2 金铲、UR 宠物蛋 5 金铲、HUR 宠物蛋 10 金铲、兑换卡 2000 晶石；每个房间最多买 2 样，同一样只卖一次，没买完离开还能回来。"],
-      ].map(([k, t]) => `<div class="hp-cur"><span class="chip w4" style="background:${NODE.event.col};color:#1a1020">${EVENTS[k].name}</span><span>${NPCS[k].name}：${t}</span></div>`).join("")}
+        ["bloodpact", "三份契约最多签两份：血之契（生命上限 -1，离开时挑一张 SSR 卡）、诅咒契（背上写明的诅咒，换一份觉醒材料：直接补齐离觉醒最近的配方缺的一张卡）、赎罪契（40 金币解除最近的诅咒）。"],
+        ["slot", "每次投 15 局内金币拉杆，每个房间 3 次：三个 7 大奖（+100 金币并在离开时挑一张 SSR 卡）；三连樱桃 +60、三连星星离开时选卡、三连爱心生命上限 +1；两个相同有小奖；骷髅会扣金币，三连骷髅背上随机诅咒。"],
+      ].map(([k, t]) => `<div class="hp-cur"><span class="chip w4" style="background:${NODE.event.col};color:#1a1020">${EVENTS[k].name}</span><span>${NPCS[k].name === EVENTS[k].name ? "" : NPCS[k].name + "："}${t}</span></div>`).join("")}
       ${H("技能卡")}清场后开箱三选一技能卡，构筑你的流派。
       ${H("生存")}护盾受击后几秒自动回复，生命不会。
       ${H("首领与裂隙")}首领倒下时地上会掉一把梦境矿场的铲子（带光柱），捡没捡都会在结算时计入。偶尔还会撕开「梦境裂隙」：90 秒限时挖宝，电量无限；无尽模式挖宝后返回原进度继续，放弃进入则在本局结算额外获得 ${REWARD.riftSkip} 晶石，并有 ${Math.round(REWARD.riftSkipEgg * 100)}% 概率再得 1 颗宠物蛋。<br>双首领：首领房有 10% 概率出现两只同样的首领（横幅提示），两只都击败才算胜利，首领晶石奖励、铲子、宠物蛋和首领经验都翻倍。
@@ -266,7 +278,7 @@ export function showHud(game, me) {
   hud.innerHTML = `
    <div class="tl"><div class="face"><img src="assets/portrait_${me.cid}.png"></div>
      <div class="bars"><div class="bar hp"><i></i><span class="o1"></span></div><div class="bar sh"><i></i><span class="o1"></span></div>
-     <div class="res o1"><div><div class="coin"></div><span class="coins">0</span></div><div><div class="cube"></div><span class="cubes">0</span></div><div class="pvpscore"></div></div></div></div>
+     <div class="res o1"><div><div class="coin"></div><span class="coins">0</span></div><div><div class="cube"></div><span class="cubes">0</span></div><div class="pvpscore"></div></div><div class="hcurses"></div></div></div>
    <div class="tc"><div class="pips"></div><div class="bossbars" style="display:none"><div class="bossbar"><div class="nm o1">幻觉之眼</div><div class="bar"><i></i></div></div><div class="bossbar" style="display:none"><div class="nm o1"></div><div class="bar"><i></i></div></div></div></div>
    <div class="tr"><div class="buffs"></div><button class="btn small gray pausebtn">Ⅱ</button></div>
    <div class="banner-slot"></div>
@@ -322,6 +334,12 @@ export function updateHud(game, me) {
   const set = (k, v, fn) => {
     if (hudCache[k] !== v) (hudCache[k] = v), fn(v);
   };
+  // 诅咒: one violet tag per curse under the coins; tap one for what it does
+  set("curses", (game.curses || []).join(","), (v) => {
+    const box = hud.querySelector(".hcurses");
+    box.innerHTML = v ? v.split(",").map((id) => `<button class="hc-tag" data-id="${id}"><img src="${iconURL("curse", 1)}" alt="">${CURSES[id].name}</button>`).join("") : "";
+    box.querySelectorAll(".hc-tag").forEach((b) => (b.onclick = (e) => (e.stopPropagation(), toast(`诅咒·${CURSES[b.dataset.id].name}：${CURSES[b.dataset.id].desc}`))));
+  });
   set('mounted',!!me.mounted, mounted=>{
     const b=hud.querySelector('.pet-ride-btn');if(b){b.querySelector('span').textContent=mounted?'下骑':'骑乘';b.disabled=!!me.dead||!!me.downed;}
     for(const slot of ['atk','ult']) {
@@ -381,7 +399,7 @@ export function updateHud(game, me) {
   set("banner", bn, () => {
     const slot = hud.querySelector(".banner-slot");
     slot.innerHTML = "";
-    if (game.banner) slot.appendChild(el("div", "banner outline", `<b>${game.banner.text}</b><small>${game.banner.sub || ""}</small>`));
+    if (game.banner) slot.appendChild(el("div", "banner outline" + (game.banner.boss ? " boss" : ""), game.banner.boss ? `<i class="bb-bar t"></i><i class="bb-bar b"></i><small class="bb-kick">首领登场</small><b>${game.banner.text}</b><small>${game.banner.sub || ""}</small>` : `<b>${game.banner.text}</b><small>${game.banner.sub || ""}</small>`));
   });
   // cooldowns (PC widgets + touch buttons)
   const c = CHARS[me.cid];
@@ -458,16 +476,23 @@ export function showCards(game, me, ids, onPick) {
     if (c.fuse) {
       const fe = ELEM[CHARS[c.fuse].elem];
       art = `<div class="c-art fuse" style="--ac:${fe.color}"><img class="c-por" src="assets/portrait_${c.fuse}.png" alt=""><img class="c-badge" src="${iconURL(c.kind === "atk" ? c.fuse + "_atk" : skillIcon(c.fuse, "skill"), 3)}" alt=""></div>`;
+    } else if (c.r === "UR") {
+      // 觉醒卡: the two ingredients fused
+      const [a, b] = Object.keys(c.need);
+      art = `<div class="c-art evo"><i class="c-rays"></i><img class="c-ico ea" src="${iconURL(a, 4)}" alt=""><img class="c-ico eb" src="${iconURL(b, 3)}" alt=""></div>`;
     } else art = `<div class="c-art" style="--ac:${RARITY[c.r].color}"><i class="c-rays"></i><img class="c-ico" src="${iconURL(id, 4)}" alt=""></div>`;
+    // an ingredient of a 觉醒 recipe says what it leads to
+    const evo = c.r === "UR" ? null : EVOLUTIONS.find((ev) => ev.need[id] && !me.cards[ev.id]);
+    const evoLine = c.r === "UR" ? `<div class="c-evo">${Object.entries(c.need).map(([k, n]) => cardName(k) + (n > 1 ? "×" + n : "")).join(" + ")}</div>` : evo ? `<div class="c-evo">可觉醒 · ${evo.name}</div>` : "";
     const pips = c.max > 1 ? `<div class="c-pips">${Array.from({ length: c.max }, (_, k) => `<i class="${k < lv ? "on" : k === lv ? "new" : ""}"></i>`).join("")}</div>` : `<div class="c-pips one">${lv ? "已拥有" : "唯一"}</div>`;
-    d.innerHTML = `<i class="c-frame"></i><div class="c-rar o1">${c.r}</div>${art}<div class="c-body"><div class="c-name">${c.name}</div><span class="c-tag o1">${c.tag}</span><div class="c-desc">${c.desc}</div>${pips}</div><div class="c-key">${i + 1}</div>`;
+    d.innerHTML = `<i class="c-frame"></i><div class="c-rar o1">${c.r}</div>${art}<div class="c-body"><div class="c-name">${c.name}</div><span class="c-tag o1">${c.tag}</span><div class="c-desc">${c.desc}</div>${evoLine}${pips}</div><div class="c-key">${i + 1}</div>`;
     d.onclick = () => pick(id, d);
     wrap.appendChild(d);
     els.push(d);
   });
   const owned = Object.entries(me.cards);
   const b = $(".build", md);
-  if (owned.length) b.innerHTML = owned.map(([id, n]) => `<span><img src="${iconURL(id.startsWith("f") ? id.slice(3) + (id[1] === "a" ? "_atk" : "_skill") : id, 2)}" alt="">${cardById(id, me.cid)?.name || id}${n > 1 ? "×" + n : ""}</span>`).join("");
+  if (owned.length) b.innerHTML = owned.map(([id, n]) => `<span><img src="${iconURL(cardIcon(id), 2)}" alt="">${cardById(id, me.cid)?.name || id}${n > 1 ? "×" + n : ""}</span>`).join("");
   let done = false;
   function pick(id, d) {
     if (done) return;
@@ -508,7 +533,9 @@ export function showPause(game, opts) {
     tg("音乐", () => m.music, () => ((m.music = !m.music), setMusic(m.music)),true),
     tg("自动攻击", () => m.autoFire, () => (m.autoFire = !m.autoFire)),
   );
-  $(".r2", md).append(btn(opts.quitLabel || "放弃本局", "red pz-act", () => (md.remove(), opts.quit())), btn("继续", "pz-act", () => (md.remove(), opts.resume())));
+  $(".r2", md).append(btn(opts.quitLabel || "放弃本局", "red pz-act", () => (md.remove(), opts.quit())));
+  if (opts.saveQuit) $(".r2", md).append(btn("保存退出", "blue pz-act", () => (md.remove(), opts.saveQuit()))), $(".r2", md).classList.add("c3");
+  $(".r2", md).append(btn("继续", "pz-act", () => (md.remove(), opts.resume())));
   const me = opts.me;
   if (me) {
     const owned = Object.entries(me.cards);
