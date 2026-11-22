@@ -2921,7 +2921,7 @@ body.touchmode .pet-ride-btn small { display:none; }
 .ws-c { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; color: #fff6c0; }
 .ws-c.short { color: #ff8a9a; }
 .ws-ico { flex: none; width: 26px; height: 26px; border: 2px solid var(--ink); border-radius: 8px; }
-.ws-ico.pool { background: radial-gradient(circle at 40% 35%, #fff 0 12%, #8affc8 13% 45%, #2aa86a 75%); }
+.ws-ico.pool, .ws-ico.pool2 { background: radial-gradient(circle at 40% 35%, #fff 0 12%, #8affc8 13% 45%, #2aa86a 75%); }
 .ws-ico.stars { background: radial-gradient(circle at 50% 50%, #fff 0 15%, #ffe066 16% 45%, #c8901a 75%); }
 .wmap-p .wm-mats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
 .wmap-p .wm-mats span { display: flex; align-items: center; justify-content: center; gap: 3px; font-size: 10.5px; color: #e8dcff; background: rgba(20,12,50,.6); border: 2px solid var(--ink); border-radius: 8px; padding: 1px 2px; white-space: nowrap; }
@@ -3020,3 +3020,40 @@ body.touchmode .pet-ride-btn small { display:none; }
 
 /* 迷途商人: one icon box for every kind of goods (a 星砂 tile is narrower than a material picture) */
 .hm-row .hm-icw { flex: none; width: 40px; height: 40px; display: grid; place-items: center; }
+
+/* 梦境大陆 panels with seven materials: the header row never scrolls sideways; 派遣 names stay on one line; 家园建造's cost
+   column is one fixed width for every row so costs and buttons line up */
+.wshop-p .ws-mats { flex: 0 1 auto; min-width: 0; flex-wrap: nowrap; overflow: hidden; }
+.wshop-p .ws-mats .ws-mat { padding: 1px 5px; }
+.wshop-p .ws-mats .ws-mat b { margin-left: 0; }
+.hm-disp .st-tx { flex: 1 1 auto; min-width: 0; }
+.hm-disp .st-tx b, .hm-disp .st-tx span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hm-disp .hm-mat { gap: 2px; }
+.hm-disp .hm-m { width: 26px; height: 26px; }
+.hm-disp .hm-m .mat-ic { width: 18px; height: 18px; }
+.hm-disp .hm-acc { width: 52px; }
+.hm-build .ws-cost { width: 250px; }
+.hm-build .st-tx { min-width: 0; } .hm-build .st-tx span { white-space: normal; line-height: 1.2; } /* (a long upgrade line wraps instead of pushing the button out) */
+
+/* 大地图 side column with seven materials and seven bosses: materials in one row (icon over count), tighter boss rows,
+   so the whole column fits beside the map without scrolling */
+.wmap-p .wm-mats { grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.wmap-p .wm-mats span { flex-direction: column; gap: 0; padding: 1px 0; font-size: 10px; line-height: 1.05; }
+.wmap-p .wm-mats .mat-ic { width: 14px; height: 14px; }
+.wmap-p .wm-boss { gap: 2px; }
+.wmap-p .wm-b { padding-top: 0; padding-bottom: 0; line-height: 1.12; }
+.wmap-p .wm-b span { font-size: 10.5px; }
+.wmap-p .wm-b small { font-size: 9px; }
+.wmap-p .wm-side { gap: 4px; }
+.wmap-p .wm-stats div { flex-direction: row; justify-content: center; align-items: baseline; gap: 4px; padding: 1px 4px; }
+.wmap-p .wm-stats span { font-size: 9.5px; }
+.wmap-p .wm-stats b { font-size: 12px; }
+.wmap-p .wm-b { line-height: 1.05; border-width: 2px; }
+.wmap-p .wm-pick { min-height: 22px; padding: 1px 6px; }
+.wshop-p .ws-head { gap: 6px; }
+.wshop-p .ws-mats { gap: 3px; }
+.wshop-p .ws-mats .ws-mat { padding: 1px 4px; gap: 2px; }
+/* 大地图 panel: 关闭 / 插旗 / 传送 without the drop shadow under them (flat on the panel) */
+.wmap-p .btn, .wmap-p .btn:active, .wmap-p .btn.press { box-shadow: inset 0 2px 0 rgba(255,255,255,.6), inset 0 -4px 0 rgba(0,0,0,.15); }
+.wmap-p .btn:active, .wmap-p .btn.press { transform: translateY(1px); }
+.hm-build .ws-cost:empty { width: 0; margin-left: -10px; } /* (a maxed row gives its cost column to the text) */
