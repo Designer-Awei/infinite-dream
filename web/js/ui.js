@@ -122,10 +122,12 @@ export function showHelp() {
         ["shop", "绿门。没有敌人：用局内金币买扭蛋机、血包 +3、护盾上限 +1、算力方块，另有一个免费补给箱；第 2 或第 5 层至少出现一次。"],
         ["event", "紫门。没有敌人，房间里站着一位访客，走近按攻击键交谈（每层的门里最多一扇事件）。"],
         ["challenge", "深红门。普通战斗加一条随机规则，清场成功额外再选一次卡（可出 SR 及以上）。"],
+        ["nest", "草绿门（第 3 层起）。一小波怪加三座本图巢穴（其中一座精英），巢穴不停孵出本图怪物，全部打碎才清场；开箱三选一必有 SR 及以上。"],
         ["treasure", "金门。只有一小波怪，但必出本图稀有怪物（必掉梦境藏品），地上道具更多。"],
         ["boss", "暗紫门。第 7 层首领战（数据草原：幻觉之眼 / 根须之心；显存冰原：冰封史莱姆王 / 霜镜女巫；算力熔炉：过热核心 / 熔岩巨蠕；无尽回廊每 10 层轮换全部首领，另有无尽专属的雷霆审判者），击败后掉铲子和宠物蛋，偶尔撕开梦境裂隙；10% 概率是双首领，奖励翻倍。"],
       ].map(([k, t]) => `<div class="hp-cur"><span class="chip" style="background:${NODE[k].col};color:#1a1020">${NODE[k].name}</span><span>${t}</span></div>`).join("")}
       ${H("觉醒卡")}凑齐配方（第一张满到要求的张数、再有第二张）后，下一次开箱或扭蛋的第一张必是 UR 觉醒卡，原卡保留、觉醒效果叠加；卡面上“可觉醒”提示它通往哪张。${EVOLUTIONS.map((ev) => `<div class="hp-cur"><span class="chip w5" style="background:#ff8ae6;color:#1a1020">${ev.name}</span><span><b>${Object.entries(ev.need).map(([k, n]) => cardName(k) + (n > 1 ? "×" + n : "")).join(" + ")}</b>：${ev.desc}</span></div>`).join("")}
+      ${H("每日梦境")}主页模式卡片滑到最右边。每天一场所有人相同的梦：固定的角色（未解锁也能用）、地图、房间与路线，加两条噩梦契约和一个梦境祝福；角色和契约每天零点按日期换新。完成一局即打卡（胜负都算），按连续天数领 7 天循环奖励：200 晶石 / 淬灵露×1 / 300 晶石 / UR 宠物蛋×1 / 淬灵露×2 / 500 晶石 / 流彩晶×1；当天第一次通关再 +300 晶石。每天只发一次奖励，可以反复挑战刷纪录；断签一天就从第 1 天重新开始。每日梦境不计入地图解锁与噩梦契约等级。
       ${H("称号")}主页标题旁的称号牌打开称号面板。达成冒险、矿场、宠物里的目标自动获得，佩戴后在局内头顶显示（联机队友也能看到），并在闯关中获得它的效果：${TITLE_ORDER.map((id) => `<div class="hp-cur"><span class="chip w4" style="background:${TITLES[id].col || TITLE_RARITY[TITLES[id].r].col};color:#1a1020">${TITLES[id].name}</span><span>${TITLES[id].how} · ${TITLES[id].fxText}</span></div>`).join("")}
       ${H("噩梦契约")}主页「开始冒险」左边的「噩梦」方块：单人闯关前自选难度条款，每级让本局晶石 +8%；以某个等级通关一张地图（无尽为打到第 10 层）记录该图最高等级，首次达到 4 / 8 / 12 / 16 / 19 级各领一次里程碑奖励（宠物蛋、兑换卡、晶石、称号「噩梦主宰」）。${PACTS.map((q) => `<div class="hp-cur"><span class="chip w4" style="background:#ff6a9a;color:#1a1020">${q.name}</span><span>${q.desc}${q.max > 1 ? `（每级，最多 ${q.max} 级）` : ""}，每级 +${q.pts} 噩梦</span></div>`).join("")}
       ${H("挑战规则")}${Object.values(CHALLENGES).map((c) => `<div class="hp-cur"><span class="chip w4" style="background:${NODE.challenge.col};color:#1a1020">${c.name}</span><span>${c.desc}。</span></div>`).join("")}
@@ -327,7 +329,7 @@ export function showHud(game, me) {
   if (!game.pvp) RUN.forEach((r, i) => pips.appendChild(el("div", "pip o1", pipIcon(game.route ? (i === RUN.length - 1 ? "boss" : "?") : r.kind))));
   hudCache = {};
 }
-const PIP = { combat: "⚔", elite: "🔥", shop: "🛒", event: "💬", challenge: "⚡", treasure: "💎", boss: "👑", "?": "?" };
+const PIP = { combat: "⚔", elite: "🔥", shop: "🛒", event: "💬", challenge: "⚡", nest: "🕸", treasure: "💎", boss: "👑", "?": "?" };
 const pipIcon = (kind) => PIP[kind] || "⚔";
 export function updateHud(game, me) {
   if (!hud || !me) return;
