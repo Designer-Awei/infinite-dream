@@ -16,7 +16,6 @@ export function showDaily(onStart, mapPreview) {
   const done = checkedToday(), streak = streakNow(), slot = todaySlot();
   const [, mo, da] = dd.key.split("-").map(Number);
   const md = el("div", "modal");
-  const pacts = dd.pactIds.map((id) => PACTS.find((q) => q.id === id));
   const b = BLESSINGS[dd.blessing];
   // calendar: the streak's week; days before today's slot are already checked in (this streak), today glows
   const cal = DAILY_REWARDS.map((rw, i) => {
@@ -29,7 +28,7 @@ export function showDaily(onStart, mapPreview) {
       <div class="dl-stage"><img class="dl-map" alt=""><img class="dl-hero" src="assets/portrait_${dd.cid}.png" alt=""><div class="dl-cap o1"><b>${c.short}</b><span>${MAPS[dd.map].name}</span></div></div>
       <div class="dl-side">
         <div class="dl-rules">
-          <div class="dl-rule"><span class="dl-tag red o1">契约</span><b class="o1">${pacts.map((q) => q.name).join(" · ")}</b><small>${pacts.map((q) => q.desc).join("；")}</small></div>
+          <div class="dl-rule"><span class="dl-tag red o1">难度</span><b class="o1">噩梦全开 · 护盾照常回复</b><small>敌人生命 +75%、移速与弹速提升、受伤 +1、开箱两张卡等（固定难度）</small></div>
           <div class="dl-rule"><span class="dl-tag green o1">祝福</span><b class="o1">${b.name}</b><small>${b.desc}</small></div>
           <div class="dl-rule"><span class="dl-tag blue o1">纪录</span><b class="o1">${day.runs ? `已挑战 ${day.runs} 次 · 最远 ${day.best}/7${day.win ? " · 已通关" : ""}` : "今天还没挑战"}</b><small>${done ? "今日已打卡，再玩不再发奖励" : `完成一局即打卡（胜负都算），通关再 +${DAILY_CLEAR} 晶石`}</small></div>
         </div>
@@ -51,3 +50,12 @@ export function showDaily(onStart, mapPreview) {
   return p;
 }
 export { dayKey };
+
+/** 每日梦境 玩法说明 (the lobby's guide button when 每日 is chosen) */
+export function showDailyHelp(app) {
+  import("./ui.js").then(({ showGuide, helpH: H }) => showGuide("每日梦境说明", [
+    ["每日梦境", `${H("每天一场梦")}所有人同一场：固定的角色（未解锁也能用）、地图、房间与路线，加一个梦境祝福；每天零点按日期换新。
+      ${H("难度")}固定为“噩梦全开”：除护盾停转外所有噩梦契约拉满（敌人生命 +75%、移速与弹速提升、每次受伤 +1、开箱两张卡、金币减半等），护盾照常回复。
+      ${H("打卡")}完成一局即打卡（胜负都算），按连续天数领 7 天循环奖励：${DAILY_REWARDS.map((r) => r.text).join(" / ")}；当天第一次通关再 +${DAILY_CLEAR} 晶石。每天只发一次奖励（可反复挑战刷纪录），断签一天从第 1 天重来。`],
+], app));
+}

@@ -11,6 +11,7 @@ import { DRAGON_FIREBALL, FOX_RIDE_RANGE } from './petdata.js';
 import { petTint } from "./petskins.js";
 import { flyingMount } from './petcombat.js';
 import { NPCS } from "./route.js";
+import { drawWorldGround, drawMiniHud, tileTheme, tileHazard, wallTheme, refreshWorldTiles, drawWorldFloor, worldLabels, worldSprites } from "./world.js";
 import { verdictCells } from "./enemies.js";
 import { drawTitlePlate } from "./titles.js";
 
@@ -64,11 +65,18 @@ export class Renderer {
     if (!game.map) return;
     const sh = game.shake, sx = sh ? (Math.random() - 0.5) * sh : 0, sy = sh ? (Math.random() - 0.5) * sh : 0;
     const cx = Math.round(this.cam.x + sx), cy = Math.round(this.cam.y + sy);
+    game.view = { x0: cx - 220, y0: cy - 200, x1: cx + VIEW_W + 220, y1: cy + VIEW_H + 320 }; // (what is on screen, with room for tall art whose feet are below the edge)
     const m = game.map;
-    if(m.groundDirty){game.ground=renderGround(m);m.groundDirty=false;}
-    // ground
-    const gx0 = Math.max(0, cx), gy0 = Math.max(0, cy);
-    g.drawImage(game.ground, gx0, gy0, Math.min(VIEW_W, m.pxW - gx0), Math.min(VIEW_H, m.pxH - gy0), gx0 - cx, gy0 - cy, Math.min(VIEW_W, m.pxW - gx0), Math.min(VIEW_H, m.pxH - gy0));
+    // ground (梦境大陆: 16×16-tile canvases drawn on demand instead of one canvas for the whole map)
+    if (m.world) {
+      if (m.groundDirty) refreshWorldTiles(m), (m.groundDirty = false);
+      drawWorldGround(g, m, cx, cy);
+    }
+    else {
+      if(m.groundDirty){game.ground=renderGround(m);m.groundDirty=false;}
+      const gx0 = Math.max(0, cx), gy0 = Math.max(0, cy);
+      g.drawImage(game.ground, gx0, gy0, Math.min(VIEW_W, m.pxW - gx0), Math.min(VIEW_H, m.pxH - gy0), gx0 - cx, gy0 - cy, Math.min(VIEW_W, m.pxW - gx0), Math.min(VIEW_H, m.pxH - gy0));
+    }
     g.translate(-cx, -cy);
     const tx0 = Math.max(0, Math.floor(cx / T) - 1), tx1 = Math.min(m.W - 1, Math.floor((cx + VIEW_W) / T) + 1);
     const ty0 = Math.max(0, Math.floor(cy / T) - 1), ty1 = Math.min(m.H - 1, Math.floor((cy + VIEW_H + LIFT) / T) + 1);
@@ -76,15 +84,17 @@ export class Renderer {
     // water shimmer
     for (let y = ty0; y <= ty1; y++) for (let x = tx0; x <= tx1; x++) if (m.t[y * m.W + x] === WATER) {
       const X = x * T, Y = y * T, ph = this.t * 2 + x * 1.3 + y * 0.7;
-      g.fillStyle = th.waterHi;
+      g.fillStyle = m.biome ? THEMES[tileTheme(m, y * m.W + x)].waterHi : th.waterHi;
       g.fillRect(X + 4 + Math.round(Math.sin(ph) * 3), Y + 10, 8, 1);
       g.fillRect(X + 16 + Math.round(Math.cos(ph * 1.1) * 3), Y + 20, 9, 1);
     }
     // live hazard floor: lava glows and bubbles, ice glints
-    if (m.hazard === "lava" || m.hazard === "ice") {
+    if (m.hazard === "lava" || m.hazard === "ice" || m.biome) {
       for (let y = ty0; y <= ty1; y++) for (let x = tx0; x <= tx1; x++) if (m.mud[y * m.W + x]) {
-        const X = x * T, Y = y * T, ph = this.t * (m.hazard === "lava" ? 2.2 : 1.1) + x * 1.7 + y * 2.3;
-        if (m.hazard === "lava") {
+        const hz = tileHazard(m, y * m.W + x);
+        if (hz === "mud") continue;
+        const X = x * T, Y = y * T, ph = this.t * (hz === "lava" ? 2.2 : 1.1) + x * 1.7 + y * 2.3;
+        if (hz === "lava") {
           g.globalAlpha = 0.18 + 0.14 * Math.sin(ph);
           g.fillStyle = "#ffd04a";
           g.fillRect(X + 2, Y + 2, T - 4, T - 4);
@@ -115,6 +125,7 @@ export class Renderer {
     }
     if (me && me.target && !me.target.dead && !me.target.downed) this.drawReticle(g, me.target);
     for (const e of game.enemies) this.drawTelegraph(g, e);
+    if (m.world) drawWorldFloor(g, game, me, this.t); // (梦境大陆: boats at the piers, the boarding ring)
 
     // 骑乘 frames are cut and recoloured ahead of the first mount (idle slices)
     for (const p of game.players) if (p.pet && p.pet.stage === 3) warmMount(p);
@@ -138,20 +149,23 @@ export class Renderer {
     }
     for (const p of game.players) if (!p.dead&&(!flyingMount(p)||p.downed)) list.push({ y: p.y, k: 3, o: p });
     for (const p of game.players) if (p.pet && !p.mounted && !p.dead && !p.downed) list.push({ y: p.pet.y, k: 10, o: p });
-    for (const e of game.enemies) if (e.spawnT <= 0.25) list.push({ y: e.y + (e.boss ? 20 : 0), k: 4, o: e });
+    const vx0 = cx - 96, vx1 = cx + VIEW_W + 96, vy0 = cy - 48, vy1 = cy + VIEW_H + 160; // (off-screen enemies are not drawn: the open world keeps dozens around)
+    for (const e of game.enemies) if (e.spawnT <= 0.25 && e.x > vx0 && e.x < vx1 && e.y > vy0 && e.y < vy1) list.push({ y: e.y + (e.boss ? 20 : 0), k: 4, o: e });
     for (const q of game.pickups) list.push({ y: q.y, k: 5, o: q });
     for (const z of game.zones) if (z.kind === "station") list.push({ y: z.y, k: 6, o: z });
     if (game.shop && game.room && game.room.kind === "shop") for (const it of game.shop) if (me && game.shopAvailable(me,it)) list.push({ y: it.y + 10, k: 7, o: it });
     if (game.chest && !game.chest.opened) list.push({ y: game.chest.y + 8, k: 8, o: game.chest });
+    if (m.chests && game.ws) for (const c of m.chests) if (!game.ws.opened.has(c.id) && c.x > vx0 && c.x < vx1 && c.y > vy0 && c.y < vy1) list.push({ y: c.y + 8, k: 8, o: c });
     if (game.shovelItem && !game.shovelItem.got) list.push({ y: game.shovelItem.y, k: 9, o: game.shovelItem });
     if (game.npc) list.push({ y: game.npc.y + 8, k: 11, o: game.npc });
+    if (m.world) for (const o of worldSprites(game, me)) list.push({ y: o.y, k: 12, o }); // (梦境大陆: 传送门, your flag)
     list.sort((a, b) => a.y - b.y);
     for (const d of list) {
       switch (d.k) {
         case 0: {
           const X=d.x*T,Y=d.ty*T-LIFT,hp=m.wallHp?.[d.ty*m.W+d.x];
           const damage=hp!=null?Math.max(0,Math.min(1,1-hp/DRAGON_WALL_HP)):0;
-          g.drawImage(wallSprite(m.theme, wallMask(m, d.x, d.ty),damage),X,Y);
+          g.drawImage(wallSprite(wallTheme(m, d.ty * m.W + d.x), wallMask(m, d.x, d.ty),damage),X,Y);
           break;
         }
         case 1: {
@@ -160,7 +174,7 @@ export class Renderer {
           let near = false;
           for (const p of game.players) if (Math.abs(p.x - X - 16) < 34 && Math.abs(p.y - Y - 16) < 34 && (p === me || p.local)) near = true;
           g.globalAlpha = near ? 0.55 : 1;
-          g.drawImage(bushSprite(m.theme, (d.x * 7 + d.ty * 13) % 5), X - 4, Y - 12);
+          g.drawImage(bushSprite(tileTheme(m, d.ty * m.W + d.x), (d.x * 7 + d.ty * 13) % 5), X - 4, Y - 12);
           g.globalAlpha = 1;
           break;
         }
@@ -185,6 +199,7 @@ export class Renderer {
         case 9: this.drawShovelDrop(g, d.o, game.time); break;
         case 10: drawPet(g, d.o, this.t); break;
         case 11: this.drawNpc(g, d.o); break;
+        case 12: d.o.draw(g, this.t); break;
       }
     }
     drawPetFields(g,game,this.t,'front');
@@ -199,9 +214,10 @@ export class Renderer {
     this.fx.drawAirShields(g);
     g.translate(-cx,-cy);
     // overlays
-    for (const e of game.enemies) this.drawEmbers(g, e), this.drawEnemyBar(g, e);
+    for (const e of game.enemies) if (e.x > vx0 && e.x < vx1 && e.y > vy0 && e.y < vy1) this.drawEmbers(g, e), this.drawEnemyBar(g, e);
     this.drawAim(g, me);
     for (const p of game.players) this.drawHeroBar(g, p, me, game);
+    if (m.world && me) worldLabels(this, g, game, me);
     // fork portals: the kind of room each one leads to, above it
     if (game.portals) for (const q of game.portals) this.text(g, q.name, q.x, q.y - 66 + Math.round(Math.sin(this.t * 3 + q.x) * 1.5), q.col, 14);
     if (game.npc && !game.npc.done && me) {
@@ -219,6 +235,7 @@ export class Renderer {
     }
     g.setTransform(RS, 0, 0, RS, 0, 0);
     this.drawEdgeArrows(g, game, me, cx, cy);
+    if (m.world) drawMiniHud(game, me, performance.now());
     // 挑战 · 限时清场: the countdown under the top bar
     if (game.room && game.room.timeLimit && game.phase === "fight" && !game.room.failed) {
       const left = Math.max(0, Math.ceil(game.room.timeLimit - (game.roomT || 0)));
@@ -294,7 +311,7 @@ export class Renderer {
     if (game.npc && !game.npc.done) goals.push({ x: game.npc.x, y: game.npc.y, c: "#c8a0ff", s: "?" });
     if (game.chest && !game.chest.opened) goals.push({ x: game.chest.x, y: game.chest.y, c: "#ffd84a", s: "箱" });
     if (game.pvp && game.pvpRule && game.pvpRule.zone) goals.push({ x: game.map.center.x, y: game.map.center.y, c: "#7dffb0", s: "点" });
-    const live = game.enemies.filter((e) => e.spawnT <= 0);
+    const live = game.world ? [] : game.enemies.filter((e) => e.spawnT <= 0); // (梦境大陆: the minimap shows who is after you)
     if (live.length && live.length <= 3) for (const e of live) goals.push({ x: e.x, y: e.y - 10, c: e.boss ? "#ff3a6a" : "#ff6a5a", s: e.boss ? "王" : "" });
     for (const p of game.players) if (p !== me && !p.dead && !p.pvpEnemy) goals.push({ x: p.x, y: p.y - 20, c: p.downed ? "#ff4a5a" : "#4ab8ff", s: p.downed ? "救" : "友" });
     const W = VIEW_W, Hh = VIEW_H, m = 18;
@@ -798,6 +815,30 @@ export class Renderer {
         }
       }
       g.stroke();
+    } else if (z.kind === "mist") {
+      // 食梦兽's charge trail: a soft lilac patch that slows
+      g.globalAlpha = 0.32 * clamp(z.life * 1.5) * clamp(z.t / 0.2);
+      g.fillStyle = "#b08aff";
+      g.beginPath();
+      g.ellipse(z.x, z.y, z.r, z.r * 0.55, 0, 0, TAU);
+      g.fill();
+    } else if (z.kind === "cone") {
+      // 吞梦吐息 warning: the breath's sector, filling in as it comes
+      const k = clamp(z.t / Math.max(0.01, z.t + z.life));
+      g.globalAlpha = 0.28 + 0.3 * k;
+      g.fillStyle = "#7a30e0";
+      g.beginPath();
+      g.moveTo(z.x, z.y);
+      for (let i = 0; i <= 16; i++) {
+        const a = z.a0 - z.half + (i / 16) * z.half * 2;
+        g.lineTo(z.x + Math.cos(a) * z.r, z.y + Math.sin(a) * z.r * 0.6);
+      }
+      g.closePath();
+      g.fill();
+      g.globalAlpha = 0.95;
+      g.strokeStyle = "#d8b0ff";
+      g.lineWidth = 2;
+      g.stroke();
     } else if (z.kind === "mark") {
       // 熔岩迫击蜗牛's warning: a red ring with a fill closing in, and the magma glob falling onto it
       const k = clamp(z.t / Math.max(0.01, z.t + z.life));
@@ -1192,7 +1233,8 @@ export class Renderer {
   }
   drawChest(g, c) {
     const x = Math.round(c.x), y = Math.round(c.y), b = Math.round(Math.abs(Math.sin(this.t * 4)) * -2);
-    const p = (a, bb, w, h, col) => ((g.fillStyle = col), g.fillRect(x + a, y + bb + b, w, h));
+    const GOLD = { "#c05a2a": "#e8b02a", "#ff9a5a": "#fff09a", "#9a3a1a": "#b8801a", "#ffd84a": "#fff6c8" }; // 梦境大陆's golden chests
+    const p = (a, bb, w, h, col) => ((g.fillStyle = c.gold ? GOLD[col] || col : col), g.fillRect(x + a, y + bb + b, w, h));
     g.fillStyle = "rgba(10,30,10,0.35)";
     g.beginPath();
     g.ellipse(x, y + 8, 16, 5, 0, 0, TAU);
@@ -1215,7 +1257,7 @@ export class Renderer {
       const x = b.x - 0, y = b.y - (b.z || 0);
       if (b.side === "e") {
         const r = b.r + (b.big ? 1 : 0);
-        const col = b.kind === "fire" ? 0xff8a2a : b.kind === "ghost" ? 0x9ab8ff : b.kind === "volt" ? 0x78d0ff : 0xff3a6a;
+        const col = b.kind === "fire" ? 0xff8a2a : b.kind === "ghost" ? 0x9ab8ff : b.kind === "volt" ? 0x78d0ff : b.kind === "dream" ? 0xc890ff : 0xff3a6a;
         const hex = "#" + col.toString(16).padStart(6, "0");
         P.circle(x, y, r + 1, H("#2a0a14"), 1);
         P.circle(x, y, r, H(hex), 1);

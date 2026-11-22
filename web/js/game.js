@@ -1,5 +1,5 @@
 // The simulation: players, enemies, bullets, zones, pickups, rooms. The host (or solo) runs it; clients mirror it.
-import { T, BAL, AFFIXES, CURSES, CURSE_MAX, CHARS, CHAR_ORDER, ELEM, ELEM_KEYS, REACTIONS, reactionKey, ENEMIES, RUN, ITEMS, ITEM_WEIGHTS, CARDS, fusionCards, EVOLUTIONS, evoReady, RARITY, REWARD, MAPS, endlessRoom, PVP_MODES, PACTS } from "./data.js";
+import { T, BAL, AFFIXES, CURSES, CURSE_MAX, CHARS, CHAR_ORDER, ELEM, ELEM_KEYS, REACTIONS, reactionKey, ENEMIES, RUN, ITEMS, ITEM_WEIGHTS, CARDS, fusionCards, EVOLUTIONS, evoReady, RARITY, REWARD, MAPS, endlessRoom, PVP_MODES, PACTS, FIXED_PACT } from "./data.js";
 import { applyTitle } from "./titles.js";
 import { makeRoute, nodeRoom, EVENTS, CHALLENGES, NODE, PORTAL_PAL, NPCS, SLOT_SYMS, slotPayout, CHEST_FATES, CHEST_BOONS, MIMIC_DEW } from "./route.js";
 import { clamp, dist, dist2, angTo, R, rng, nid, TAU } from "./util.js";
@@ -12,6 +12,7 @@ import { levelBonuses } from "./progression.js";
 import { attachPet, resetPet, updatePets, toggleMount, releaseEmptyBlink, mountedUltBlocked } from "./pets.js";
 import { flyingMount, visualTilesIn } from './petcombat.js';
 import { FOX_RIDE_RANGE, DRAGON_FIREBALL, PETS } from './petdata.js';
+import { worldEnter, worldUpdate, worldAwake, worldKilled, worldRespawn, hazardAt } from "./world.js";
 import { skinPalette, petTint } from "./petskins.js";
 
 import { endlessEnemyHP, endlessEnemyHit, cubeDamage, cubeHealth, reactionRoom } from "./endless-balance.js";
@@ -26,8 +27,9 @@ export class Game {
     this.petTrial = !pvp && !!opt.petTrial;
     this.petFields = [];
     // mode options: map (chapter) for PVE, endless corridor, PVP rule set
-    this.opt = { map: MAPS[opt.map] ? opt.map : "grass", endless: !!opt.endless, pvpMode: PVP_MODES[opt.pvpMode] ? opt.pvpMode : "brawl", pact: cleanPact(opt.pact), ...(typeof opt.daily === "string" ? { daily: opt.daily } : {}), ...(typeof opt.twinBoss === "boolean" ? { twinBoss: opt.twinBoss } : {}) }; // twinBoss: force 双首领 on/off (tests)
+    this.opt = { map: MAPS[opt.map] ? opt.map : "grass", endless: !!opt.endless, pvpMode: PVP_MODES[opt.pvpMode] ? opt.pvpMode : "brawl", pact: (opt.world && !pvp) || typeof opt.daily === "string" ? { ...FIXED_PACT } : cleanPact(opt.pact), ...(typeof opt.daily === "string" ? { daily: opt.daily } : {}), ...(typeof opt.twinBoss === "boolean" ? { twinBoss: opt.twinBoss } : {}), ...(opt.world && !pvp ? { world: true } : {}) }; // world: 梦境大陆; twinBoss: force 双首领 on/off (tests)
     this.endless = !pvp && this.opt.endless;
+    this.world = !!this.opt.world; // 梦境大陆: the open world (world.js) instead of a run of rooms
     this.mapDef = MAPS[this.opt.map];
     this.pvpRule = PVP_MODES[this.opt.pvpMode];
     this.seed = seed;
@@ -113,10 +115,36 @@ export class Game {
 
   // ------------------------------------------------------------ rooms
   startRun() {
+    if (this.world) return this.startWorld();
     this.roomIdx = -1;
     // 梦境航线: solo main-map runs choose their own way (co-op, endless, arena and the pet trial keep the fixed run)
     this.route = this.mode === "solo" && !this.endless && !this.pvp && !this.petTrial && !this.opt.noRoute ? makeRoute(this.seed) : null;
     this.nextRoom();
+  }
+  /** 梦境大陆: the world map stands in for the room; no waves, no portal — residents, chests and regions instead */
+  startWorld() {
+    this.roomIdx = 0;
+    this.route = null;
+    this.room = { kind: "world", waves: [] };
+    this.hazard = "mud";
+    worldEnter(this);
+    this.ground = null;
+    for (const a of [this.enemies, this.bullets, this.petFields, this.zones, this.pickups, this.lines, this.timers]) a.length = 0;
+    this.fx.clearAll();
+    this.wave = 0;
+    this.waveDelay = 1e9;
+    this.portal = this.portals = this.npc = this.chest = this.shovelItem = null;
+    this.cardOffers = {};
+    this.phase = "fight";
+    this.flowT = 0;
+    for (const p of this.players) {
+      p.downed = p.dead = false;
+      p.invuln = 1;
+      resetPet(this, p);
+      this.fx.spawn("arcane/magic-circle-cast", p.x, p.y + 4, { palette: ELEM[CHARS[p.cid].elem].ramp, speed2: 1.8 });
+    }
+    this.banner = { text: "梦境大陆", sub: "自由探索 · 四大区域、宝箱与渡口", t: 2.6 };
+    this.onUi("world");
   }
   /** after a room: a fork was chosen by walking into one of its portals; otherwise the route goes on by itself */
   advance(to = null) {
@@ -215,6 +243,8 @@ export class Game {
   mapRoom(def) {
     const md = this.mapDef;
     // a map with several bosses picks one per run from the seed
+    // 每日梦境: its final boss is always 食梦兽
+    if (def && def.kind === "boss" && this.opt.daily && !this.endless) return { ...def, boss: "boss_baku" };
     if (def && def.kind === "boss" && md.boss) return { ...def, boss: md.bosses ? md.bosses[Math.floor(rng(this.seed + 9157)() * md.bosses.length)] : md.boss };
     if (!def || !def.waves || !md.swap) return def;
     const rr = rng(this.seed + 4242 + (def.waves.length || 0));
@@ -513,6 +543,7 @@ export class Game {
   hit(e, amount, src = {}) {
     if (!e || e.dead || e.spawnT > 0 || e.hidden) return 0;
     if (e.kind === "player") return this.hitPlayerPvp(e, amount, src);
+    if (this.world) e.aggro = 1; // (a sleeping resident wakes up when hit)
     const p = src.p;
     let dmg = amount * (p ? this.dmgMul(p) : 1);
     let crit = false;
@@ -855,7 +886,8 @@ export class Game {
     this.shake = Math.max(this.shake, e.elite ? 6 : 2);
     if (this.mode === "solo") this.hitStop = Math.max(this.hitStop || 0, e.elite || e.boss ? 0.09 : 0.025);
     // last enemy of the last wave: a beat of slow motion
-    if (this.mode === "solo" && this.phase === "fight" && this.enemies.every((o) => o.dead) && this.wave >= (this.room.boss ? 0 : (this.room.waves || []).length - 1)) this.slowmo = 0.7;
+    if (e.chunk || e.worldBoss) worldKilled(this, e);
+    if (this.mode === "solo" && this.phase === "fight" && !this.world && this.enemies.every((o) => o.dead) && this.wave >= (this.room.boss ? 0 : (this.room.waves || []).length - 1)) this.slowmo = 0.7;
     // drops
     const [c0, c1] = e.def.coin;
     const n = c0 + Math.floor(Math.random() * (c1 - c0 + 1)) + (e.elite ? 4 : 0);
@@ -944,6 +976,7 @@ export class Game {
   damageWall(i, dmg, p) {
     const m=this.map,tx=i%m.W,ty=Math.floor(i/m.W);
     if(!this.host||this.pvp||!p?.mounted||p.pet?.id!=='dragon'||p.pet.stage!==3||p.dead||p.downed||!(dmg>0)||!Number.isInteger(i)||tx<=0||ty<=0||tx>=m.W-1||ty>=m.H-1||m.t[i]!==WALL)return;
+    if(this.world&&!m.cracked?.has(i))return; // (梦境大陆: only 裂纹岩 breaks)
     const hp=m.wallHp||(m.wallHp={});hp[i]=(hp[i]??DRAGON_WALL_HP)-dmg;
     if(hp[i]>0)return;
     delete hp[i];m.t[i]=0;(m.brokenWalls||(m.brokenWalls=[])).push(i);m.groundDirty=true;this.flowT=0;
@@ -1023,6 +1056,7 @@ export class Game {
     }
     n = this.scaleHurt(n, src) + (this.pact.dmg ? 1 : 0); // 噩梦契约·凶猛噩梦
     p.lastHit = 0;
+    p.hurtAt = this.time; // (梦境大陆: 3 s without a hit = out of combat)
     this.runStats.hurt = (this.runStats.hurt || 0) + n;
     p.invuln = BAL.hurtInvuln + (p.tfx?.inv || 0); // 称号·地心之王
     p.hurtT = 0.3;
@@ -1115,6 +1149,7 @@ export class Game {
     p.downT = 0;
     this.vfx("spawn/poof", p.x, p.y, { palette: ELEM[CHARS[p.cid].elem].ramp.slice(1, 7) });
     this.sound("lose");
+    if (this.world && this.alivePlayers().length === 0) return void this.after(1.8, () => worldRespawn(this)); // (梦境大陆: back to the camp)
     if (!this.pvp && this.alivePlayers().length === 0) this.gameOver();
   }
   revive(p, frac = 0.5) {
@@ -1155,7 +1190,8 @@ export class Game {
     this.vfx("explosions/plasma-explosion", e.x, e.y - 30, { palette: ["#1a0610", "#4a1028", "#8a2040", "#d04060", "#ff8090", "#ffd0d0", "#ffffff"] });
     this.after(0.5, () => this.vfx("ui/confetti", e.x, e.y - 40));
     this.sound("win");
-    for (const q of this.enemies) if (!q.dead) q.hp = 0, this.kill(q, null);
+    for (const q of this.enemies) if (!q.dead && !(this.world && q.home)) q.hp = 0, this.kill(q, null); // (梦境大陆: only its summons, not the residents around)
+    if (this.world) for (const b of this.bullets) if (b.side === "e" && Math.hypot(b.x - e.x, b.y - e.y) < 900) b.life = 0; // (its shots vanish with it)
   }
 
   // ------------------------------------------------------------ bullets
@@ -1339,10 +1375,20 @@ export class Game {
     // 子弹时间 (完美闪避, solo): enemies, enemy shots and enemy zones run slow; players, pets and their shots don't
     const edt = this.witchT > 0 ? dt * 0.3 : dt;
     if (this.witchT > 0) this.witchT -= dt;
-    for (const e of this.enemies) if (!e.dead) updateEnemy(this, e, edt);
+    for (const e of this.enemies) if (!e.dead && (!this.world || worldAwake(this, e, edt))) { // (梦境大陆: residents sleep until you come near)
+      const px = e.x, py = e.y;
+      updateEnemy(this, e, edt);
+      // 梦境大陆: no monster sets foot (or wing) on the water — a step, a knockback or a leap that would end there stops
+      // at the shore instead (a leap's landing spot is pulled back to where it stopped)
+      if (this.world && tileAt(this.map, e.x, e.y) === WATER) {
+        e.x = px; e.y = py;
+        if (e.lx !== undefined) (e.lx = e.ox = px), (e.ly = e.oy = py);
+        if (e.tx !== undefined) (e.tx = px), (e.ty = py);
+      }
+    }
     // lava burns walking enemies too
-    if (this.hazard === "lava" && this.host)
-      for (const e of this.enemies) if (!e.dead && !e.def.fly && e.spawnT <= 0 && mudAt(this.map, e.x, e.y) && (e.lavaCd || 0) < this.time) (e.lavaCd = this.time + 1), this.hit(e, 8, { noReact: true });
+    if ((this.hazard === "lava" || this.world) && this.host)
+      for (const e of this.enemies) if (!e.dead && !e.def.fly && e.spawnT <= 0 && mudAt(this.map, e.x, e.y) && this.hazardAt(e.x, e.y) === "lava" && (e.lavaCd || 0) < this.time) (e.lavaCd = this.time + 1), this.hit(e, 8, { noReact: true });
     // separate enemies a little
     for (let i = 0; i < this.enemies.length; i++) {
       const a = this.enemies[i];
@@ -1376,6 +1422,11 @@ export class Game {
         for (const e of this.enemiesNear(cx, cy, 14)) if (!e.def.fly && (e.spikeCd || 0) < this.time) (e.spikeCd = this.time + 1), this.hit(e, 8, { noReact: true });
       }
     if (this.host) this.updateFlow(dt);
+    if (this.world && this.host) worldUpdate(this, dt);
+  }
+  /** the floor hazard under a point: the room's own, or (梦境大陆) its region's */
+  hazardAt(x, y) {
+    return this.world ? hazardAt(this.map, x, y) : this.hazard;
   }
 
   updateFlow(dt) {
@@ -1391,7 +1442,7 @@ export class Game {
         this.banner = { text: "超时！", sub: "敌人消散，没有额外选卡", t: 2 };
       }
     }
-    if (this.phase === "fight") {
+    if (this.phase === "fight" && !this.world) {
       const alive = this.enemies.length;
       const more = !this.room.boss && this.wave >= 0 && this.wave < (this.room.waves || []).length - 1;
       // the next wave rolls in while the last two or so are still alive: keeps the pressure on
@@ -1844,9 +1895,9 @@ export class Game {
     if (p.buff.ultOn > 0 && p.cid === "grok") spd *= 1.4;
     if (p.buff.inkHaste > 0) spd *= 1.3;
     if (p.buff.slow > 0) spd *= 0.6;
-    const onHz = !flying && mudAt(this.map, p.x, p.y);
-    if (onHz && this.hazard === "mud") spd *= 0.55;
-    if (onHz && this.hazard === "ice") spd *= 1.12;
+    const onHz = !flying && mudAt(this.map, p.x, p.y), hz = this.hazardAt(p.x, p.y);
+    if (onHz && hz === "mud") spd *= 0.55;
+    if (onHz && hz === "ice") spd *= 1.12;
     if (p.buff.breath > 0) spd *= 0.7;
     let mx = inp.mx || 0, my = inp.my || 0;
     const ml = Math.hypot(mx, my);
@@ -1863,7 +1914,7 @@ export class Game {
       p.dashT -= dt;
       moveCircle(this.map, p, p.dashDx * BAL.dashSpeed * dt, p.dashDy * BAL.dashSpeed * dt, flying, flying);
       if (Math.random() < 0.6) p.trail = (p.trail || []).concat([{ x: p.x, y: p.y, t: 0.25 }]).slice(-6);
-    } else if (this.hazard === "ice" && !flying) {
+    } else if (hz === "ice" && !flying) {
       // ice: momentum carries you (accelerate / brake slowly while standing on it)
       const k = onHz ? 1 - Math.exp(-3 * dt) : 1;
       p.ivx = (p.ivx || 0) + (mx * spd - (p.ivx || 0)) * k;
@@ -1882,7 +1933,7 @@ export class Game {
       if (p.shieldT >= BAL.shieldTick) (p.shieldT = 0), p.shield++;
     }
     // lava floor
-    if (this.hazard === "lava" && onHz) {
+    if (hz === "lava" && onHz) {
       p.lavaT = (p.lavaT || 0) + dt;
       if (p.lavaT > 1) {
         p.lavaT = 0;

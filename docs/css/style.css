@@ -2874,3 +2874,146 @@ body.touchmode .pet-ride-btn small { display:none; }
 .ttl.t-x { --tc: #ff4a4a; --tb: #3a0a12; animation: none; box-shadow: 0 0 0 2px #0c0814, 0 0 12px color-mix(in srgb, #ff4a4a 65%, transparent); }
 /* 每日梦境 card (overflow visible): the info strip follows the card's rounded inner corners instead of covering the frame */
 .mcard.pv.daily .mc-info { border-radius: 0 0 11px 11px; }
+
+/* 梦境大陆: the minimap in the HUD's top-left corner, exactly as tall as the bars + coin rows beside it; tap → the world map */
+.hud .tl .wmini { width: 52px; height: 52px; box-sizing: border-box; border: 3px solid var(--ink); border-radius: 10px; background: #140e22; image-rendering: pixelated; pointer-events: auto; cursor: pointer; flex: none; box-shadow: inset 0 0 0 1px rgba(255,246,192,.55); }
+.wmap-modal .wmap-p { display: flex; gap: 12px; padding: 10px 12px; align-items: stretch; max-height: 94vh; }
+.wmap-p .wm-left { flex: none; display: flex; }
+.wmap-p .wm-cv { height: min(78vh, 330px); aspect-ratio: 1; border: 3px solid var(--ink); border-radius: 10px; image-rendering: pixelated; background: #140e22; }
+.wmap-p .wm-side { width: 236px; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+.wmap-p .wm-head { display: flex; align-items: center; gap: 8px; }
+.wmap-p .wm-head h2 { margin: 0; font-size: 18px; }
+.wmap-p .wm-head .x-btn { margin-left: auto; }
+.wmap-p .wm-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.wmap-p .wm-stats div { background: rgba(20,12,50,.6); border: 2px solid var(--ink); border-radius: 8px; padding: 2px 6px; display: flex; flex-direction: column; align-items: center; }
+.wmap-p .wm-stats span { font-size: 10px; color: #c8bcf0; }
+.wmap-p .wm-stats b { font-size: 13px; color: #fff6c0; }
+.wmap-p .wm-boss { display: flex; flex-direction: column; gap: 3px; }
+.wmap-p .wm-b { position: relative; background: rgba(20,12,50,.6); border: 2px solid var(--ink); border-radius: 8px; padding: 2px 6px 2px 20px; display: flex; align-items: baseline; gap: 6px; line-height: 1.25; }
+.wmap-p .wm-b i { position: absolute; left: 5px; top: 50%; width: 9px; height: 9px; margin-top: -5px; border-radius: 50%; background: #e8344a; box-shadow: 0 0 0 2px var(--ink); }
+.wmap-p .wm-b span { font-size: 11px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wmap-p .wm-b small { font-size: 9.5px; color: #c8bcf0; white-space: nowrap; }
+.wmap-p .wm-b b { margin-left: auto; font-size: 10px; color: #ffb0bc; font-weight: normal; white-space: nowrap; }
+.wmap-p .wm-b.down b { color: #a89aa8; }
+.wmap-p .wm-b.down i { background: #6a5a6a; }
+.wmap-p .wm-b.down small { color: #a89aa8; }
+.wmap-p .wm-sec { font-size: 11px; color: #c8bcf0; margin-top: 2px; display: flex; align-items: center; justify-content: space-between; }
+.wmap-p .wm-sec .wm-flag { width: calc((100% - 10px) / 3); font-size: 12px; padding-left: 0; padding-right: 0; }
+.wmap-p .wm-tp { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: auto; }
+.wmap-p .wm-tp .btn { width: 100%; padding-left: 0; padding-right: 0; white-space: nowrap; }
+.wmap-p .wm-tp .btn:disabled { filter: grayscale(.8) brightness(.8); }
+.wmap-p .wm-pick { font-size: 11px; color: #c8bcf0; min-height: 30px; display: flex; align-items: center; justify-content: center; text-align: center; background: rgba(20,12,50,.6); border: 2px solid var(--ink); border-radius: 8px; padding: 2px 6px; }
+.wmap-p .wm-pick b { color: #fff6c0; margin-left: 4px; }
+.wmap-p .wm-cv { cursor: pointer; }
+@media (max-height: 420px) { .hud .tl .wmini { width: 48px; height: 48px; } }
+.hud.world .tl .face { display: none; } /* 梦境大陆: minimap + status, no portrait */
+/* 梦境大陆 · 营地工坊 (the 积攒兑换 rows) and the map panel's material row */
+.wshop-p .ws-head { display: flex; align-items: center; gap: 10px; }
+.wshop-p .ws-head h2 { margin: 0; }
+.wshop-p .ws-head .x-btn { margin-left: auto; }
+.wshop-p .ws-mats { display: flex; gap: 6px; }
+.ws-mat { display: inline-flex; align-items: center; gap: 4px; background: rgba(20,12,50,.6); border: 2px solid var(--ink); border-radius: 8px; padding: 1px 7px; font-size: 11px; color: #e8dcff; }
+.ws-mat b { color: #fff6c0; margin-left: 2px; }
+.mat-ic { width: 16px; height: 16px; image-rendering: pixelated; flex: none; display: inline-block; }
+.ws-c .mat-ic { width: 18px; height: 18px; }
+.wmap-p .wm-mats .mat-ic { width: 15px; height: 15px; }
+.wshop-p .ws-cost { display: flex; gap: 5px; flex: none; width: 150px; justify-content: flex-end; }
+.ws-c { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; color: #fff6c0; }
+.ws-c.short { color: #ff8a9a; }
+.ws-ico { flex: none; width: 26px; height: 26px; border: 2px solid var(--ink); border-radius: 8px; }
+.ws-ico.pool { background: radial-gradient(circle at 40% 35%, #fff 0 12%, #8affc8 13% 45%, #2aa86a 75%); }
+.ws-ico.stars { background: radial-gradient(circle at 50% 50%, #fff 0 15%, #ffe066 16% 45%, #c8901a 75%); }
+.wmap-p .wm-mats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.wmap-p .wm-mats span { display: flex; align-items: center; justify-content: center; gap: 3px; font-size: 10.5px; color: #e8dcff; background: rgba(20,12,50,.6); border: 2px solid var(--ink); border-radius: 8px; padding: 1px 2px; white-space: nowrap; }
+.wmap-p .wm-mats b { color: #fff6c0; }
+/* 梦境大陆 world map: sized from the side column in JS (border included) */
+.wmap-p .wm-left { position: relative; }
+.wmap-p .wm-cv { touch-action: none; background: #1e54ac; box-sizing: border-box; }
+.wmap-p .wm-b b em { font-style: normal; color: #fff6c0; }
+/* 梦境大陆 · 家园: 派遣 / 建造 panels (rows as in 积攒兑换) */
+.hm-row .hm-pic { flex: none; width: 40px; height: 40px; object-fit: contain; image-rendering: pixelated; border-radius: 8px; background: rgba(20,12,50,.55); border: 2px solid var(--ink); box-sizing: border-box; }
+.hm-row .hm-pic.empty { border-style: dashed; border-color: #8a7ab8; }
+.hm-row .hm-pic.bld { background: rgba(120,190,110,.35); }
+.hm-row.lock { opacity: .55; }
+.hm-row .st-tx em { font-style: normal; font-size: 11px; color: #fff6c0; margin-left: 4px; }
+.hm-mat { display: flex; gap: 3px; flex: none; }
+.hm-m { width: 28px; height: 28px; padding: 0; display: grid; place-items: center; border-radius: 7px; border: 2px solid var(--ink); background: rgba(20,12,50,.6); cursor: pointer; }
+.hm-m.on { background: #ffd84a; box-shadow: 0 0 0 2px #fff6c0 inset; }
+.hm-m .mat-ic { width: 20px; height: 20px; }
+.hm-acc { flex: none; width: 64px; display: flex; align-items: center; justify-content: center; gap: 3px; font-size: 13px; color: #fff6c0; }
+.hm-acc small { font-size: 9px; color: #ff9a6a; margin-left: 2px; }
+.hm-acc.full { color: #ff9a6a; }
+.hm-row .btn.st-go { width: 84px; }
+.hm-build .hm-row .btn.st-go { width: 96px; }
+.hm-foot { display: flex; justify-content: center; }
+.hm-foot .btn { min-width: 180px; }
+.hm-foot .btn:disabled, .hm-row .btn:disabled { filter: grayscale(.8) brightness(.8); }
+.ws-mat .cur.gem, .ws-c .cur.gem { width: 13px; height: 13px; display: inline-block; }
+.hm-pick { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(12,8,24,.7); border-radius: inherit; }
+.hm-pick-p { width: 92%; max-height: 92%; display: flex; flex-direction: column; gap: 8px; }
+.hm-pick-p .ws-head { display: flex; align-items: center; }
+.hm-pick-p .ws-head .x-btn { margin-left: auto; }
+.hm-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; overflow-y: auto; min-height: 0; }
+.hm-card { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 4px 2px; border-radius: 10px; border: 3px solid var(--q); background: rgba(20,12,50,.7); cursor: pointer; font: inherit; color: #fff; }
+.hm-card img { width: 44px; height: 44px; object-fit: contain; image-rendering: pixelated; }
+.hm-card b { font-size: 11px; font-weight: normal; }
+.hm-card small { font-size: 9.5px; color: #e0d8ff; }
+.hm-none { grid-column: 1 / -1; text-align: center; color: #c8c0e0; font-size: 12px; padding: 20px 0; }
+.wshop-p { position: relative; }
+.wshop-p .ws-head h2, .wshop-p .ws-head .x-btn, .ws-mat { white-space: nowrap; flex: none; }
+.hm-pick { background: #2a2060; }
+.hm-build .ws-mat { padding: 1px 6px; }
+.wmap-p .wm-mats span { gap: 5px; font-size: 12px; }
+.wmap-p .wm-mats .mat-ic { width: 17px; height: 17px; }
+.qt-bar { position: relative; display: block; height: 12px; margin-top: 3px; border-radius: 6px; background: rgba(10,6,30,.7); border: 2px solid var(--ink); overflow: hidden; max-width: 260px; }
+.qt-bar i { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, #6ee08a, #c8f070); }
+.qt-bar em { position: relative; display: block; text-align: center; font-style: normal; font-size: 9.5px; line-height: 8px; color: #fff; }
+.qt-row .st-tx b { font-size: 15px; }
+.qt-bonus { background: linear-gradient(90deg, rgba(90,70,200,.45), rgba(255,216,74,.25)); }
+.hm-trade .hm-row .hm-pic { background: transparent; border: none; }
+/* 梦境大陆: the 📖 guide button next to the pause button (the lobby's green book), the gear on the pause button */
+.hud .hud-help { pointer-events: auto; width: 46px; height: 46px; padding: 0 !important; display: flex; align-items: center; justify-content: center; position: relative; }
+.hud .hud-help span { font-size: 22px; line-height: 1; }
+.hud .hud-help::after { content: ""; position: absolute; inset: -6px; }
+.hud .pausebtn svg { width: 26px; height: 26px; display: block; margin: auto; }
+.world-help .wh-head { display: flex; align-items: center; justify-content: center; position: relative; }
+.world-help .wh-head .x-btn { position: absolute; right: 0; top: 50%; transform: translateY(-50%); }
+.wh-mat { display: inline-flex; align-items: center; gap: 3px; background: #e8dcff; }
+.wh-mat .mat-ic { width: 16px; height: 16px; }
+.hud .hud-help, .hud .hud-help:active { box-shadow: inset 0 2px 0 rgba(255,255,255,.6), inset 0 -4px 0 rgba(0,0,0,.15); transform: none; } /* (no drop shadow under it, like the pause button) */
+.hm-row .hm-pic.bld { object-fit: cover; object-position: 0 50%; } /* (the art is an animation strip: show its first frame) */
+/* lobby mode carousel: group tabs under the card (冒险 · 大陆 · 每日), 冒险 holding its four dots */
+.lm-dots.lm-tabs { display: grid; grid-template-columns: 1.5fr 1fr 1fr; gap: 6px; padding: 4px 9% 0; }
+.lm-tab { font: inherit; display: flex; align-items: center; justify-content: center; gap: 5px; height: 22px; padding: 0 6px; border-radius: 8px; border: 2px solid var(--ink); background: rgba(20,12,60,.6); color: #c8c0e8; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.lm-tab.on { background: #ffd84a; color: #fff; }
+.lm-tab em { display: flex; gap: 3px; font-style: normal; }
+.lm-tab em i { width: 6px; height: 6px; border-radius: 50%; background: rgba(26,16,32,.35); transition: all .2s; }
+.lm-tab em i.on { width: 12px; border-radius: 3px; background: #fff; box-shadow: 0 0 0 1.5px var(--ink); }
+.lm-track.single .mcard { flex-basis: 100%; transform: none; opacity: 1; }
+.lm-track.single { padding-left: 0; padding-right: 0; margin: 0 9%; }
+@media (max-height: 420px) { .lm-tab { height: 18px; font-size: 10.5px; } .lm-dots.lm-tabs { padding-top: 2px; } .lm-tab em i { width: 5px; height: 5px; } .lm-tab em i.on { width: 10px; } }
+.pact-chip.guide { background: linear-gradient(180deg, #b8f08a, #3aa84a); }
+.pact-chip.guide .pc-ico { font-size: 26px; line-height: 1; }
+@media (max-height: 420px) { .pact-chip.guide .pc-ico { font-size: 20px; } }
+.lm-dots.lm-tabs { padding-left: 0; padding-right: 0; } /* (the tabs span the column, as the single cards do) */
+.lm-track.single { margin: 0; }
+.lm-dots.lm-tabs { grid-template-columns: 1fr 1fr 1fr; }
+/* lobby right column: the mode card gives up height so 噩梦/说明 + the play button end level with the roster cards; the
+   card sits 2px closer to the notice bar */
+.lb .lb-right .lb-modes { flex: none; margin-top: -2px; }
+/* the play row takes whatever height is left (the buttons shrink rather than crowd the tabs) */
+.lb .lb-right .lb-play { flex: 1 1 0; min-height: 0; margin-top: 0; }
+.lb .lb-right .lb-play { justify-content: flex-end; }
+.lb .lb-right .lb-playrow { flex: 1 1 auto; min-height: 0; max-height: 79px; } /* (on roomy screens it stays its old height, the slack above it) */
+.lb .lb-right .play-btn { padding-top: 0 !important; padding-bottom: 0 !important; min-height: 0; }
+/* 噩梦 / 说明 chip text: a single black stroke ring, not the 8-way shadow */
+.pact-chip .outline { text-shadow: none; -webkit-text-stroke: 3px var(--ink); paint-order: stroke fill; }
+.pact-chip .pc-n.outline { -webkit-text-stroke-width: 4px; }
+.lb .lb-right .lb-play { gap: 4px; } /* (with the stats line shown, the button still ends level with the roster) */
+/* polish: the 委托 progress number fits its bar; every row button in the world's panels is the same width */
+.qt-bar { height: 15px; }
+.qt-bar em { line-height: 11px; font-size: 10px; }
+.wshop-p .st-it .btn.st-go, .hm-row .btn.st-go, .hm-build .hm-row .btn.st-go { width: 96px; flex: none; }
+/* the mode card 2px taller, taken from the gap above it (its bottom, the tabs and the buttons stay put) */
+.lb .lb-right .lm-track { padding-top: 6px; }
+.guide.single .hp-main { flex: 1; }

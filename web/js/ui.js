@@ -77,6 +77,8 @@ export function bgClose(md, onClose) {
   md.classList.add("bg-close");
 }
 const H = (t) => `<b class="hp-h">${t}</b>`;
+/** the gear of the lobby's 设置 button: the in-run pause / settings button uses the same one */
+export const GEAR_SVG = `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M19.97 10.09 L22.90 10.54 L22.90 13.46 L19.97 13.91 L18.99 16.28 L20.74 18.67 L18.67 20.74 L16.28 18.99 L13.91 19.97 L13.46 22.90 L10.54 22.90 L10.09 19.97 L7.72 18.99 L5.33 20.74 L3.26 18.67 L5.01 16.28 L4.03 13.91 L1.10 13.46 L1.10 10.54 L4.03 10.09 L5.01 7.72 L3.26 5.33 L5.33 3.26 L7.72 5.01 L10.09 4.03 L10.54 1.10 L13.46 1.10 L13.91 4.03 L16.28 5.01 L18.67 3.26 L20.74 5.33 L18.99 7.72Z M15.6 12 A3.6 3.6 0 1 0 8.4 12 A3.6 3.6 0 1 0 15.6 12Z"/></svg>`;
 /** 词条类型: one row per trait — tag, what it does (on the pet or on the character), its range by quality */
 const TRAIT_NOTE = {
   dmg: "宠物造成的伤害（跟随助战和骑乘攻击都算）",
@@ -105,6 +107,32 @@ function eggOddsTable() {
   }).join("");
   return head + rows + `<div class="hp-note">流彩先单独判定：${pct(RAINBOW.base)} 起，每次没出 +${pct(RAINBOW.step)}，最高 ${pct(RAINBOW.max)}，三种蛋共用；没出流彩时按上表的比例出其他品质。</div>`;
 }
+/** a guide in the 玩法说明 layout (sections on the left, text on the right, 关闭 top-right); pauses `app` while open */
+export function showGuide(title, SECS, app, cls = "") {
+  if (document.querySelector(".help-md.guide")) return;
+  const was = app?.paused;
+  if (app) app.paused = true;
+  const md = el("div", `modal help-md guide world-help ${cls}`);
+  md.innerHTML = `<div class="panel help-p"><div class="wh-head"><h2 class="outline">${title}</h2><button class="btn gray small x-btn">关闭</button></div><div class="hp-body"><div class="hp-nav"></div><div class="hp-main"></div></div></div>`;
+  const nav = $(".hp-nav", md), main = $(".hp-main", md);
+  const open = (i) => {
+    nav.querySelectorAll("button").forEach((b, k) => b.classList.toggle("on", k === i));
+    main.innerHTML = (SECS.length > 1 ? `<div class="hp-t">${SECS[i][0]}</div>` : "") + SECS[i][1];
+    main.scrollTop = 0;
+  };
+  if (SECS.length > 1) SECS.forEach(([t], i) => {
+    const b = el("button", "hp-tab", t);
+    b.onclick = () => (sfx("click"), open(i));
+    nav.appendChild(b);
+  });
+  else (nav.remove(), md.classList.add("single")); // (one section: no tabs, the text takes the whole width)
+  open(0);
+  const restore = () => app && (app.paused = was);
+  $(".x-btn", md).onclick = () => (sfx("click"), md.remove(), restore());
+  bgClose(md, restore);
+  root.appendChild(md);
+}
+export const helpH = H;
 export function showHelp() {
   const md = el("div", "modal help-md");
   const reacts = Object.entries(REACTIONS).map(([k, r]) => `<span class="chip">${k === "bubble" ? "泡+任意" : k.split("+").map((x) => ELEM[x].name).join("+")} → ${r.name}</span>`).join(" ");
@@ -124,10 +152,11 @@ export function showHelp() {
         ["challenge", "深红门。普通战斗加一条随机规则，清场成功额外再选一次卡（可出 SR 及以上）。"],
         ["nest", "草绿门（第 3 层起）。一小波怪加三座本图巢穴（其中一座精英），巢穴不停孵出本图怪物，全部打碎才清场；开箱三选一必有 SR 及以上。"],
         ["treasure", "金门。只有一小波怪，但必出本图稀有怪物（必掉梦境藏品），地上道具更多。"],
-        ["boss", "暗紫门。第 7 层首领战（数据草原：幻觉之眼 / 根须之心；显存冰原：冰封史莱姆王 / 霜镜女巫；算力熔炉：过热核心 / 熔岩巨蠕；无尽回廊每 10 层轮换全部首领，另有无尽专属的雷霆审判者），击败后掉铲子和宠物蛋，偶尔撕开梦境裂隙；10% 概率是双首领，奖励翻倍。"],
+        ["boss", "暗紫门。第 7 层首领战（数据草原：幻觉之眼 / 根须之心；显存冰原：冰封史莱姆王 / 霜镜女巫；算力熔炉：过热核心 / 熔岩巨蠕；无尽回廊每 10 层轮换全部首领，另有无尽专属的雷霆审判者；每日梦境的终点固定是食梦兽），击败后掉铲子和宠物蛋，偶尔撕开梦境裂隙；10% 概率是双首领，奖励翻倍。"],
       ].map(([k, t]) => `<div class="hp-cur"><span class="chip" style="background:${NODE[k].col};color:#1a1020">${NODE[k].name}</span><span>${t}</span></div>`).join("")}
       ${H("觉醒卡")}凑齐配方（第一张满到要求的张数、再有第二张）后，下一次开箱或扭蛋的第一张必是 UR 觉醒卡，原卡保留、觉醒效果叠加；卡面上“可觉醒”提示它通往哪张。${EVOLUTIONS.map((ev) => `<div class="hp-cur"><span class="chip w5" style="background:#ff8ae6;color:#1a1020">${ev.name}</span><span><b>${Object.entries(ev.need).map(([k, n]) => cardName(k) + (n > 1 ? "×" + n : "")).join(" + ")}</b>：${ev.desc}</span></div>`).join("")}
-      ${H("每日梦境")}主页模式卡片滑到最右边。每天一场所有人相同的梦：固定的角色（未解锁也能用）、地图、房间与路线，加两条噩梦契约和一个梦境祝福；角色和契约每天零点按日期换新。完成一局即打卡（胜负都算），按连续天数领 7 天循环奖励：200 晶石 / 淬灵露×1 / 300 晶石 / UR 宠物蛋×1 / 淬灵露×2 / 500 晶石 / 流彩晶×1；当天第一次通关再 +300 晶石。每天只发一次奖励，可以反复挑战刷纪录；断签一天就从第 1 天重新开始。每日梦境不计入地图解锁与噩梦契约等级。
+      ${H("每日梦境")}主页模式卡片滑到最右边。每天一场所有人相同的梦：固定的角色（未解锁也能用）、地图、房间与路线，固定难度为“噩梦全开”（除护盾停转外所有噩梦契约拉满），另有一个梦境祝福；角色、地图和祝福每天零点按日期换新。完成一局即打卡（胜负都算），按连续天数领 7 天循环奖励：200 晶石 / 淬灵露×1 / 300 晶石 / UR 宠物蛋×1 / 淬灵露×2 / 500 晶石 / 流彩晶×1；当天第一次通关再 +300 晶石。每天只发一次奖励，可以反复挑战刷纪录；断签一天就从第 1 天重新开始。每日梦境不计入地图解锁与噩梦契约等级。
+      ${H("梦境大陆")}主页模式卡片「梦境大陆」，大按钮“进入大陆”。一片被海峡分开的大陆群：中南数据草原、西北显存冰原、东北算力熔炉，走跨海长桥过去；东南海上的幻梦群岛，最大的岛在渡口站稳就能坐船过去，其余海岛要骑冰凰飞过去；沙海、森林、云巅三块大陆暂未开放；越远怪物越强。怪物原地沉睡，靠近或打中才会追来；走进宝箱自动打开，奖励晶石、宠物蛋、淬灵露、流彩晶等养成道具（直接存档）；击败精英怪三选一技能卡；每区有一位区域首领，每天可击败一次，掉宠物蛋与角色经验。采集点、宝箱、精英与首领给四种区域材料，在营地工坊小摊前站稳可兑换宠物蛋、流彩晶与称号；探索度到 10/25/50/75/100% 有里程碑奖励。营地西侧是梦境家园：宠物在牧场里闲逛，派遣告示板可派宠物离线采集材料，家园管家用材料和晶石建造牧场、采集小屋、储物仓、温泉、瞭望塔。家园东侧的委托员每天发三件委托；大陆上不时发生世界事件：流星坠落（击败守卫开陨星宝箱）或迷途商人（限时货摊）。坐骑秘境：裂纹岩院门要骑火龙击碎，电门要骑灵狐穿过，海上小岛要骑冰凰飞过去（海面飞行消耗体力，耗尽会回到岸边）。点左上角小地图看大地图（可双指缩放、拖动，带 A–H × 1–8 网格坐标，放大后显示更多宝箱和采集点）：在地图上点营地、旗帜或已点亮的传送门再按“传送”，也能在当前位置“插旗”。全员倒下会回营地并失去三分之一金币。暂停菜单“离开大陆”结算，每次进入都从家园出发（旗帜和传送门可快速回到远处）。
       ${H("称号")}主页标题旁的称号牌打开称号面板。达成冒险、矿场、宠物里的目标自动获得，佩戴后在局内头顶显示（联机队友也能看到），并在闯关中获得它的效果：${TITLE_ORDER.map((id) => `<div class="hp-cur"><span class="chip w4" style="background:${TITLES[id].col || TITLE_RARITY[TITLES[id].r].col};color:#1a1020">${TITLES[id].name}</span><span>${TITLES[id].how} · ${TITLES[id].fxText}</span></div>`).join("")}
       ${H("噩梦契约")}主页「开始冒险」左边的「噩梦」方块：单人闯关前自选难度条款，每级让本局晶石 +8%；以某个等级通关一张地图（无尽为打到第 10 层）记录该图最高等级，首次达到 4 / 8 / 12 / 16 / 19 级各领一次里程碑奖励（宠物蛋、兑换卡、晶石、称号「噩梦主宰」）。${PACTS.map((q) => `<div class="hp-cur"><span class="chip w4" style="background:#ff6a9a;color:#1a1020">${q.name}</span><span>${q.desc}${q.max > 1 ? `（每级，最多 ${q.max} 级）` : ""}，每级 +${q.pts} 噩梦</span></div>`).join("")}
       ${H("挑战规则")}${Object.values(CHALLENGES).map((c) => `<div class="hp-cur"><span class="chip w4" style="background:${NODE.challenge.col};color:#1a1020">${c.name}</span><span>${c.desc}。</span></div>`).join("")}
@@ -282,7 +311,7 @@ export function showHud(game, me) {
      <div class="bars"><div class="bar hp"><i></i><span class="o1"></span></div><div class="bar sh"><i></i><span class="o1"></span></div>
      <div class="res o1"><div><div class="coin"></div><span class="coins">0</span></div><div><div class="cube"></div><span class="cubes">0</span></div><div class="pvpscore"></div></div><div class="hcurses"></div></div></div>
    <div class="tc"><div class="pips"></div><div class="bossbars" style="display:none"><div class="bossbar"><div class="nm o1">幻觉之眼</div><div class="bar"><i></i></div></div><div class="bossbar" style="display:none"><div class="nm o1"></div><div class="bar"><i></i></div></div></div></div>
-   <div class="tr"><div class="buffs"></div><button class="btn small gray pausebtn">Ⅱ</button></div>
+   <div class="tr"><div class="buffs"></div><button class="btn small gray pausebtn" title="暂停 / 设置">${GEAR_SVG}</button></div>
    <div class="banner-slot"></div>
    <div class="keys o1">WASD 移动 · J 攻击(自动锁敌) · K 技能 · L 大招 · 空格 闪避</div>
    <div class="pcskills o1">
@@ -293,6 +322,14 @@ export function showHud(game, me) {
    </div>
    <div class="tipline o1" style="display:none"></div>`;
   root.appendChild(hud);
+  // 梦境大陆: the minimap takes the top-left corner (the portrait and bars move right of it); tap it for the world map
+  if (game.world) {
+    const mini = el("canvas", "wmini");
+    mini.width = mini.height = 112;
+    mini.onclick = () => import("./worldui.js").then((M) => M.showWorldMap(game, me, app));
+    hud.querySelector(".tl").prepend(mini);
+    hud.classList.add("world"); // (the portrait steps aside: minimap + bars)
+  }
   if(me.pet?.stage===3) {
     const ride=el('button','btn small pet-ride-btn',`<img src="${petPortrait(me.pet.id,3)}" alt=""><span>骑乘</span><small>R</small>`);
     // The joystick prevents compatibility clicks while another finger is down.
@@ -312,6 +349,13 @@ export function showHud(game, me) {
     hud.querySelector('.keys').textContent+=' · R 骑乘';
   }
   if(game.petTrial)hud.appendChild(el('div','pet-trial-tag o1','宠物试用 · 大招10秒恢复 · 收益不保存'));
+  // 梦境大陆: a 玩法说明 button (the lobby's green book) just left of the pause button, for the world's own guide
+  if (game.world) {
+    const help = el("button", "btn small tb-ico t-help hud-help", "<span>📖</span>");
+    help.title = "大陆玩法说明";
+    help.onclick = (e) => (e.stopPropagation(), sfx("click"), import("./worldui.js").then((M) => M.showWorldHelp(app)));
+    hud.querySelector(".tr").insertBefore(help, hud.querySelector(".pausebtn"));
+  }
   hud.querySelector(".pausebtn").onclick = () => app.pause();
   document.querySelectorAll(".touch .empty, .b-skill.empty, .b-ult.empty").forEach(n => n.classList.remove("empty"));
   document.querySelectorAll(".b-skill .cnt, .b-ult .cnt").forEach(n => n.remove());
@@ -326,7 +370,7 @@ export function showHud(game, me) {
   const tips = { skill: CHARS[me.cid].skill.name, ult: CHARS[me.cid].ult.name, atk: CHARS[me.cid].atk.name };
   for (const k in tips) document.querySelectorAll(`.b-${k} .lb`).forEach((n) => (n.textContent = tips[k]));
   const pips = hud.querySelector(".pips");
-  if (!game.pvp) RUN.forEach((r, i) => pips.appendChild(el("div", "pip o1", pipIcon(game.route ? (i === RUN.length - 1 ? "boss" : "?") : r.kind))));
+  if (!game.pvp && !game.world) RUN.forEach((r, i) => pips.appendChild(el("div", "pip o1", pipIcon(game.route ? (i === RUN.length - 1 ? "boss" : "?") : r.kind))));
   hudCache = {};
 }
 const PIP = { combat: "⚔", elite: "🔥", shop: "🛒", event: "💬", challenge: "⚡", nest: "🕸", treasure: "💎", boss: "👑", "?": "?" };
@@ -371,10 +415,11 @@ export function updateHud(game, me) {
   // boss bars: one per boss of this room, kept (empty) after it falls; 双首领 splits the same strip into two shorter bars,
   // left to right as they stood when they appeared
   if (hudCache.bossRoom !== game.roomIdx) (hudCache.bossRoom = game.roomIdx), (hudCache.bossSeen = []);
-  const living = game.enemies.filter((e) => e.boss && !e.dead && e.hp > 0), seen = hudCache.bossSeen;
+  const living = game.enemies.filter((e) => e.boss && !e.dead && e.hp > 0 && (!game.world || e.aggro)), seen = hudCache.bossSeen; // (梦境大陆: a sleeping boss shows no bar)
+  if (game.world) for (let k = seen.length - 1; k >= 0; k--) if (!living.some((e) => e.id === seen[k].id)) seen.splice(k, 1); // (梦境大陆: a fallen or calmed boss drops its bar)
   for (const e of living) if (!seen.some((b) => b.id === e.id)) seen.push({ id: e.id, name: e.def.name, x: e.x }), seen.sort((a, b) => a.x - b.x);
   const bossVals = seen.slice(0, 2).map((b) => { const e = living.find((q) => q.id === b.id); return e ? Math.ceil((e.hp / e.maxHp) * 200) : 0; });
-  set("boss", living.length ? bossVals.join(",") : -1, () => {
+  set("boss", living.length ? bossVals.join(",") + "|" + seen.map((b) => b.id).join(",") : -1, () => {
     const box = hud.querySelector(".bossbars"), bars = box.querySelectorAll(".bossbar");
     box.style.display = living.length ? "" : "none";
     bars.forEach((bb, k) => {
@@ -554,7 +599,7 @@ export function showPause(game, opts) {
     tg("音乐", () => m.music, () => ((m.music = !m.music), setMusic(m.music)),true),
     tg("自动攻击", () => m.autoFire, () => (m.autoFire = !m.autoFire)),
   );
-  $(".r2", md).append(btn(opts.quitLabel || "放弃本局", "red pz-act", () => (md.remove(), opts.quit())));
+  $(".r2", md).append(btn(opts.quitLabel || "放弃本局", (opts.quitClass || "red") + " pz-act", () => (md.remove(), opts.quit())));
   if (opts.saveQuit) $(".r2", md).append(btn("保存退出", "blue pz-act", () => (md.remove(), opts.saveQuit()))), $(".r2", md).classList.add("c3");
   $(".r2", md).append(btn("继续", "pz-act", () => (md.remove(), opts.resume())));
   const me = opts.me;

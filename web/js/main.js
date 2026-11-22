@@ -23,6 +23,7 @@ import { PETS, PET_EVOLVE, MINE_EGG_CHANCE, petExperience } from "./petdata.js";
 import { grantPetXP, grantEggs, petState, findPet, addPool } from "./petsave.js";
 import { dailyOf, applyBlessing, finishDaily } from "./daily.js";
 import { showEvent } from "./routeui.js";
+import { worldSaveNow, explored } from "./world.js";
 
 const canvas = document.getElementById("view");
 const uiRoot = document.getElementById("ui");
@@ -58,7 +59,7 @@ function resize() {
 export function playMode() {
   const m = load(), pm = m.playMode || {};
   const map = MAPS[pm.map] && mapUnlocked(pm.map) ? pm.map : "grass";
-  return { map, endless: !!pm.endless && endlessUnlocked(), pact: m.pact || {} };
+  return { map, endless: !!pm.endless && endlessUnlocked(), pact: m.pact || {}, ...(pm.world ? { world: true } : {}) };
 }
 export function mapUnlocked(id) {
   const need = MAPS[id] && MAPS[id].need, m = load();
@@ -122,7 +123,7 @@ export const app = {
   async beginLoading(cfg) {
     const c = CHARS[cfg.players.find((p) => p.id === cfg.myId)?.cid || "deepseek"];
     const o = cfg.opt || {};
-    const where = cfg.pvp ? "竞技场 · " + (PVP_MODES[o.pvpMode] || PVP_MODES.brawl).name : o.endless ? "无尽回廊" : (MAPS[o.map] || MAPS.grass).name;
+    const where = cfg.pvp ? "竞技场 · " + (PVP_MODES[o.pvpMode] || PVP_MODES.brawl).name : o.world ? "梦境大陆" : o.endless ? "无尽回廊" : (MAPS[o.map] || MAPS.grass).name;
     const d = await this.closeDoors();
     d.querySelector(".el-t").textContent = where;
     d.querySelector(".el-s").textContent = `${c.short} · ${c.title}`;
@@ -133,6 +134,17 @@ export const app = {
     await new Promise((r) => setTimeout(r, 120));
     try {
       this.begin(cfg);
+      // 梦境大陆: rather a longer wait behind the doors than a stutter after them — paint the ground round the start,
+      // the world map's art, wait for the home's pictures, and let the first frames run (residents wake, sprites decode)
+      if (o.world && this.game?.ws) {
+        const W = await import("./world.js"), A = await import("./worldatlas.js"), g = this.game, set = (f) => (bar.style.width = `${Math.round(45 + f * 55)}%`);
+        await W.warmWorldGround(g.map, this.me, (f) => set(f * 0.45));
+        await A.buildAtlas(g.map, (n) => set(0.45 + Math.min(0.35, n * 0.02)));
+        set(0.8);
+        await W.worldImagesReady();
+        set(0.9);
+        await new Promise((r) => setTimeout(r, 700));
+      }
     } finally {
       uiRoot.appendChild(d); // keep the doors on top of the freshly built HUD
       bar.style.width = "100%";
@@ -254,7 +266,16 @@ export const app = {
       UI.closeCards();
       this.cardOpen = false;
     }
-    else if (kind === "room") {
+    else if (kind === "worldShop") import("./worldui.js").then((M) => M.showWorkshop(g, this.me, this));
+    else if (kind === "worldDispatch") import("./worldui.js").then((M) => M.showDispatch(g, this.me, this));
+    else if (kind === "worldBuild") import("./worldui.js").then((M) => M.showBuild(g, this.me, this));
+    else if (kind === "worldQuest") import("./worldui.js").then((M) => M.showQuests(g, this.me, this));
+    else if (kind === "worldTrader") import("./worldui.js").then((M) => M.showTrader(g, this.me, this));
+    else if (kind === "world") {
+      renderer.follow(g, this.me, 0, true);
+      playMusic("battle");
+      import("./worldatlas.js").then((A) => A.prebuildAtlas(g.map)); // (the world map's art, painted in idle slices)
+    } else if (kind === "room") {
       renderer.follow(g, this.me, 0, true);
       saveRun(this); // 冒险续玩 checkpoint
       if (g.room && g.room.kind === "boss") playMusic("boss");
@@ -378,6 +399,33 @@ export const app = {
     UI.showResult({ title, sub, rows, extras, tokens, win: win || (endless && rs.rooms > prevBest), cid: this.me.cid },
       this.net ? null : o.daily ? () => this.startDaily() : () => this.startSolo(),
       () => this.toLobby());
+  },
+  /** 梦境大陆: leaving (pause → 离开大陆). The world's progress is already saved; the visit pays its kills, elites and
+   *  a quarter of the gold carried, plus character and pet xp for the time spent (gold chests paid on the spot) */
+  endWorld() {
+    if (this.ended) return;
+    this.ended = true;
+    const g = this.game, m = load(), rs = g.runStats, ws = g.ws;
+    worldSaveNow(g);
+    const gold = Math.floor((this.me.coins || 0) / 4), tokens = rs.kills * REWARD.kill + rs.elites * REWARD.elite + gold;
+    m.tokens += tokens;
+    m.stats.kills += rs.kills;
+    m.stats.reactions += rs.reactions;
+    save();
+    const extras = [["本次晶石", `+${tokens + ws.gems}<i class="cur gem"></i>`]];
+    // what the chests and bosses handed out (already saved on the spot)
+    for (const [k, v] of Object.entries(ws.loot || {})) if (k !== "晶石") extras.push([k, `+${v}`]);
+    if (gold) extras.push(["金币兑换", `${this.me.coins} 金币 → ${gold}<i class="cur gem"></i>`]);
+    const xp = grantCharacterXP(this.me.cid, sessionExperience({ seconds: this.progressSession?.seconds, rooms: 0, bosses: 0, win: false }));
+    if (xp.gained) extras.push([xp.after.level > xp.before.level ? "角色升级" : "角色经验", `+${xp.gained} · Lv.${xp.after.level}`]);
+    const petTotal = petExperience({ seconds: this.progressSession?.seconds, rooms: 0, bosses: 0 });
+    const petLeft = this.me.pet ? Math.max(0, petTotal - (this.petGranted || 0)) : 0, petAdd = petLeft && grantPetXP(petState().equipped || this.me.pet.id, petLeft);
+    if (petAdd) extras.push(["宠物经验", `${PETS[this.me.pet.id].name} +${(this.petGranted || 0) + petAdd}`]);
+    const met = recordCodex(g.seen, g.killedTypes);
+    if (met.length) extras.push(["📖 怪物图鉴", `新收录 ${met.length} 种`]);
+    sfx("win");
+    const rows = [["击败敌人", rs.kills], ["区域首领", ws.bossesNow], ["本次宝箱", ws.chestsNow], ["已开宝箱", `${ws.opened.size} / ${g.map.chests.length}`], ["造成伤害", Math.round(rs.dmg)], ["技能卡", Object.keys(this.me.cards).length]];
+    UI.showResult({ title: "离开梦境大陆", sub: `探索度 ${explored(ws.fog)}% · 下次从这里继续`, rows, extras, tokens: tokens + ws.gems, win: true, cid: this.me.cid }, () => this.startSolo(), () => this.toLobby());
   },
   endPvp() {
     if (this.ended) return;
@@ -523,9 +571,11 @@ export const app = {
         this.paused = false;
         this.pauseMd = null;
         if (this.net) return this.toLobby();
+        if (this.game.world) return this.endWorld(); // 梦境大陆: leave with the visit's rewards, progress kept
         this.game.phase = "over";
         this.endRun(false);
       },
+      ...(this.game.world ? { quitLabel: "离开大陆", quitClass: "blue" } : {}),
     });
   },
 
